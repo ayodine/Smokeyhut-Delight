@@ -57,10 +57,12 @@ export default function Checkout() {
       currency: 'NGN',
       ref: 'SHD-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6),
       metadata: {
+        cart_items: items.map(i => ({ id: i.id, name: i.name, qty: i.qty, price: i.price })),
         custom_fields: [
-          { display_name: 'Customer', variable_name: 'customer', value: `${form.firstName} ${form.lastName}` },
+          { display_name: 'Customer', variable_name: 'customer', value: `${form.firstName} ${form.lastName}`.trim() },
           { display_name: 'Phone', variable_name: 'phone', value: form.phone },
           { display_name: 'Delivery', variable_name: 'delivery', value: selectedOption.name },
+          { display_name: 'Address', variable_name: 'address', value: form.address || 'Pickup' },
         ]
       },
       callback: (response) => {
