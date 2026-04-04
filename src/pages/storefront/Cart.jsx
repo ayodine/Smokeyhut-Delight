@@ -15,7 +15,7 @@ export default function Cart() {
 
   React.useEffect(() => {
     const fetchProducts = async () => {
-      const { data } = await supabase.from('products').select('*').eq('is_active', true);
+      const { data } = await supabase.from('products').select('*').or('is_active.is.null,is_active.eq.true');
       if (data) setProducts(data);
     };
     fetchProducts();

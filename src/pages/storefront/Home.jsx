@@ -64,7 +64,7 @@ export default function Home() {
 
   useEffect(() => {
     const fetchBestsellers = async () => {
-      const { data } = await supabase.from('products').select('*').eq('is_active', true).limit(4);
+      const { data } = await supabase.from('products').select('*').or('is_active.is.null,is_active.eq.true').limit(4);
       if (data) setBestsellers(data);
     };
     fetchBestsellers();

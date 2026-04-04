@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { UserPlus, Shield, Mail, Phone, Edit, Trash2, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useToast } from '../../context/ToastContext';
 
 export default function Staff() {
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const { showToast } = useToast();
   
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', role: 'Manager', phone: '' });
@@ -24,24 +26,36 @@ export default function Staff() {
   const handleSave = async () => {
     if (!form.name || !form.email) return;
     setSaving(true);
-    
-    await supabase.from('profiles').insert([{
-      full_name: form.name,
-      email: form.email,
-      role: form.role,
-      phone: form.phone
-    }]);
+    try {
+      const { error } = await supabase.from('profiles').insert([{
+        full_name: form.name,
+        email: form.email,
+        role: form.role,
+        phone: form.phone
+      }]);
+      if (error) throw error;
 
-    await fetchData();
-    setShowModal(false);
-    setForm({ name: '', email: '', role: 'Manager', phone: '' });
-    setSaving(false);
+      await fetchData();
+      setShowModal(false);
+      setForm({ name: '', email: '', role: 'Manager', phone: '' });
+      showToast('You have successfully added a user');
+    } catch (err) {
+      showToast('Failed to add user', err?.message || 'Please try again', 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = async (id) => {
     if (window.confirm('Remove this staff member?')) {
-      await supabase.from('profiles').delete().eq('id', id);
-      setStaff(prev => prev.filter(s => s.id !== id));
+      try {
+        const { error } = await supabase.from('profiles').delete().eq('id', id);
+        if (error) throw error;
+        setStaff(prev => prev.filter(s => s.id !== id));
+        showToast('User removed successfully');
+      } catch (err) {
+        showToast('Failed to remove user', err?.message || '', 'error');
+      }
     }
   };
 

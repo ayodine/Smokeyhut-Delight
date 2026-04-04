@@ -9,33 +9,43 @@ export function AuthProvider({ children }) {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    // Mock session checking
-    const savedUser = localStorage.getItem('smokeyhut_mock_user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
-    setLoading(false);
+    // Check initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const signIn = async (email, password) => {
     setError(null);
-    // Mock login logic
-    if (email === 'admin@smokeyhut.com' && password === 'admin') {
-      const mockUser = { id: 'mock-user-1', email };
-      setUser(mockUser);
-      localStorage.setItem('smokeyhut_mock_user', JSON.stringify(mockUser));
-      return { error: null };
+    setLoading(true);
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    setLoading(false);
+    
+    if (error) {
+      setError(error.message);
+      return { error };
     }
     
-    const msg = 'Invalid credentials. Use admin@smokeyhut.com / admin';
-    setError(msg);
-    return { error: new Error(msg) };
+    return { error: null };
   };
 
   const signOut = async () => {
-    // Mock signout
+    setLoading(true);
+    await supabase.auth.signOut();
     setUser(null);
-    localStorage.removeItem('smokeyhut_mock_user');
+    setLoading(false);
   };
 
   return (

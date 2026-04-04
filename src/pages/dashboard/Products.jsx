@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Trash2, Edit2, Image as ImageIcon, X, FolderKanban, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useToast } from '../../context/ToastContext';
 
 const fmt = (n) => '₦' + n.toLocaleString();
 
@@ -9,6 +10,7 @@ export default function Products() {
   const [catList, setCatList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const { showToast } = useToast();
 
   const [showForm, setShowForm] = useState(false);
   const [showCatModal, setShowCatModal] = useState(false);
@@ -84,42 +86,70 @@ export default function Products() {
       stock: Number(form.stock), 
       category_id: form.category,
       badge: form.badge || null,
-      image: form.image || null
+      image: form.image || null,
+      is_active: true
     };
 
-    if (editing) {
-      await supabase.from('products').update(data).eq('id', editing);
-    } else {
-      await supabase.from('products').insert([data]);
+    try {
+      if (editing) {
+        const { error } = await supabase.from('products').update(data).eq('id', editing);
+        if (error) throw error;
+        showToast('Product updated successfully');
+      } else {
+        const { error } = await supabase.from('products').insert([data]);
+        if (error) throw error;
+        showToast('Product added successfully');
+      }
+      await fetchData();
+      setShowForm(false);
+    } catch (err) {
+      showToast('Failed to save product', err?.message || 'Please try again', 'error');
+    } finally {
+      setSaving(false);
     }
-    
-    await fetchData();
-    setShowForm(false);
-    setSaving(false);
   };
 
   const handleDelete = async (id) => { 
     if(window.confirm('Delete this product permanently?')) {
-      await supabase.from('products').delete().eq('id', id);
-      setProductList(prev => prev.filter(p => p.id !== id)); 
+      try {
+        const { error } = await supabase.from('products').delete().eq('id', id);
+        if (error) throw error;
+        setProductList(prev => prev.filter(p => p.id !== id)); 
+        showToast('Product deleted successfully');
+      } catch (err) {
+        showToast('Failed to delete product', err?.message || '', 'error');
+      }
     }
   };
 
   const handleAddCategory = async () => {
     if (!newCatName.trim()) return;
-    const newId = newCatName.toLowerCase().replace(/[^a-z0-9]/g, '-');
-    const { data } = await supabase.from('categories').insert([{ id: newId, label: newCatName }]).select();
-    if (data) {
-      setCatList([...catList, data[0]]);
-      if (!form.category) setForm(prev => ({ ...prev, category: newId }));
+    try {
+      const newId = newCatName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+      const { data, error } = await supabase.from('categories').insert([{ id: newId, label: newCatName }]).select();
+      if (error) throw error;
+      if (data) {
+        setCatList([...catList, data[0]]);
+        if (!form.category) setForm(prev => ({ ...prev, category: newId }));
+        showToast('Category added successfully');
+      }
+    } catch (err) {
+      showToast('Failed to add category', err?.message || '', 'error');
+    } finally {
+      setNewCatName('');
     }
-    setNewCatName('');
   };
 
   const handleDeleteCategory = async (id) => {
     if(window.confirm('Delete category?')) {
-      await supabase.from('categories').delete().eq('id', id);
-      setCatList(catList.filter(c => c.id !== id));
+      try {
+        const { error } = await supabase.from('categories').delete().eq('id', id);
+        if (error) throw error;
+        setCatList(catList.filter(c => c.id !== id));
+        showToast('Category deleted successfully');
+      } catch (err) {
+        showToast('Failed to delete category', err?.message || '', 'error');
+      }
     }
   };
 

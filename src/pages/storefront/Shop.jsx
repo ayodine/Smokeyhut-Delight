@@ -19,7 +19,7 @@ export default function Shop() {
   const fetchData = async () => {
     setLoading(true);
     const [pRes, cRes] = await Promise.all([
-      supabase.from('products').select('*').eq('is_active', true).order('created_at', { ascending: false }),
+      supabase.from('products').select('*').or('is_active.is.null,is_active.eq.true').order('created_at', { ascending: false }),
       supabase.from('categories').select('*').order('created_at', { ascending: true })
     ]);
     
