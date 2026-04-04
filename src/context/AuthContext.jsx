@@ -10,8 +10,11 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     // Check initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) console.warn('Session error:', error.message);
       setUser(session?.user ?? null);
+      setLoading(false);
+    }).catch(() => {
       setLoading(false);
     });
 
@@ -27,18 +30,25 @@ export function AuthProvider({ children }) {
   const signIn = async (email, password) => {
     setError(null);
     setLoading(true);
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    setLoading(false);
-    
-    if (error) {
-      setError(error.message);
-      return { error };
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      setLoading(false);
+
+      if (error) {
+        setError(error.message);
+        return { error };
+      }
+
+      return { error: null };
+    } catch (err) {
+      setLoading(false);
+      const msg = err?.message || 'Unable to connect. Please check your internet connection.';
+      setError(msg);
+      return { error: { message: msg } };
     }
-    
-    return { error: null };
   };
 
   const signOut = async () => {

@@ -38,8 +38,7 @@ export default function Login() {
           </button>
         </form>
         <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 20, lineHeight: 1.6 }}>
-          Connect your Supabase project and create a user to sign in.<br />
-          See <code>.env.example</code> for setup.
+          Authorized personnel only. Contact your administrator if you need access.
         </p>
       </div>
     </div>
