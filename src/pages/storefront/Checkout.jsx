@@ -20,13 +20,13 @@ export default function Checkout() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [sdkReady, setSdkReady] = useState(false);
 
-  // Check if Paystack SDK loaded (it's in index.html, but wait for it)
+  // Check if Paystack v2 SDK loaded
   useEffect(() => {
     const check = () => {
       if (window.PaystackPop) {
         setSdkReady(true);
       } else {
-        setTimeout(check, 200);
+        setTimeout(check, 300);
       }
     };
     check();
@@ -46,7 +46,6 @@ export default function Checkout() {
       const customerName = `${form.firstName} ${form.lastName}`.trim();
       const deliveryAddress = isPickup ? 'Store Pickup' : `${form.address}, ${form.city}`;
 
-      // 1. Insert order
       const { data: orderData, error: orderError } = await supabase
         .from('orders')
         .insert([{
@@ -63,26 +62,15 @@ export default function Checkout() {
         .select()
         .single();
 
-      if (orderError) {
-        console.warn('Order save error (non-blocking):', orderError.message);
-      }
-
-      // 2. Insert order items
       if (!orderError && orderData) {
-        const orderItems = items.map(i => ({
-          order_id: orderId,
-          product_id: i.id || null,
-          name: i.name,
-          price: i.price,
-          qty: i.qty,
-        }));
-        await supabase.from('order_items').insert(orderItems);
+        await supabase.from('order_items').insert(
+          items.map(i => ({ order_id: orderId, product_id: i.id || null, name: i.name, price: i.price, qty: i.qty }))
+        );
       }
 
-      // 3. Insert payment record
       await supabase.from('payments').insert([{
         order_id: orderId,
-        customer_name: customerName,
+        customer_name: `${form.firstName} ${form.lastName}`.trim(),
         amount: grandTotal,
         method: 'paystack',
         paystack_ref: paystackRef,
@@ -97,7 +85,6 @@ export default function Checkout() {
   };
 
   const handlePaystack = () => {
-    // Validate required fields
     if (!form.firstName.trim() || !form.phone.trim()) {
       showToast('Required fields missing', 'Please enter your name and phone number', 'error');
       return;
@@ -127,7 +114,8 @@ export default function Checkout() {
     const customerEmail = form.email?.trim() || `${form.phone.replace(/\D/g, '')}@smokeyhut.com`;
     const ref = 'SHD-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6).toUpperCase();
 
-    const handler = window.PaystackPop.setup({
+    // Paystack v2 API — opens as a popup (not iframe, avoids COEP blocking)
+    window.PaystackPop.newTransaction({
       key,
       email: customerEmail,
       amount: grandTotal * 100, // kobo
@@ -139,31 +127,27 @@ export default function Checkout() {
           { display_name: 'Customer Name', variable_name: 'customer_name', value: `${form.firstName} ${form.lastName}`.trim() },
           { display_name: 'Phone', variable_name: 'phone', value: form.phone },
           { display_name: 'Delivery Method', variable_name: 'delivery_method', value: selectedOption.name },
-          { display_name: 'Delivery Address', variable_name: 'delivery_address', value: isPickup ? 'Store Pickup' : `${form.address}, ${form.city}` },
+          { display_name: 'Address', variable_name: 'address', value: isPickup ? 'Store Pickup' : `${form.address}, ${form.city}` },
         ],
       },
-
-      callback: async (response) => {
-        // Payment successful — save to Supabase then redirect
-        const orderId = await saveOrder(response.reference);
+      onSuccess: async (transaction) => {
+        const orderId = await saveOrder(transaction.reference);
         clearCart();
         setProcessing(false);
         showToast(
           '🎉 Order placed!',
-          orderId ? `Order ${orderId} confirmed. Ref: ${response.reference}` : `Payment confirmed. Ref: ${response.reference}`,
+          orderId ? `Order ${orderId} confirmed. Ref: ${transaction.reference}` : `Payment confirmed. Ref: ${transaction.reference}`,
           'success'
         );
         navigate('/');
       },
-
-      onClose: () => {
+      onCancel: () => {
         setProcessing(false);
         showToast('Payment cancelled', 'Your cart is saved. Try again when ready.', 'info');
       },
     });
-
-    handler.openIframe();
   };
+
 
   if (items.length === 0) {
     return (
