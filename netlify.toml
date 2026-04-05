@@ -2,7 +2,15 @@
   command = "npm run build"
   publish = "dist"
 
+# Remove Cross-Origin-Embedder-Policy that blocks Paystack payment modal
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cross-Origin-Embedder-Policy = "unsafe-none"
+    Cross-Origin-Opener-Policy = "unsafe-none"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+
