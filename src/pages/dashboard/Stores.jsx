@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { MapPin, Phone, Edit2, Trash2, X, Store as StoreIcon, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../context/AuthContext';
 
 const fmt = (n) => '₦' + n.toLocaleString();
 
 export default function Stores() {
+  const { userRole } = useAuth();
+  const isAdmin = userRole === 'Admin';
   const [storeList, setStoreList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -122,9 +125,11 @@ export default function Stores() {
                 <button style={{ flex: 1, padding: '8px', borderRadius: 8, background: 'var(--black2)', border: 'none', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={() => { setEditing(store.id); setForm({ name: store.name, address: store.address, phone: store.phone, zones: zones.join(', ') }); setShowModal(true); }}>
                   <Edit2 size={14} /> Edit
                 </button>
-                <button style={{ flex: 1, padding: '8px', borderRadius: 8, background: '#fee2e2', color: '#991b1b', border: 'none', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={async () => { if(window.confirm('Delete store?')) { await supabase.from('stores').delete().eq('id', store.id); setStoreList(storeList.filter(s => s.id !== store.id)); } }}>
-                  <Trash2 size={14} /> Delete
-                </button>
+                {isAdmin && (
+                  <button style={{ flex: 1, padding: '8px', borderRadius: 8, background: '#fee2e2', color: '#991b1b', border: 'none', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={async () => { if(window.confirm('Delete store?')) { await supabase.from('stores').delete().eq('id', store.id); setStoreList(storeList.filter(s => s.id !== store.id)); } }}>
+                    <Trash2 size={14} /> Delete
+                  </button>
+                )}
               </div>
             </div>
           );

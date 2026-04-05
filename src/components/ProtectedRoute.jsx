@@ -7,10 +7,14 @@ export default function ProtectedRoute({ children }) {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-        <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-          <div style={{ fontSize: '2rem', marginBottom: 12 }}>🔥</div>
-          <p>Loading...</p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'var(--black)' }}>
+        <div style={{ textAlign: 'center' }}>
+          <img
+            src="/logo.svg"
+            alt="Smokeyhut Delight"
+            style={{ width: 80, height: 80, objectFit: 'contain', animation: 'pulse 1.5s ease-in-out infinite' }}
+          />
+          <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
         </div>
       </div>
     );

@@ -2,10 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Package, Trash2, Edit2, Image as ImageIcon, X, FolderKanban, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../context/ToastContext';
+import { useAuth } from '../../context/AuthContext';
 
 const fmt = (n) => '₦' + n.toLocaleString();
 
 export default function Products() {
+  const { userRole } = useAuth();
+  const isAdmin = userRole === 'Admin';
   const [productList, setProductList] = useState([]);
   const [catList, setCatList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -202,9 +205,11 @@ export default function Products() {
                         <button onClick={() => openEdit(p)} style={{ background: 'var(--black2)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
                           <Edit2 size={12} /> Edit
                         </button>
-                        <button onClick={() => handleDelete(p.id)} style={{ background: '#fee2e2', border: 'none', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <Trash2 size={12} /> Delete
-                        </button>
+                        {isAdmin && (
+                          <button onClick={() => handleDelete(p.id)} style={{ background: '#fee2e2', border: 'none', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <Trash2 size={12} /> Delete
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -294,9 +299,11 @@ export default function Products() {
               {catList.map(c => (
                 <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 8px', borderBottom: '1px solid var(--border-subtle)' }}>
                   <span style={{ fontWeight: 600 }}>{c.label}</span>
-                  <button onClick={() => handleDeleteCategory(c.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer' }}>
-                    <Trash2 size={16} />
-                  </button>
+                  {isAdmin && (
+                    <button onClick={() => handleDeleteCategory(c.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer' }}>
+                      <Trash2 size={16} />
+                    </button>
+                  )}
                 </div>
               ))}
               {catList.length === 0 && <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No categories created yet.</div>}

@@ -1,18 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { Users, DollarSign, Package, Edit2, Trash2, X, UserPlus, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Users, DollarSign, Package, Trash2, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../context/AuthContext';
 
 const fmt = (n) => '₦' + n.toLocaleString();
 
 export default function Customers() {
+  const { userRole } = useAuth();
+  const isAdmin = userRole === 'Admin';
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
   const [search, setSearch] = useState('');
-  const [showModal, setShowModal] = useState(false);
-  const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', email: '', phone: '' });
 
   useEffect(() => {
     fetchData();
@@ -20,36 +18,27 @@ export default function Customers() {
 
   const fetchData = async () => {
     setLoading(true);
-    // Fetch profiles where role='customer', and attach their orders to compute stats
-    const { data } = await supabase.from('profiles')
-      .select('*, orders(total, created_at)')
-      .eq('role', 'customer')
+    // Orders are created anonymously — derive customers from unique phones in orders table
+    const { data: ordersData } = await supabase
+      .from('orders')
+      .select('customer_name, customer_email, customer_phone, total, created_at, status')
       .order('created_at', { ascending: false });
 
-    if (data) {
-      const mapped = data.map(c => {
-        const oList = c.orders || [];
-        const totalSpent = oList.reduce((sum, o) => sum + Number(o.total), 0);
-        
-        let lastOrder = c.last_active;
-        if (oList.length > 0) {
-          // Sort to find the latest order date
-          const dates = oList.map(x => new Date(x.created_at).getTime());
-          const maxDate = new Date(Math.max(...dates));
-          lastOrder = maxDate.toISOString();
+    if (ordersData) {
+      // Group by phone number to deduplicate customers
+      const map = {};
+      ordersData.forEach(o => {
+        const key = o.customer_phone || o.customer_email || o.customer_name;
+        if (!key) return;
+        if (!map[key]) {
+          map[key] = { id: key, name: o.customer_name, email: o.customer_email, phone: o.customer_phone, orders: 0, totalSpent: 0, lastOrder: null };
         }
-
-        return {
-          id: c.id,
-          name: c.full_name,
-          email: c.email,
-          phone: c.phone,
-          orders: oList.length,
-          totalSpent,
-          lastOrder
-        };
+        if (o.status !== 'cancelled') map[key].totalSpent += Number(o.total || 0);
+        map[key].orders += 1;
+        const d = new Date(o.created_at).getTime();
+        if (!map[key].lastOrder || d > new Date(map[key].lastOrder).getTime()) map[key].lastOrder = o.created_at;
       });
-      setCustomers(mapped);
+      setCustomers(Object.values(map));
     }
     setLoading(false);
   };
@@ -59,32 +48,11 @@ export default function Customers() {
     String(c.email || '').toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleSave = async () => {
-    if (!form.name || !form.email) return;
-    setSaving(true);
-
-    const payload = {
-      full_name: form.name,
-      email: form.email,
-      phone: form.phone,
-      role: 'customer'
-    };
-
-    if (editing) {
-      await supabase.from('profiles').update(payload).eq('id', editing);
-    } else {
-      await supabase.from('profiles').insert([payload]);
-    }
-
-    await fetchData();
-    setShowModal(false);
-    setSaving(false);
-  };
-
-  const handleDelete = async (id) => {
-    if (window.confirm('Delete customer? NOTE: This may fail if they have linked orders.')) {
-      await supabase.from('profiles').delete().eq('id', id);
-      setCustomers(prev => prev.filter(c => c.id !== id));
+  const handleDelete = async (phone) => {
+    if (window.confirm('Remove this customer from the directory? Their orders will remain.')) {
+      // Customers are derived from orders — anonymize by clearing name/email on their orders
+      await supabase.from('orders').update({ customer_name: 'Deleted Customer', customer_email: null }).eq('customer_phone', phone);
+      setCustomers(prev => prev.filter(c => c.id !== phone));
     }
   };
 
@@ -94,12 +62,7 @@ export default function Customers() {
     <div>
       <div className="dash-card-header" style={{ marginBottom: 20 }}>
         <div className="dash-card-title" style={{ fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif", fontSize: '1.4rem' }}>Customer Directory</div>
-        <div style={{ display: 'flex', gap: 12 }}>
-          <input className="dash-search" placeholder="🔍 Search customers..." value={search} onChange={e => setSearch(e.target.value)} />
-          <button className="btn-primary" style={{ padding: '8px 16px', fontSize: '0.88rem' }} onClick={() => { setEditing(null); setForm({ name: '', email: '', phone: '' }); setShowModal(true); }}>
-            <UserPlus size={16} style={{ marginRight: 6 }} /> Add Customer
-          </button>
-        </div>
+        <input className="dash-search" placeholder="🔍 Search customers..." value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
       <div className="kpi-grid" style={{ marginBottom: 24 }}>
@@ -134,12 +97,11 @@ export default function Customers() {
                   <td style={{ fontWeight: 700, color: 'var(--green)' }}>{fmt(c.totalSpent)}</td>
                   <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{c.lastOrder ? new Date(c.lastOrder).toLocaleDateString() : 'Never'}</td>
                   <td style={{ textAlign: 'right' }}>
-                    <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', marginRight: 12 }} onClick={() => { setEditing(c.id); setForm({ name: c.name, email: c.email, phone: c.phone || '' }); setShowModal(true); }}>
-                      <Edit2 size={16} />
-                    </button>
-                    <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)' }} onClick={() => handleDelete(c.id)}>
-                      <Trash2 size={16} />
-                    </button>
+                    {isAdmin && (
+                      <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)' }} onClick={() => handleDelete(c.phone)}>
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -151,28 +113,6 @@ export default function Customers() {
         </div>
       </div>
 
-      {showModal && (
-        <div className="product-form-modal">
-          <div className="product-form-card" style={{ maxWidth: 450 }}>
-            <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 0, marginBottom: 24 }}>
-              <UserPlus size={20} color="var(--red)" /> {editing ? 'Edit' : 'Add'} Customer
-            </h3>
-            
-            <div className="form-group"><label>Full Name</label><input value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Jane Doe" /></div>
-            <div className="form-group"><label>Email Address</label><input type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} placeholder="jane@email.com" /></div>
-            <div className="form-group"><label>Phone Number</label><input value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} placeholder="080..." /></div>
-
-            <div style={{ display: 'flex', gap: 12, marginTop: 32 }}>
-              <button onClick={() => setShowModal(false)} style={{ flex: 1, padding: '12px', background: 'var(--black2)', border: '1px solid var(--border-subtle)', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>
-                Cancel
-              </button>
-              <button disabled={saving} onClick={handleSave} className="btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
-                {saving ? <Loader2 size={16} className="spin" /> : 'Save Customer'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

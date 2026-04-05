@@ -24,6 +24,7 @@ import Contact from './pages/storefront/Contact';
 import StoreRules from './pages/storefront/StoreRules';
 import Privacy from './pages/storefront/Privacy';
 import Refund from './pages/storefront/Refund';
+import PaymentSuccess from './pages/storefront/PaymentSuccess';
 
 // Dashboard Pages
 import Login from './pages/dashboard/Login';
@@ -61,6 +62,7 @@ function StorefrontLayout() {
         <Route path="store-rules" element={<StoreRules />} />
         <Route path="privacy" element={<Privacy />} />
         <Route path="refund" element={<Refund />} />
+        <Route path="payment/success" element={<PaymentSuccess />} />
       </Routes>
       <Footer />
     </>

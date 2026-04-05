@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../context/AuthContext';
 
 const fmt = (n) => '₦' + n.toLocaleString();
 const statuses = ['all', 'pending', 'processing', 'shipped', 'delivered', 'cancelled'];
 
 export default function Orders() {
+  const { userRole } = useAuth();
+  const isAdmin = userRole === 'Admin';
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   
@@ -35,8 +38,10 @@ export default function Orders() {
 
   const deleteOrder = async (id) => {
     if (window.confirm('Delete this order?')) {
-      await supabase.from('orders').delete().eq('id', id);
-      setOrders(prev => prev.filter(o => o.id !== id));
+      // Delete order_items first to satisfy FK constraint
+      await supabase.from('order_items').delete().eq('order_id', id);
+      const { error } = await supabase.from('orders').delete().eq('id', id);
+      if (!error) setOrders(prev => prev.filter(o => o.id !== id));
     }
   };
 
@@ -88,8 +93,9 @@ export default function Orders() {
                     </tr>
                     {expandedId === order.id && (
                       <tr><td colSpan="7" style={{ background: 'var(--black2)', padding: '16px 20px' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, fontSize: '0.88rem' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, fontSize: '0.88rem' }}>
                           <div><strong>Address:</strong> {order.delivery_address}</div>
+                          <div><strong>Email:</strong> {order.customer_email || 'N/A'}</div>
                           <div><strong>Store ID:</strong> {order.store_id || 'Unassigned'}</div>
                           <div style={{ gridColumn: '1 / -1' }}>
                             <strong>Items:</strong>
@@ -105,9 +111,11 @@ export default function Orders() {
                               <select value={order.status} onChange={e => updateStatus(order.id, e.target.value)} style={{ padding: '6px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
                                 {statuses.filter(s => s !== 'all').map(s => <option key={s} value={s}>{s}</option>)}
                               </select>
-                              <button onClick={() => deleteOrder(order.id)} style={{ background: '#fee2e2', color: '#991b1b', border: 'none', padding: '6px 12px', borderRadius: 6, cursor: 'pointer', fontWeight: 700, fontSize: '0.8rem' }}>
-                                Delete Order
-                              </button>
+                              {isAdmin && (
+                                <button onClick={() => deleteOrder(order.id)} style={{ background: '#fee2e2', color: '#991b1b', border: 'none', padding: '6px 12px', borderRadius: 6, cursor: 'pointer', fontWeight: 700, fontSize: '0.8rem' }}>
+                                  Delete Order
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>

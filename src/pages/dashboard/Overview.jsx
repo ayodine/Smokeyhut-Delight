@@ -4,8 +4,6 @@ import { supabase } from '../../lib/supabase';
 
 const fmt = (n) => '₦' + n.toLocaleString();
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const chartData = [45, 62, 38, 71, 55, 80, 35];
-const maxChart = Math.max(...chartData);
 
 export default function Overview() {
   const [orders, setOrders] = useState([]);
@@ -39,6 +37,27 @@ export default function Overview() {
   const pendingShipments = orders.filter(o => ['pending', 'processing'].includes(o.status)).length;
   const recentOrders = orders.slice(0, 5);
 
+  // Weekly revenue: Mon–Sun of the current week
+  const chartData = (() => {
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0=Sun,1=Mon,...6=Sat
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - ((dayOfWeek + 6) % 7));
+    monday.setHours(0, 0, 0, 0);
+
+    return days.map((_, i) => {
+      const dayStart = new Date(monday);
+      dayStart.setDate(monday.getDate() + i);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setHours(23, 59, 59, 999);
+      return orders
+        .filter(o => o.status !== 'cancelled')
+        .filter(o => { const d = new Date(o.created_at); return d >= dayStart && d <= dayEnd; })
+        .reduce((s, o) => s + Number(o.total || 0), 0);
+    });
+  })();
+  const maxChart = Math.max(...chartData, 1);
+
   if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><Loader2 className="spin" size={32} color="var(--red)" /></div>;
 
   return (
@@ -49,7 +68,7 @@ export default function Overview() {
           <div className="kpi-icon"><DollarSign size={24} /></div>
           <div className="kpi-value">{fmt(totalRevenue)}</div>
           <div className="kpi-label">Total Revenue</div>
-          <div className="kpi-change up">↑ 12% vs last week</div>
+          <div className="kpi-change up">All time</div>
         </div>
         <div className="kpi-card blue">
           <div className="kpi-icon"><Package size={24} /></div>
@@ -79,7 +98,7 @@ export default function Overview() {
         <div className="chart-container">
           {chartData.map((val, i) => (
             <div key={i} className="chart-bar" style={{ height: `${(val / maxChart) * 100}%` }}>
-              <div className="chart-bar-value">{fmt(val * 1000)}</div>
+              <div className="chart-bar-value">{fmt(val)}</div>
               <div className="chart-bar-label">{days[i]}</div>
             </div>
           ))}

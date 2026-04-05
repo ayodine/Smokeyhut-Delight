@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../../context/CartContext';
 import { useToast } from '../../context/ToastContext';
 import { useSettings } from '../../context/SettingsContext';
 import { supabase } from '../../lib/supabase';
-import { ShoppingCart, Truck, CheckCircle, ChevronRight, Store, Loader2 } from 'lucide-react';
+import { ShoppingCart, Truck, CheckCircle, ChevronRight, Store, Loader2, Home, ShoppingBag } from 'lucide-react';
 
 export default function Checkout() {
   const { items, total, clearCart } = useCart();
@@ -18,19 +18,7 @@ export default function Checkout() {
   const [form, setForm] = useState({ firstName: '', lastName: '', phone: '', email: '', address: '', city: 'Lagos', notes: '' });
   const [processing, setProcessing] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [sdkReady, setSdkReady] = useState(false);
-
-  // Check if Paystack v2 SDK loaded
-  useEffect(() => {
-    const check = () => {
-      if (window.PaystackPop) {
-        setSdkReady(true);
-      } else {
-        setTimeout(check, 300);
-      }
-    };
-    check();
-  }, []);
+  const [successRef, setSuccessRef] = useState(null);
 
   const selectedOption = settings.deliveryOptions?.find(o => o.id === deliveryId) || { name: 'Delivery', fee: 0 };
   const deliveryFee = selectedOption.fee;
@@ -39,14 +27,15 @@ export default function Checkout() {
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
-  // Save completed order to Supabase
-  const saveOrder = async (paystackRef) => {
+  // Save pending order to Supabase before redirecting to Paystack
+  const saveOrder = async () => {
     try {
       const orderId = 'SHD-' + Date.now().toString(36).toUpperCase();
       const customerName = `${form.firstName} ${form.lastName}`.trim();
       const deliveryAddress = isPickup ? 'Store Pickup' : `${form.address}, ${form.city}`;
 
-      const { data: orderData, error: orderError } = await supabase
+      // 1. Create Order
+      const { error: orderError } = await supabase
         .from('orders')
         .insert([{
           id: orderId,
@@ -56,35 +45,29 @@ export default function Checkout() {
           delivery_address: deliveryAddress,
           payment_method: 'paystack',
           total: grandTotal,
-          status: 'processing',
+          delivery_fee: deliveryFee,
+          status: 'pending',
           notes: form.notes || null,
-        }])
-        .select()
-        .single();
+        }]);
 
-      if (!orderError && orderData) {
-        await supabase.from('order_items').insert(
-          items.map(i => ({ order_id: orderId, product_id: i.id || null, name: i.name, price: i.price, qty: i.qty }))
-        );
-      }
+      if (orderError) throw orderError;
 
-      await supabase.from('payments').insert([{
-        order_id: orderId,
-        customer_name: `${form.firstName} ${form.lastName}`.trim(),
-        amount: grandTotal,
-        method: 'paystack',
-        paystack_ref: paystackRef,
-        status: 'success',
-      }]);
+      // 2. Create Order Items
+      const { error: itemsError } = await supabase.from('order_items').insert(
+        items.map(i => ({ order_id: orderId, product_id: i.id || null, name: i.name, price: i.price, qty: i.qty }))
+      );
+
+      if (itemsError) throw itemsError;
 
       return orderId;
     } catch (err) {
-      console.warn('Could not save order to DB:', err.message);
+      console.error('Error saving pending order:', err);
+      showToast('Order creation failed', err.message, 'error');
       return null;
     }
   };
 
-  const handlePaystack = () => {
+  const handlePaystack = async () => {
     if (!form.firstName.trim() || !form.phone.trim()) {
       showToast('Required fields missing', 'Please enter your name and phone number', 'error');
       return;
@@ -98,56 +81,77 @@ export default function Checkout() {
       return;
     }
 
-    const key = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
-    if (!key) {
-      showToast('Payment unavailable', 'Paystack key not configured', 'error');
-      return;
-    }
-
-    if (!window.PaystackPop) {
-      showToast('Payment SDK loading…', 'Please try again in a moment', 'error');
-      return;
-    }
-
     setProcessing(true);
 
-    const customerEmail = form.email?.trim() || `${form.phone.replace(/\D/g, '')}@smokeyhut.com`;
-    const ref = 'SHD-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6).toUpperCase();
+    try {
+      // 1. Create pending order in Supabase
+      const orderId = await saveOrder();
+      if (!orderId) {
+        setProcessing(false);
+        return;
+      }
 
-    // Paystack v2 API — opens as a popup (not iframe, avoids COEP blocking)
-    window.PaystackPop.newTransaction({
-      key,
-      email: customerEmail,
-      amount: grandTotal * 100, // kobo
-      currency: 'NGN',
-      ref,
-      label: `${form.firstName} ${form.lastName}`.trim() || form.phone,
-      metadata: {
-        custom_fields: [
-          { display_name: 'Customer Name', variable_name: 'customer_name', value: `${form.firstName} ${form.lastName}`.trim() },
-          { display_name: 'Phone', variable_name: 'phone', value: form.phone },
-          { display_name: 'Delivery Method', variable_name: 'delivery_method', value: selectedOption.name },
-          { display_name: 'Address', variable_name: 'address', value: isPickup ? 'Store Pickup' : `${form.address}, ${form.city}` },
-        ],
-      },
-      onSuccess: async (transaction) => {
-        const orderId = await saveOrder(transaction.reference);
-        clearCart();
-        setProcessing(false);
-        showToast(
-          '🎉 Order placed!',
-          orderId ? `Order ${orderId} confirmed. Ref: ${transaction.reference}` : `Payment confirmed. Ref: ${transaction.reference}`,
-          'success'
-        );
-        navigate('/');
-      },
-      onCancel: () => {
-        setProcessing(false);
-        showToast('Payment cancelled', 'Your cart is saved. Try again when ready.', 'info');
-      },
-    });
+      // 2. Open Paystack popup modal directly with public key
+      const customerEmail = form.email?.trim() || `${form.phone.replace(/\D/g, '')}@smokeyhut.com`;
+
+      const handler = window.PaystackPop.setup({
+        key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
+        email: customerEmail,
+        amount: Math.round(grandTotal * 100), // kobo
+        ref: orderId,
+        metadata: {
+          order_id: orderId,
+          customer_name: `${form.firstName} ${form.lastName}`.trim(),
+          phone: form.phone,
+        },
+        onSuccess: (response) => {
+          setProcessing(false);
+          setSuccessRef(response.reference);
+        },
+        onClose: () => {
+          showToast('Payment cancelled', 'You closed the payment window', 'info');
+          setProcessing(false);
+        },
+      });
+
+      handler.openIframe();
+
+    } catch (error) {
+      console.error('Checkout error:', error);
+      showToast('Payment Error', error.message || 'An unexpected error occurred.', 'error');
+      setProcessing(false);
+    }
   };
 
+
+  // Show success modal regardless of cart state (clearCart empties items)
+  if (successRef) {
+    return (
+      <div style={{ minHeight: '70vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+        <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-subtle)', borderRadius: 24, maxWidth: 460, width: '100%', padding: '48px 36px', textAlign: 'center', boxShadow: 'var(--shadow-lg)' }}>
+          <div style={{ background: 'rgba(192,32,31,0.1)', width: 100, height: 100, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
+            <CheckCircle size={56} color="var(--red)" />
+          </div>
+          <h2 style={{ fontSize: '2rem', fontWeight: 900, marginBottom: 12 }}>Order <span className="accent">Confirmed!</span></h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: '1rem', lineHeight: 1.7, marginBottom: 20 }}>
+            Thank you for choosing <strong>Smokeyhut Delight</strong>! Your payment was successful and your order is being prepared.
+          </p>
+          <div style={{ padding: '12px 16px', background: 'var(--black2)', borderRadius: 10, fontSize: '0.85rem', marginBottom: 28 }}>
+            <span style={{ color: 'var(--text-muted)' }}>Reference: </span>
+            <code style={{ color: 'var(--text)', fontWeight: 700 }}>{successRef}</code>
+          </div>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <Link to="/" onClick={clearCart} className="btn-secondary" style={{ flex: 1, justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Home size={18} /> Home
+            </Link>
+            <Link to="/shop" onClick={clearCart} className="btn-primary" style={{ flex: 1, justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <ShoppingBag size={18} /> Order More
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (items.length === 0) {
     return (
@@ -266,12 +270,6 @@ export default function Checkout() {
                 }
               </button>
 
-              {!sdkReady && (
-                <p style={{ textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 8 }}>
-                  Loading payment gateway…
-                </p>
-              )}
-
               <p style={{ textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 12 }}>
                 🔒 Secured by Paystack · Card, Bank Transfer, USSD & more
               </p>
@@ -312,6 +310,7 @@ export default function Checkout() {
           </div>
         </div>
       </section>
+
     </div>
   );
 }

@@ -567,7 +567,7 @@ section { padding: 80px 20px; }
   z-index: 100; overflow-y: auto;
 }
 .dash-sidebar-logo {
-  padding: 24px 20px; font-family: 'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif; font-weight: 800; font-size: 1.5rem;
+  padding: 24px 20px; font-family: 'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif; font-weight: 800; font-size: 1rem;
   border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; gap: 10px;
 }
 .dash-sidebar-logo .accent { color: var(--yellow-bright); }

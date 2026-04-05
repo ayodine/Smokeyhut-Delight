@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { useToast } from '../../context/ToastContext';
 import { useSettings } from '../../context/SettingsContext';
+import { useAuth } from '../../context/AuthContext';
 import { Settings as SettingsIcon, Store, Truck, Bell, Plus, Trash2, Save } from 'lucide-react';
 
 export default function Settings() {
+  const { userRole } = useAuth();
+  const isAdmin = userRole === 'Admin';
   const { showToast } = useToast();
   const { settings, setSettings } = useSettings();
   
@@ -85,9 +88,11 @@ export default function Settings() {
                 <div className="form-group" style={{ width: 120, marginBottom: 0 }}>
                   <input type="number" value={opt.fee} onChange={(e) => updateDeliveryOption(opt.id, 'fee', Number(e.target.value))} placeholder="Fee" />
                 </div>
-                <button onClick={() => removeDeliveryOption(opt.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', padding: 8 }}>
-                  <Trash2 size={18} />
-                </button>
+                {isAdmin && (
+                  <button onClick={() => removeDeliveryOption(opt.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', padding: 8 }}>
+                    <Trash2 size={18} />
+                  </button>
+                )}
               </div>
             ))}
           </div>
