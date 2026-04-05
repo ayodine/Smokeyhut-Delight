@@ -1,25 +1,37 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../../context/CartContext';
 import { useToast } from '../../context/ToastContext';
 import { useSettings } from '../../context/SettingsContext';
-import { ShoppingCart, Truck, MapPin, CheckCircle, ChevronRight, Store } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { ShoppingCart, Truck, CheckCircle, ChevronRight, Store, Loader2 } from 'lucide-react';
 
 export default function Checkout() {
   const { items, total, clearCart } = useCart();
   const { showToast } = useToast();
   const { settings } = useSettings();
   const navigate = useNavigate();
-  const fmt = (n) => '₦' + n.toLocaleString();
+  const fmt = (n) => '₦' + Number(n).toLocaleString();
 
-  // default to first option
   const initialDeliveryId = settings.deliveryOptions?.[0]?.id || '';
   const [deliveryId, setDeliveryId] = useState(initialDeliveryId);
   const [form, setForm] = useState({ firstName: '', lastName: '', phone: '', email: '', address: '', city: 'Lagos', notes: '' });
   const [processing, setProcessing] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [sdkReady, setSdkReady] = useState(false);
 
-  // find selected option
+  // Check if Paystack SDK loaded (it's in index.html, but wait for it)
+  useEffect(() => {
+    const check = () => {
+      if (window.PaystackPop) {
+        setSdkReady(true);
+      } else {
+        setTimeout(check, 200);
+      }
+    };
+    check();
+  }, []);
+
   const selectedOption = settings.deliveryOptions?.find(o => o.id === deliveryId) || { name: 'Delivery', fee: 0 };
   const deliveryFee = selectedOption.fee;
   const isPickup = selectedOption.name.toLowerCase().includes('pickup');
@@ -27,66 +39,130 @@ export default function Checkout() {
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
+  // Save completed order to Supabase
+  const saveOrder = async (paystackRef) => {
+    try {
+      const orderId = 'SHD-' + Date.now().toString(36).toUpperCase();
+      const customerName = `${form.firstName} ${form.lastName}`.trim();
+      const deliveryAddress = isPickup ? 'Store Pickup' : `${form.address}, ${form.city}`;
+
+      // 1. Insert order
+      const { data: orderData, error: orderError } = await supabase
+        .from('orders')
+        .insert([{
+          id: orderId,
+          customer_name: customerName,
+          customer_email: form.email || null,
+          customer_phone: form.phone,
+          delivery_address: deliveryAddress,
+          payment_method: 'paystack',
+          total: grandTotal,
+          status: 'processing',
+          notes: form.notes || null,
+        }])
+        .select()
+        .single();
+
+      if (orderError) {
+        console.warn('Order save error (non-blocking):', orderError.message);
+      }
+
+      // 2. Insert order items
+      if (!orderError && orderData) {
+        const orderItems = items.map(i => ({
+          order_id: orderId,
+          product_id: i.id || null,
+          name: i.name,
+          price: i.price,
+          qty: i.qty,
+        }));
+        await supabase.from('order_items').insert(orderItems);
+      }
+
+      // 3. Insert payment record
+      await supabase.from('payments').insert([{
+        order_id: orderId,
+        customer_name: customerName,
+        amount: grandTotal,
+        method: 'paystack',
+        paystack_ref: paystackRef,
+        status: 'success',
+      }]);
+
+      return orderId;
+    } catch (err) {
+      console.warn('Could not save order to DB:', err.message);
+      return null;
+    }
+  };
+
   const handlePaystack = () => {
-    if (!form.firstName || !form.phone) {
-      showToast('Please fill in required fields', 'Name and phone are required', 'error');
+    // Validate required fields
+    if (!form.firstName.trim() || !form.phone.trim()) {
+      showToast('Required fields missing', 'Please enter your name and phone number', 'error');
+      return;
+    }
+    if (!isPickup && !form.address.trim()) {
+      showToast('Address required', 'Please enter your delivery address', 'error');
       return;
     }
     if (items.length === 0) {
-      showToast('Cart is empty', 'Add items first', 'error');
+      showToast('Cart is empty', 'Add items to your cart first', 'error');
+      return;
+    }
+
+    const key = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
+    if (!key) {
+      showToast('Payment unavailable', 'Paystack key not configured', 'error');
+      return;
+    }
+
+    if (!window.PaystackPop) {
+      showToast('Payment SDK loading…', 'Please try again in a moment', 'error');
       return;
     }
 
     setProcessing(true);
-    const key = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
 
-    if (!key || key === 'pk_test_your_paystack_key_here') {
-      setTimeout(() => {
-        setProcessing(false);
-        clearCart();
-        showToast('Order placed!', 'Payment simulated (add Paystack key to .env)', 'success');
-        navigate('/');
-      }, 2000);
-      return;
-    }
+    const customerEmail = form.email?.trim() || `${form.phone.replace(/\D/g, '')}@smokeyhut.com`;
+    const ref = 'SHD-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6).toUpperCase();
 
-    const handler = window.PaystackPop && window.PaystackPop.setup({
+    const handler = window.PaystackPop.setup({
       key,
-      email: form.email || `${form.phone}@smokeyhut.com`,
-      amount: grandTotal * 100,
+      email: customerEmail,
+      amount: grandTotal * 100, // kobo
       currency: 'NGN',
-      ref: 'SHD-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6),
+      ref,
+      label: `${form.firstName} ${form.lastName}`.trim() || form.phone,
       metadata: {
-        cart_items: items.map(i => ({ id: i.id, name: i.name, qty: i.qty, price: i.price })),
         custom_fields: [
-          { display_name: 'Customer', variable_name: 'customer', value: `${form.firstName} ${form.lastName}`.trim() },
+          { display_name: 'Customer Name', variable_name: 'customer_name', value: `${form.firstName} ${form.lastName}`.trim() },
           { display_name: 'Phone', variable_name: 'phone', value: form.phone },
-          { display_name: 'Delivery', variable_name: 'delivery', value: selectedOption.name },
-          { display_name: 'Address', variable_name: 'address', value: form.address || 'Pickup' },
-        ]
+          { display_name: 'Delivery Method', variable_name: 'delivery_method', value: selectedOption.name },
+          { display_name: 'Delivery Address', variable_name: 'delivery_address', value: isPickup ? 'Store Pickup' : `${form.address}, ${form.city}` },
+        ],
       },
-      callback: (response) => {
-        setProcessing(false);
+
+      callback: async (response) => {
+        // Payment successful — save to Supabase then redirect
+        const orderId = await saveOrder(response.reference);
         clearCart();
-        showToast('Payment successful!', `Ref: ${response.reference}`, 'success');
+        setProcessing(false);
+        showToast(
+          '🎉 Order placed!',
+          orderId ? `Order ${orderId} confirmed. Ref: ${response.reference}` : `Payment confirmed. Ref: ${response.reference}`,
+          'success'
+        );
         navigate('/');
       },
+
       onClose: () => {
         setProcessing(false);
-        showToast('Payment cancelled', 'You can try again', 'info');
-      }
+        showToast('Payment cancelled', 'Your cart is saved. Try again when ready.', 'info');
+      },
     });
 
-    if (handler) {
-      handler.openIframe();
-    } else {
-      setTimeout(() => {
-        setProcessing(false);
-        clearCart();
-        showToast('Order placed!', 'Paystack SDK loading... payment simulated', 'success');
-        navigate('/');
-      }, 2000);
-    }
+    handler.openIframe();
   };
 
   if (items.length === 0) {
@@ -120,13 +196,12 @@ export default function Checkout() {
               <h3>Delivery Method</h3>
               <div className="form-group" style={{ marginBottom: 24, position: 'relative' }}>
                 <label>Select preferred location/method</label>
-                
-                <div 
+                <div
                   onClick={() => setDropdownOpen(!dropdownOpen)}
-                  style={{ 
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
-                    width: '100%', background: 'var(--black)', border: `1px solid ${dropdownOpen ? 'var(--red)' : 'var(--border-subtle)'}`, 
-                    borderRadius: 8, padding: '14px 16px', color: 'var(--text)', 
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    width: '100%', background: 'var(--black)', border: `1px solid ${dropdownOpen ? 'var(--red)' : 'var(--border-subtle)'}`,
+                    borderRadius: 8, padding: '14px 16px', color: 'var(--text)',
                     fontSize: '0.95rem', cursor: 'pointer', transition: 'all 0.2s',
                     boxShadow: dropdownOpen ? '0 0 0 3px rgba(192,32,31,0.1)' : 'none'
                   }}
@@ -141,38 +216,31 @@ export default function Checkout() {
 
                 {dropdownOpen && (
                   <>
-                    <div 
-                      onClick={() => setDropdownOpen(false)} 
-                      style={{ position: 'fixed', inset: 0, zIndex: 10 }}
-                    />
-                    <div style={{ 
-                      position: 'absolute', top: '100%', left: 0, right: 0, 
-                      background: 'var(--card-bg)', border: '1px solid var(--border-subtle)', 
-                      borderRadius: 12, marginTop: 8, boxShadow: 'var(--shadow-lg)', 
-                      zIndex: 20, overflow: 'hidden' 
+                    <div onClick={() => setDropdownOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 10 }} />
+                    <div style={{
+                      position: 'absolute', top: '100%', left: 0, right: 0,
+                      background: 'var(--card-bg)', border: '1px solid var(--border-subtle)',
+                      borderRadius: 12, marginTop: 8, boxShadow: 'var(--shadow-lg)',
+                      zIndex: 20, overflow: 'hidden'
                     }}>
                       {settings.deliveryOptions?.map((opt, index) => {
                         const isOptPickup = opt.name.toLowerCase().includes('pickup');
                         const isSelected = deliveryId === opt.id;
                         return (
-                          <div 
+                          <div
                             key={opt.id}
                             onClick={() => { setDeliveryId(opt.id); setDropdownOpen(false); }}
-                            style={{ 
-                              display: 'flex', alignItems: 'center', gap: 14, padding: '16px 20px', 
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 14, padding: '16px 20px',
                               cursor: 'pointer', borderBottom: index === settings.deliveryOptions.length - 1 ? 'none' : '1px solid var(--border-subtle)',
                               background: isSelected ? 'rgba(192,32,31,0.04)' : 'transparent',
                               transition: 'background 0.2s'
                             }}
-                            onMouseEnter={(e) => {
-                               if (!isSelected) e.currentTarget.style.background = 'var(--black2)';
-                            }}
-                            onMouseLeave={(e) => {
-                               e.currentTarget.style.background = isSelected ? 'rgba(192,32,31,0.04)' : 'transparent';
-                            }}
+                            onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = 'var(--black2)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = isSelected ? 'rgba(192,32,31,0.04)' : 'transparent'; }}
                           >
                             <div style={{ background: isSelected ? 'var(--red)' : 'var(--black2)', padding: 10, borderRadius: 8, display: 'flex', transition: 'background 0.2s' }}>
-                               {isOptPickup ? <Store size={18} color={isSelected ? '#fff' : "var(--text-muted)"} /> : <Truck size={18} color={isSelected ? '#fff' : "var(--text-muted)"} />}
+                              {isOptPickup ? <Store size={18} color={isSelected ? '#fff' : "var(--text-muted)"} /> : <Truck size={18} color={isSelected ? '#fff' : "var(--text-muted)"} />}
                             </div>
                             <div style={{ flex: 1 }}>
                               <div style={{ fontWeight: isSelected ? 800 : 600, color: isSelected ? 'var(--red)' : 'var(--text)', marginBottom: 2 }}>{opt.name}</div>
@@ -193,7 +261,7 @@ export default function Checkout() {
                 <div className="form-group"><label>Last Name</label><input value={form.lastName} onChange={set('lastName')} placeholder="Last name" /></div>
               </div>
               <div className="form-group"><label>Phone *</label><input value={form.phone} onChange={set('phone')} placeholder="+234 000 0000 000" /></div>
-              <div className="form-group"><label>Email</label><input type="email" value={form.email} onChange={set('email')} placeholder="your@email.com" /></div>
+              <div className="form-group"><label>Email <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '0.82rem' }}>(used for payment receipt)</span></label><input type="email" value={form.email} onChange={set('email')} placeholder="your@email.com" /></div>
               {!isPickup && (
                 <>
                   <div className="form-group"><label>Delivery Address *</label><input value={form.address} onChange={set('address')} placeholder="Street address" /></div>
@@ -202,9 +270,27 @@ export default function Checkout() {
               )}
               <div className="form-group"><label>Order Notes</label><textarea value={form.notes} onChange={set('notes')} placeholder="Any special requests..." /></div>
 
-              <button className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '16px 28px' }} onClick={handlePaystack} disabled={processing}>
-                {processing ? '⏳ Processing...' : `💳 Pay ${fmt(grandTotal)} with Paystack`}
+              <button
+                className="btn-primary"
+                style={{ width: '100%', justifyContent: 'center', padding: '16px 28px', fontSize: '1rem', marginTop: 8 }}
+                onClick={handlePaystack}
+                disabled={processing}
+              >
+                {processing
+                  ? <><Loader2 size={18} className="spin" style={{ marginRight: 8 }} /> Processing...</>
+                  : `💳 Pay ${fmt(grandTotal)} with Paystack`
+                }
               </button>
+
+              {!sdkReady && (
+                <p style={{ textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 8 }}>
+                  Loading payment gateway…
+                </p>
+              )}
+
+              <p style={{ textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 12 }}>
+                🔒 Secured by Paystack · Card, Bank Transfer, USSD & more
+              </p>
             </div>
 
             <div className="order-summary">
@@ -228,6 +314,15 @@ export default function Checkout() {
               <div className="order-line" style={{ borderBottom: 'none', paddingTop: 16 }}>
                 <span style={{ fontWeight: 900, fontSize: '1.1rem' }}>Total</span>
                 <span className="order-total">{fmt(grandTotal)}</span>
+              </div>
+
+              <div style={{ marginTop: 20, padding: '14px 16px', background: 'var(--black2)', borderRadius: 10, fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: 1.7 }}>
+                <div style={{ fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>Accepted Payments</div>
+                <div>💳 Debit / Credit Cards</div>
+                <div>🏦 Bank Transfer</div>
+                <div>📱 USSD (*737#, *901# etc)</div>
+                <div>📲 Mobile Money</div>
+                <div>💰 QR Code Pay</div>
               </div>
             </div>
           </div>
