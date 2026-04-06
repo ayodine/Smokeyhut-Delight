@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Flame, Clock, Package, Edit3, Truck, CheckCircle, MapPin } from 'lucide-react';
+import { X, Clock, Package, Edit3, Truck, CheckCircle, MapPin } from 'lucide-react';
 
 export default function OrderingGuidePopup() {
   const [isOpen, setIsOpen] = useState(false);
@@ -54,7 +54,7 @@ export default function OrderingGuidePopup() {
         </button>
         
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-          <Flame size={48} color="var(--red)" />
+          <img src="/logo.svg" alt="Smokeyhut" style={{ width: 64, height: 64 }} />
         </div>
         
         <h2 style={{ textAlign: 'center', margin: '0 0 24px 0', fontSize: '1.6rem', fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif" }}>
@@ -142,7 +142,7 @@ export default function OrderingGuidePopup() {
           className="btn-primary"
           style={{ width: '100%', marginTop: 24, justifyContent: 'center', padding: '16px' }}
         >
-          <Flame size={18} /> I Understand — Let's Order!
+          <img src="/logo.svg" alt="" style={{ width: 20, height: 20 }} /> I Understand — Let's Order!
         </button>
       </div>
     </>

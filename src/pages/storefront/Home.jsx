@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import ProductCard from '../../components/ProductCard';
 import OrderingGuidePopup from '../../components/OrderingGuidePopup';
-import { publicSupabase as supabase } from '../../lib/supabase';
-import { Clock, Flame, ShoppingCart, Drumstick, Leaf, Truck, Award, Store, Camera } from 'lucide-react';
+import { Clock, Flame, ShoppingCart, Leaf, Truck, Award, Store, Camera } from 'lucide-react';
+import { getProducts } from '../../lib/productsCache';
 
 function Countdown() {
   const [time, setTime] = useState({ h: '00', m: '00', s: '00' });
@@ -46,8 +46,8 @@ function Countdown() {
         </div>
         <div className="countdown-offer" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {isPast
-            ? <><Truck size={14} /> Order now — dispatches tomorrow at 10:30am</>
-            : <><Flame size={14} /> Order before 10am for same-day delivery</>
+            ? <><Truck size={14} /> Order now - dispatches tomorrow at 10:30am</>
+            : <><Flame size={14} /> Order before 10am for same day delivery</>
           }
         </div>
       </div>
@@ -82,11 +82,7 @@ export default function Home() {
   const [bestsellers, setBestsellers] = useState([]);
 
   useEffect(() => {
-    const fetchBestsellers = async () => {
-      const { data } = await supabase.from('products').select('*').or('is_active.is.null,is_active.eq.true').limit(4);
-      if (data) setBestsellers(data);
-    };
-    fetchBestsellers();
+    getProducts().then(({ products }) => setBestsellers(products.slice(0, 4)));
   }, []);
 
   return (
@@ -124,7 +120,7 @@ export default function Home() {
           <div className="section-header">
             <div className="section-tag">Why Choose Us</div>
             <h2 className="section-title">Good Food, <span>Good Mood</span></h2>
-            <p className="section-sub">Every bird is hand-selected, seasoned with secret spices, and grilled over real firewood.</p>
+            <p className="section-sub">Every bird is hand selected, seasoned with secret spices, and grilled over real firewood.</p>
           </div>
           <div className="features-grid">
             {features.map((f, i) => {

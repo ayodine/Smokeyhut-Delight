@@ -1,39 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import ProductCard from '../../components/ProductCard';
-import { Search, Loader2 } from 'lucide-react';
-import { publicSupabase as supabase } from '../../lib/supabase';
+import { Search } from 'lucide-react';
+import { getProducts } from '../../lib/productsCache';
 
 export default function Shop() {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([{ id: 'all', label: 'All Items' }]);
   const [loading, setLoading] = useState(true);
-  
   const [activeFilter, setActiveFilter] = useState('all');
   const [search, setSearch] = useState('');
-  const [fetchError, setFetchError] = useState(null);
 
   useEffect(() => {
-    fetchData();
+    getProducts().then(({ products: p, categories: c }) => {
+      setProducts(p);
+      setCategories([{ id: 'all', label: 'All Items' }, ...c]);
+      setLoading(false);
+    });
   }, []);
-
-  const fetchData = async () => {
-    setLoading(true);
-    const [pRes, cRes] = await Promise.all([
-      supabase.from('products').select('*').or('is_active.is.null,is_active.eq.true').order('created_at', { ascending: false }),
-      supabase.from('categories').select('*').order('created_at', { ascending: true })
-    ]);
-
-    if (pRes.error) {
-      console.error('Products fetch error:', pRes.error);
-      setFetchError(JSON.stringify(pRes.error));
-    }
-    if (cRes.error) console.error('Categories fetch error:', cRes.error);
-
-    if (pRes.data) setProducts(pRes.data);
-    if (cRes.data) setCategories([{ id: 'all', label: 'All Items' }, ...cRes.data]);
-    setLoading(false);
-  };
 
   const filtered = products.filter(p => {
     const matchCat = activeFilter === 'all' || p.category_id === activeFilter;
@@ -41,8 +25,6 @@ export default function Shop() {
                         String(p.description || '').toLowerCase().includes(search.toLowerCase());
     return matchCat && matchSearch;
   });
-
-  if (loading) return <div style={{ padding: 100, textAlign: 'center' }}><Loader2 className="spin" size={40} color="var(--red)" /></div>;
 
   return (
     <div>
@@ -77,19 +59,18 @@ export default function Shop() {
               ))}
             </div>
           </div>
-          {fetchError && (
-            <div style={{ background: '#fee2e2', color: '#991b1b', padding: 16, borderRadius: 8, marginBottom: 20, fontSize: '0.85rem', wordBreak: 'break-all' }}>
-              <strong>DB Error:</strong> {fetchError}
-            </div>
-          )}
 
           <div className="products-grid">
-            {filtered.length > 0 ? filtered.map(p => (
+            {loading ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} style={{ background: 'var(--card-bg)', borderRadius: 16, height: 320, animation: 'pulse 1.5s ease-in-out infinite', opacity: 0.6 }} />
+              ))
+            ) : filtered.length > 0 ? filtered.map(p => (
               <ProductCard key={p.id} product={{ ...p, desc: p.short_desc, category: p.category_id }} />
             )) : (
               <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
                 <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
-                   <Search size={48} color="var(--border-subtle)" />
+                  <Search size={48} color="var(--border-subtle)" />
                 </div>
                 <p style={{ fontWeight: 700 }}>No items found</p>
                 <p style={{ fontSize: '0.88rem', marginTop: 6 }}>Try a different search or category</p>

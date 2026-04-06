@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 
+// Prefetch products as early as possible
+import { prefetchProducts } from './lib/productsCache';
+prefetchProducts();
+
 // Context
 import { AuthProvider } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
