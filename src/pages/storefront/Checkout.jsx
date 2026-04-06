@@ -300,7 +300,7 @@ export default function Checkout() {
                       position: 'absolute', top: '100%', left: 0, right: 0,
                       background: 'var(--card-bg)', border: '1px solid var(--border-subtle)',
                       borderRadius: 12, marginTop: 8, boxShadow: 'var(--shadow-lg)',
-                      zIndex: 20, overflow: 'hidden'
+                      zIndex: 20, overflow: 'hidden', maxHeight: 320, overflowY: 'auto'
                     }}>
                       {settings.deliveryOptions?.map((opt, index) => {
                         const isOptPickup = opt.name.toLowerCase().includes('pickup');
