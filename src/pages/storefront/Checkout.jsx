@@ -310,13 +310,18 @@ export default function Checkout() {
                 <span className="order-total">{fmt(grandTotal)}</span>
               </div>
 
-              <div style={{ marginTop: 20, padding: '14px 16px', background: 'var(--black2)', borderRadius: 10, fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: 1.7 }}>
-                <div style={{ fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>Accepted Payments</div>
-                <div>💳 Debit / Credit Cards</div>
-                <div>🏦 Bank Transfer</div>
-                <div>📱 USSD (*737#, *901# etc)</div>
-                <div>📲 Mobile Money</div>
-                <div>💰 QR Code Pay</div>
+              <div style={{ marginTop: 20, padding: '18px 16px', background: 'var(--black2)', borderRadius: 10, textAlign: 'center' }}>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Transfer To</div>
+                <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: 4 }}>Smokeyhut Delight</div>
+                <h3 style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--text)', margin: '0 0 4px' }}>2003910300</h3>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 14 }}>Moniepoint</div>
+                <button
+                  className="btn-secondary"
+                  style={{ width: '100%', justifyContent: 'center', padding: '12px' }}
+                  onClick={() => showToast('Transfer noted!', 'We will confirm your payment shortly.', 'success')}
+                >
+                  I Have Made the Transfer
+                </button>
               </div>
             </div>
           </div>

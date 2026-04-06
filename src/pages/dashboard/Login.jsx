@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { LogIn, Loader2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 export default function Login() {
@@ -33,8 +34,8 @@ export default function Login() {
             <label>Password</label>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required />
           </div>
-          <button className="btn-primary" type="submit" disabled={loading} style={{ width: '100%', justifyContent: 'center', padding: '14px 28px' }}>
-            {loading ? '⏳ Signing in...' : '🔐 Sign In'}
+          <button className="btn-primary" type="submit" disabled={loading} style={{ width: '100%', justifyContent: 'center', padding: '14px 28px', display: 'flex', alignItems: 'center', gap: 8 }}>
+            {loading ? <><Loader2 size={18} className="spin" /> Signing in...</> : <><LogIn size={18} /> Sign In</>}
           </button>
         </form>
         <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 20, lineHeight: 1.6 }}>

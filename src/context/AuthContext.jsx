@@ -64,14 +64,18 @@ export function AuthProvider({ children }) {
 
   const signIn = async (email, password) => {
     setError(null);
+    setLoading(true); // keep ProtectedRoute in spinner until onAuthStateChange completes
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
+        setLoading(false);
         setError(error.message);
         return { error };
       }
       return { error: null };
+      // loading is cleared by onAuthStateChange after role is confirmed
     } catch (err) {
+      setLoading(false);
       const msg = err?.message || 'Unable to connect. Check your internet connection.';
       setError(msg);
       return { error: { message: msg } };

@@ -67,6 +67,9 @@ export default function Shipping() {
     .filter(o => o.status !== 'cancelled')
     .reduce((sum, o) => sum + (Number(o.delivery_fee) || 0), 0);
 
+  const successfulDeliveries = orders.filter(o => o.status === 'delivered');
+  const successfulDeliveryFees = successfulDeliveries.reduce((sum, o) => sum + (Number(o.delivery_fee) || 0), 0);
+
   if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><Loader2 className="spin" size={32} color="var(--red)" /></div>;
 
   return (
@@ -100,6 +103,12 @@ export default function Shipping() {
           <div className="kpi-icon"><Banknote size={24} /></div>
           <div className="kpi-value" style={{ fontSize: '1.2rem' }}>{fmt(totalDeliveryFees)}</div>
           <div className="kpi-label">Total Delivery Fees</div>
+        </div>
+        <div className="kpi-card green">
+          <div className="kpi-icon"><CheckCircle size={24} /></div>
+          <div className="kpi-value">{successfulDeliveries.length}</div>
+          <div className="kpi-label">Successful Deliveries</div>
+          <div style={{ fontSize: '0.82rem', fontWeight: 700, marginTop: 4, opacity: 0.85 }}>{fmt(successfulDeliveryFees)}</div>
         </div>
       </div>
 

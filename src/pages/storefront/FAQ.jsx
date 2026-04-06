@@ -22,7 +22,7 @@ export default function FAQ() {
               <div key={i} className={`faq-item${openIdx === i ? ' open' : ''}`}>
                 <button className="faq-q" onClick={() => setOpenIdx(openIdx === i ? null : i)}>
                   {faq.q}
-                  <span className="arrow">▶</span>
+                  <span className="arrow">›</span>
                 </button>
                 <div className="faq-a">{faq.a}</div>
               </div>
