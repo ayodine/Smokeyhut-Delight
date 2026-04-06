@@ -249,22 +249,18 @@ export default function Products() {
             
             <div style={{ display: 'flex', gap: 20, marginBottom: 16 }}>
                <div style={{ width: 100, height: 100, borderRadius: 12, border: '2px dashed var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', background: 'var(--black2)' }}>
-                 {form.image && !form.image.startsWith('data:') && form.image.length <= 4 ? (
-                    <div style={{ fontSize: '3rem' }}>{form.image}</div>
-                 ) : form.image ? (
+                 {form.image ? (
                     <img src={form.image} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                  ) : (
                     <ImageIcon size={32} color="var(--text-muted)" />
                  )}
                </div>
                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                 <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 }}>Product Image/Emoji</label>
+                 <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 }}>Product Image</label>
                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                    <input type="file" accept="image/*" onChange={handleImageUpload} style={{ fontSize: '0.85rem', flex: 1 }} />
-                   <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>OR</span>
-                   <input placeholder="Emoji" value={form.image} onChange={set('image')} style={{ width: 70, padding: '6px' }} />
                  </div>
-                 <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 8 }}>Upload 2MB max, or paste an emoji.</p>
+                 <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 8 }}>Upload image, max 2MB.</p>
                </div>
             </div>
 
