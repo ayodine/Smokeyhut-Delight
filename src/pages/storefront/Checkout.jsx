@@ -40,8 +40,9 @@ export default function Checkout() {
   const [successMethod, setSuccessMethod] = useState('paystack'); // 'paystack' | 'transfer'
 
   const selectedOption = settings.deliveryOptions?.find(o => o.id === deliveryId) || { name: 'Delivery', fee: 0 };
-  const deliveryFee = selectedOption.fee;
   const isPickup = selectedOption.name.toLowerCase().includes('pickup');
+  const allFreeShipping = items.length > 0 && items.every(i => i.free_shipping === true);
+  const deliveryFee = (allFreeShipping && !isPickup) ? 0 : selectedOption.fee;
   const grandTotal = total + deliveryFee;
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
@@ -287,7 +288,7 @@ export default function Checkout() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     {isPickup ? <Store size={18} color="var(--red)" /> : <Truck size={18} color="var(--red)" />}
                     <span style={{ fontWeight: 700 }}>{selectedOption.name}</span>
-                    <span style={{ color: 'var(--text-muted)' }}>— {selectedOption.fee === 0 ? 'Free' : fmt(selectedOption.fee)}</span>
+                    <span style={{ color: 'var(--text-muted)' }}>— {deliveryFee === 0 ? 'Free' : fmt(deliveryFee)}</span>
                   </div>
                   <ChevronRight size={18} color="var(--text-muted)" style={{ transform: dropdownOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
                 </div>
@@ -382,7 +383,10 @@ export default function Checkout() {
                 </div>
               ))}
               <div className="order-line" style={{ marginTop: 16 }}><span>Subtotal</span><span>{fmt(total)}</span></div>
-              <div className="order-line"><span>Delivery ({selectedOption.name})</span><span>{selectedOption.fee === 0 ? 'Free' : fmt(selectedOption.fee)}</span></div>
+              <div className="order-line">
+                <span>Delivery ({selectedOption.name}){allFreeShipping && !isPickup && <span style={{ marginLeft: 6, fontSize: '0.7rem', background: '#dcfce7', color: '#166534', padding: '1px 7px', borderRadius: 20, fontWeight: 800 }}>FREE SHIP</span>}</span>
+                <span>{deliveryFee === 0 ? 'Free' : fmt(deliveryFee)}</span>
+              </div>
               <div className="order-line" style={{ borderBottom: 'none', paddingTop: 16 }}>
                 <span style={{ fontWeight: 900, fontSize: '1.1rem' }}>Total</span>
                 <span className="order-total">{fmt(grandTotal)}</span>

@@ -21,7 +21,7 @@ export default function Products() {
   const [editing, setEditing] = useState(null);
   
   // Frontend forms continue using standard naming
-  const [form, setForm] = useState({ name: '', desc: '', price: '', category: '', image: '', badge: '', stock: '' });
+  const [form, setForm] = useState({ name: '', desc: '', price: '', category: '', image: '', badge: '', stock: '', free_shipping: false });
 
   useEffect(() => {
     fetchData();
@@ -63,34 +63,36 @@ export default function Products() {
 
   const stockLevel = (s) => s <= 5 ? 'low' : s <= 15 ? 'medium' : 'high';
 
-  const openAdd = () => { setForm({ name: '', desc: '', price: '', category: catList[0]?.id || '', image: '', badge: '', stock: '' }); setEditing(null); setShowForm(true); };
+  const openAdd = () => { setForm({ name: '', desc: '', price: '', category: catList[0]?.id || '', image: '', badge: '', stock: '', free_shipping: false }); setEditing(null); setShowForm(true); };
   
-  const openEdit = (p) => { 
-    setForm({ 
-      name: p.name, 
-      desc: p.description || '', 
-      price: String(p.price), 
-      category: p.category_id || '', 
-      image: p.image || '', 
-      badge: p.badge || '', 
-      stock: String(p.stock) 
-    }); 
-    setEditing(p.id); 
-    setShowForm(true); 
+  const openEdit = (p) => {
+    setForm({
+      name: p.name,
+      desc: p.description || '',
+      price: String(p.price),
+      category: p.category_id || '',
+      image: p.image || '',
+      badge: p.badge || '',
+      stock: String(p.stock),
+      free_shipping: p.free_shipping || false,
+    });
+    setEditing(p.id);
+    setShowForm(true);
   };
 
   const handleSave = async () => {
     setSaving(true);
-    const data = { 
+    const data = {
       name: form.name,
       description: form.desc,
       short_desc: form.desc.slice(0, 50),
-      price: Number(form.price), 
-      stock: Number(form.stock), 
+      price: Number(form.price),
+      stock: Number(form.stock),
       category_id: form.category,
       badge: form.badge || null,
       image: form.image || null,
-      is_active: true
+      is_active: true,
+      free_shipping: form.free_shipping,
     };
 
     try {
@@ -199,7 +201,13 @@ export default function Products() {
                     <td style={{ fontSize: '0.82rem' }}>{catLabel}</td>
                     <td style={{ fontWeight: 700 }}>{fmt(p.price)}</td>
                     <td><div className={`stock-indicator ${stockLevel(p.stock)}`}><span className="stock-dot" />{p.stock} units</div></td>
-                    <td>{p.badge ? <span className={`status-badge ${p.badge}`}>{p.badge}</span> : '—'}</td>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {p.badge ? <span className={`status-badge ${p.badge}`}>{p.badge}</span> : null}
+                        {p.free_shipping && <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#166534', background: '#dcfce7', padding: '2px 7px', borderRadius: 20 }}>Free Ship</span>}
+                        {!p.badge && !p.free_shipping && '—'}
+                      </div>
+                    </td>
                     <td>
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button onClick={() => openEdit(p)} style={{ background: 'var(--black2)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -275,6 +283,16 @@ export default function Products() {
               </div>
               <div className="form-group"><label>Badge (optional)</label><input value={form.badge} onChange={set('badge')} placeholder="bestseller, new, hot, value" /></div>
             </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '12px 0', marginBottom: 16, borderTop: '1px solid var(--border-subtle)' }}>
+              <input
+                type="checkbox"
+                checked={form.free_shipping}
+                onChange={e => setForm({ ...form, free_shipping: e.target.checked })}
+                style={{ width: 18, height: 18, accentColor: 'var(--red)', cursor: 'pointer' }}
+              />
+              <span style={{ fontWeight: 700, fontSize: '0.88rem' }}>Free Shipping</span>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>— Customer pays no delivery fee when cart contains only free-shipping items</span>
+            </label>
             <button className="btn-primary" onClick={handleSave} disabled={saving || !form.name || !form.category} style={{ width: '100%', justifyContent: 'center', padding: '14px' }}>
               {saving ? <Loader2 size={16} className="spin" /> : editing ? 'Save Changes' : 'Add Product'}
             </button>

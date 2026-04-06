@@ -92,11 +92,13 @@ export default function DashboardLayout() {
         </div>
       </aside>
 
+      {sidebarOpen && <div className="dash-sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
+
       <main className="dash-main">
         <header className="dash-topbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{ display: 'none', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-main)' }} className="dash-menu-toggle">
-               <Menu size={24} />
+            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="dash-menu-toggle">
+              <Menu size={24} />
             </button>
             <div className="dash-topbar-title">Dashboard</div>
           </div>

@@ -6,13 +6,19 @@ import { publicSupabase as supabase } from '../../lib/supabase';
 import { Clock, Flame, ShoppingCart, Drumstick, Leaf, Truck, Award, Store, Camera } from 'lucide-react';
 
 function Countdown() {
-  const [time, setTime] = useState({ h: 0, m: 0, s: 0 });
+  const [time, setTime] = useState({ h: '00', m: '00', s: '00' });
+  const [isPast, setIsPast] = useState(false);
+
   useEffect(() => {
     const tick = () => {
       const now = new Date();
+      const cutoff = new Date(now);
+      cutoff.setHours(10, 0, 0, 0);
+      const past = now >= cutoff;
+      setIsPast(past);
       const target = new Date(now);
+      if (past) target.setDate(target.getDate() + 1);
       target.setHours(10, 0, 0, 0);
-      if (now >= target) target.setDate(target.getDate() + 1);
       const diff = Math.max(0, target - now);
       setTime({
         h: String(Math.floor(diff / 3600000)).padStart(2, '0'),
@@ -24,10 +30,13 @@ function Countdown() {
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, []);
+
   return (
     <div className="countdown-bar">
       <div className="countdown-inner">
-        <div className="countdown-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Clock size={16} /> Next Dispatch Window Closes:</div>
+        <div className="countdown-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Clock size={16} /> {isPast ? 'Next Batch Opens In:' : 'First Batch Closes In:'}
+        </div>
         <div className="countdown-digits">
           <div className="cd-block"><div className="cd-num">{time.h}</div><div className="cd-unit">hrs</div></div>
           <div className="cd-colon">:</div>
@@ -35,7 +44,17 @@ function Countdown() {
           <div className="cd-colon">:</div>
           <div className="cd-block"><div className="cd-num">{time.s}</div><div className="cd-unit">sec</div></div>
         </div>
-        <div className="countdown-offer" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Flame size={16} /> Order before 10am for same-day delivery</div>
+        <div className="countdown-offer" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {isPast
+            ? <><Truck size={14} /> Order now — dispatches tomorrow at 10:30am</>
+            : <><Flame size={14} /> Order before 10am for same-day delivery</>
+          }
+        </div>
+      </div>
+      <div className="countdown-info">
+        <div className="countdown-info-item"><Clock size={12} /> First batch processed until <strong>10:00am</strong></div>
+        <div className="countdown-info-item"><Truck size={12} /> Dispatch begins from <strong>10:30am</strong></div>
+        <div className="countdown-info-item">⏱ Delivery time: <strong>4–5 hrs</strong> depending on location</div>
       </div>
     </div>
   );
