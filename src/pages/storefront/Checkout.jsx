@@ -4,7 +4,25 @@ import { useCart } from '../../context/CartContext';
 import { useToast } from '../../context/ToastContext';
 import { useSettings } from '../../context/SettingsContext';
 import { supabase } from '../../lib/supabase';
-import { ShoppingCart, Truck, CheckCircle, ChevronRight, Store, Loader2, Home, ShoppingBag } from 'lucide-react';
+import { ShoppingCart, Truck, CheckCircle, ChevronRight, Store, Loader2, Home, ShoppingBag, CreditCard } from 'lucide-react';
+
+const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+// Fire-and-forget — notifications are non-critical, never block the UI
+async function notify(type, order) {
+  try {
+    await fetch(`${SUPABASE_URL}/functions/v1/notify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'apikey': SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ type, order }),
+    });
+  } catch { /* silent */ }
+}
 
 export default function Checkout() {
   const { items, total, clearCart } = useCart();
@@ -16,8 +34,10 @@ export default function Checkout() {
   const [deliveryId, setDeliveryId] = useState(initialDeliveryId);
   const [form, setForm] = useState({ firstName: '', lastName: '', phone: '', email: '', address: '', city: 'Lagos', notes: '' });
   const [processing, setProcessing] = useState(false);
+  const [transferProcessing, setTransferProcessing] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [successRef, setSuccessRef] = useState(null);
+  const [successMethod, setSuccessMethod] = useState('paystack'); // 'paystack' | 'transfer'
 
   const selectedOption = settings.deliveryOptions?.find(o => o.id === deliveryId) || { name: 'Delivery', fee: 0 };
   const deliveryFee = selectedOption.fee;
@@ -116,7 +136,17 @@ export default function Checkout() {
           await supabase.from('orders').update({ status: 'processing' }).eq('id', orderId);
           clearCart();
           setProcessing(false);
+          setSuccessMethod('paystack');
           setSuccessRef(response.reference);
+          // Send confirmation email + WhatsApp to customer, alert admin
+          notify('order_confirmed', {
+            id: orderId,
+            customer_name: `${form.firstName} ${form.lastName}`.trim(),
+            customer_email: form.email || null,
+            customer_phone: form.phone,
+            delivery_address: isPickup ? 'Store Pickup' : `${form.address}, ${form.city}`,
+            total: grandTotal,
+          });
         },
         onClose: () => {
           if (!paymentSucceeded) {
@@ -136,6 +166,49 @@ export default function Checkout() {
   };
 
 
+  const handleTransfer = async () => {
+    if (!form.firstName.trim() || !form.phone.trim()) {
+      showToast('Required fields missing', 'Please enter your name and phone number first', 'error');
+      return;
+    }
+    if (!isPickup && !form.address.trim()) {
+      showToast('Address required', 'Please enter your delivery address', 'error');
+      return;
+    }
+    if (items.length === 0) return;
+    setTransferProcessing(true);
+    try {
+      const orderId = 'SHD-' + Date.now().toString(36).toUpperCase();
+      const customerName = `${form.firstName} ${form.lastName}`.trim();
+      const deliveryAddress = isPickup ? 'Store Pickup' : `${form.address}, ${form.city}`;
+      const { error } = await supabase.from('orders').insert([{
+        id: orderId,
+        customer_name: customerName,
+        customer_email: form.email || null,
+        customer_phone: form.phone,
+        delivery_address: deliveryAddress,
+        payment_method: 'bank_transfer',
+        total: grandTotal,
+        delivery_fee: deliveryFee,
+        status: 'pending',
+        notes: form.notes || null,
+      }]);
+      if (!error) {
+        await supabase.from('order_items').insert(
+          items.map(i => ({ order_id: orderId, product_id: i.id || null, name: i.name, price: i.price, qty: i.qty }))
+        );
+        // Alert admin by email
+        notify('transfer_made', { id: orderId, customer_name: customerName, customer_phone: form.phone, total: grandTotal });
+      }
+      clearCart();
+      setSuccessMethod('transfer');
+      setSuccessRef(orderId);
+    } catch (err) {
+      showToast('Error', err.message, 'error');
+    }
+    setTransferProcessing(false);
+  };
+
   // Show success modal regardless of cart state (clearCart empties items)
   if (successRef) {
     return (
@@ -144,9 +217,14 @@ export default function Checkout() {
           <div style={{ background: 'rgba(192,32,31,0.1)', width: 100, height: 100, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
             <CheckCircle size={56} color="var(--red)" />
           </div>
-          <h2 style={{ fontSize: '2rem', fontWeight: 900, marginBottom: 12 }}>Order <span className="accent">Confirmed!</span></h2>
+          <h2 style={{ fontSize: '2rem', fontWeight: 900, marginBottom: 12 }}>
+            {successMethod === 'transfer' ? <>Transfer <span className="accent">Noted!</span></> : <>Order <span className="accent">Confirmed!</span></>}
+          </h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '1rem', lineHeight: 1.7, marginBottom: 20 }}>
-            Thank you for choosing <strong>Smokeyhut Delight</strong>! Your payment was successful and your order is being prepared.
+            {successMethod === 'transfer'
+              ? <>Thank you! We have received your transfer notification and will confirm your payment shortly. Your order reference is below.</>
+              : <>Thank you for choosing <strong>Smokeyhut Delight</strong>! Your payment was successful and your order is being prepared.</>
+            }
           </p>
           <div style={{ padding: '12px 16px', background: 'var(--black2)', borderRadius: 10, fontSize: '0.85rem', marginBottom: 28 }}>
             <span style={{ color: 'var(--text-muted)' }}>Reference: </span>
@@ -317,10 +395,14 @@ export default function Checkout() {
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 14 }}>Moniepoint</div>
                 <button
                   className="btn-secondary"
-                  style={{ width: '100%', justifyContent: 'center', padding: '12px' }}
-                  onClick={() => showToast('Transfer noted!', 'We will confirm your payment shortly.', 'success')}
+                  style={{ width: '100%', justifyContent: 'center', padding: '12px', display: 'flex', alignItems: 'center', gap: 8 }}
+                  onClick={handleTransfer}
+                  disabled={transferProcessing}
                 >
-                  I Have Made the Transfer
+                  {transferProcessing
+                    ? <><Loader2 size={16} className="spin" /> Processing...</>
+                    : <><CreditCard size={16} /> I Have Made the Transfer</>
+                  }
                 </button>
               </div>
             </div>

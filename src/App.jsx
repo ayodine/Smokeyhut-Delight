@@ -28,6 +28,7 @@ import PaymentSuccess from './pages/storefront/PaymentSuccess';
 
 // Dashboard Pages
 import Login from './pages/dashboard/Login';
+import ResetPassword from './pages/dashboard/ResetPassword';
 import DashboardLayout from './pages/dashboard/Layout';
 import Overview from './pages/dashboard/Overview';
 import Orders from './pages/dashboard/Orders';
@@ -80,6 +81,7 @@ export default function App() {
               <Routes>
                 {/* Admin */}
                 <Route path="/admin/login" element={<Login />} />
+                <Route path="/admin/reset-password" element={<ResetPassword />} />
                 <Route path="/admin" element={
                   <ProtectedRoute>
                     <DashboardLayout />
