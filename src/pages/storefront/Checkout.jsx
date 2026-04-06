@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useCart } from '../../context/CartContext';
 import { useToast } from '../../context/ToastContext';
 import { useSettings } from '../../context/SettingsContext';
@@ -10,7 +10,6 @@ export default function Checkout() {
   const { items, total, clearCart } = useCart();
   const { showToast } = useToast();
   const { settings } = useSettings();
-  const navigate = useNavigate();
   const fmt = (n) => '₦' + Number(n).toLocaleString();
 
   const initialDeliveryId = settings.deliveryOptions?.[0]?.id || '';
@@ -80,6 +79,10 @@ export default function Checkout() {
       showToast('Cart is empty', 'Add items to your cart first', 'error');
       return;
     }
+    if (!window.PaystackPop) {
+      showToast('Payment unavailable', 'Payment service failed to load. Please refresh and try again.', 'error');
+      return;
+    }
 
     setProcessing(true);
 
@@ -94,6 +97,9 @@ export default function Checkout() {
       // 2. Open Paystack popup modal directly with public key
       const customerEmail = form.email?.trim() || `${form.phone.replace(/\D/g, '')}@smokeyhut.com`;
 
+      // Guard to prevent onClose toast firing after a successful payment
+      let paymentSucceeded = false;
+
       const handler = window.PaystackPop.setup({
         key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
         email: customerEmail,
@@ -104,13 +110,19 @@ export default function Checkout() {
           customer_name: `${form.firstName} ${form.lastName}`.trim(),
           phone: form.phone,
         },
-        onSuccess: (response) => {
+        // Paystack v1 inline uses "callback", NOT "onSuccess"
+        callback: async (response) => {
+          paymentSucceeded = true;
+          await supabase.from('orders').update({ status: 'processing' }).eq('id', orderId);
+          clearCart();
           setProcessing(false);
           setSuccessRef(response.reference);
         },
         onClose: () => {
-          showToast('Payment cancelled', 'You closed the payment window', 'info');
-          setProcessing(false);
+          if (!paymentSucceeded) {
+            showToast('Payment cancelled', 'You closed the payment window', 'info');
+            setProcessing(false);
+          }
         },
       });
 
@@ -141,10 +153,10 @@ export default function Checkout() {
             <code style={{ color: 'var(--text)', fontWeight: 700 }}>{successRef}</code>
           </div>
           <div style={{ display: 'flex', gap: 12 }}>
-            <Link to="/" onClick={clearCart} className="btn-secondary" style={{ flex: 1, justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Link to="/" className="btn-secondary" style={{ flex: 1, justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 8 }}>
               <Home size={18} /> Home
             </Link>
-            <Link to="/shop" onClick={clearCart} className="btn-primary" style={{ flex: 1, justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Link to="/shop" className="btn-primary" style={{ flex: 1, justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 8 }}>
               <ShoppingBag size={18} /> Order More
             </Link>
           </div>

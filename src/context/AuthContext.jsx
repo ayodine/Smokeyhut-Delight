@@ -6,14 +6,15 @@ const AuthContext = createContext(null);
 async function fetchRole(authUser) {
   if (!authUser) return null;
   try {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', authUser.id)
       .maybeSingle();
-    return data?.role || 'Admin';
+    if (error || !data?.role) return null; // no profile = not authorized staff
+    return data.role;
   } catch {
-    return 'Admin';
+    return null; // fail secure
   }
 }
 
@@ -37,12 +38,20 @@ export function AuthProvider({ children }) {
       setUser(authUser);
 
       if (authUser) {
-        // Fetch role with a hard 4-second timeout so loading never hangs
+        // Fetch role with a timeout — if we can't confirm a role, deny access (fail secure)
         const role = await Promise.race([
           fetchRole(authUser),
-          new Promise(resolve => setTimeout(() => resolve(sessionStorage.getItem('sd_role') || 'Admin'), 4000)),
+          new Promise(resolve => setTimeout(() => resolve(sessionStorage.getItem('sd_role') || null), 6000)),
         ]);
-        applyRole(role);
+
+        if (!role) {
+          // Authenticated user has no staff profile — sign them out immediately
+          await supabase.auth.signOut();
+          setUser(null);
+          applyRole(null);
+        } else {
+          applyRole(role);
+        }
       } else {
         applyRole(null);
       }

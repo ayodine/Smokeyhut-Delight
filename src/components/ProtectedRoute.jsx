@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function ProtectedRoute({ children }) {
-  const { user, loading } = useAuth();
+  const { user, userRole, loading } = useAuth();
 
   if (loading) {
     return (
@@ -20,7 +20,8 @@ export default function ProtectedRoute({ children }) {
     );
   }
 
-  if (!user) {
+  // Must have both a valid session AND a confirmed staff role
+  if (!user || !userRole) {
     return <Navigate to="/admin/login" replace />;
   }
 

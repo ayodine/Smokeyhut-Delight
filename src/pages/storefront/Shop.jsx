@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import ProductCard from '../../components/ProductCard';
 import { Search, Loader2 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { publicSupabase as supabase } from '../../lib/supabase';
 
 export default function Shop() {
   const [products, setProducts] = useState([]);
@@ -11,6 +11,7 @@ export default function Shop() {
   
   const [activeFilter, setActiveFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [fetchError, setFetchError] = useState(null);
 
   useEffect(() => {
     fetchData();
@@ -22,7 +23,13 @@ export default function Shop() {
       supabase.from('products').select('*').or('is_active.is.null,is_active.eq.true').order('created_at', { ascending: false }),
       supabase.from('categories').select('*').order('created_at', { ascending: true })
     ]);
-    
+
+    if (pRes.error) {
+      console.error('Products fetch error:', pRes.error);
+      setFetchError(JSON.stringify(pRes.error));
+    }
+    if (cRes.error) console.error('Categories fetch error:', cRes.error);
+
     if (pRes.data) setProducts(pRes.data);
     if (cRes.data) setCategories([{ id: 'all', label: 'All Items' }, ...cRes.data]);
     setLoading(false);
@@ -70,6 +77,12 @@ export default function Shop() {
               ))}
             </div>
           </div>
+          {fetchError && (
+            <div style={{ background: '#fee2e2', color: '#991b1b', padding: 16, borderRadius: 8, marginBottom: 20, fontSize: '0.85rem', wordBreak: 'break-all' }}>
+              <strong>DB Error:</strong> {fetchError}
+            </div>
+          )}
+
           <div className="products-grid">
             {filtered.length > 0 ? filtered.map(p => (
               <ProductCard key={p.id} product={{ ...p, desc: p.short_desc, category: p.category_id }} />

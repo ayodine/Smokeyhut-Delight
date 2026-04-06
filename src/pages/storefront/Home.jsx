@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import ProductCard from '../../components/ProductCard';
 import OrderingGuidePopup from '../../components/OrderingGuidePopup';
-import { supabase } from '../../lib/supabase';
+import { publicSupabase as supabase } from '../../lib/supabase';
 import { Clock, Flame, ShoppingCart, Drumstick, Leaf, Truck, Award, Store, Camera } from 'lucide-react';
 
 function Countdown() {
