@@ -33,9 +33,12 @@ export default function Payments() {
   };
 
   const filtered = payments.filter(p => filter === 'all' || p.payment_method === filter);
-  const totalRevenue = payments.filter(p => p.status === 'paid').reduce((s, p) => s + Number(p.total), 0);
+  // Count revenue for confirmed orders (processing → delivered means payment was collected)
+  const confirmedStatuses = ['processing', 'shipped', 'delivered'];
+  const confirmed = payments.filter(p => confirmedStatuses.includes(p.status));
+  const totalRevenue = confirmed.reduce((s, p) => s + Number(p.total), 0);
   const byMethod = { paystack: 0, bank_transfer: 0, cash: 0 };
-  payments.filter(p => p.status === 'paid').forEach(p => {
+  confirmed.forEach(p => {
     byMethod[p.payment_method] = (byMethod[p.payment_method] || 0) + Number(p.total);
   });
 
