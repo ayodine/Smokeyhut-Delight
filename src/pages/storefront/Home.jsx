@@ -114,6 +114,26 @@ export default function Home() {
 
       <Countdown />
 
+      {/* BESTSELLERS */}
+      <section className="products-section">
+        <div className="container">
+          <div className="section-header">
+            <div className="section-tag">Best Sellers</div>
+            <h2 className="section-title">Order <span>Your Favourites</span></h2>
+            <p className="section-sub">Our most-loved dishes, grilled fresh and ready for you today.</p>
+          </div>
+          <div className="products-grid">
+            {bestsellers.map(p => (
+              <ProductCard key={p.id} product={{...p, desc: p.short_desc, category: p.category_id}} />
+            ))}
+            {bestsellers.length === 0 && <div style={{gridColumn:'1/-1', textAlign:'center', color:'var(--text-muted)'}}>Loading menu...</div>}
+          </div>
+          <div style={{ textAlign: 'center', margin: '36px auto' }}>
+            <Link to="/shop" className="btn-primary">View Full Menu →</Link>
+          </div>
+        </div>
+      </section>
+
       {/* WHY US */}
       <section>
         <div className="container">
@@ -137,25 +157,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* BESTSELLERS */}
-      <section className="products-section">
-        <div className="container">
-          <div className="section-header">
-            <div className="section-tag">Best Sellers</div>
-            <h2 className="section-title">Order <span>Your Favourites</span></h2>
-            <p className="section-sub">Our most-loved dishes, grilled fresh and ready for you today.</p>
-          </div>
-          <div className="products-grid">
-            {bestsellers.map(p => (
-              <ProductCard key={p.id} product={{...p, desc: p.short_desc, category: p.category_id}} />
-            ))}
-            {bestsellers.length === 0 && <div style={{gridColumn:'1/-1', textAlign:'center', color:'var(--text-muted)'}}>Loading menu...</div>}
-          </div>
-          <div style={{ textAlign: 'center', margin: '36px auto' }}>
-            <Link to="/shop" className="btn-primary">View Full Menu →</Link>
-          </div>
-        </div>
-      </section>
 
       {/* TESTIMONIALS */}
       <section>

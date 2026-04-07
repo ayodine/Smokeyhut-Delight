@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { BarChart2, Package, Truck, CreditCard, Store, ShoppingBag, Users, Settings, LogOut, Globe, Menu, UserCog } from 'lucide-react';
+import { BarChart2, Package, Truck, CreditCard, Store, ShoppingBag, Users, Settings, LogOut, Globe, Menu, UserCog, MapPin } from 'lucide-react';
 
 const allNavItems = [
   { to: '/admin',          icon: BarChart2,  label: 'Overview',  end: true,  roles: ['Admin', 'Manager'] },
@@ -12,6 +12,7 @@ const allNavItems = [
   { to: '/admin/stores',   icon: Store,      label: 'Stores',    roles: ['Admin', 'Manager'] },
   { to: '/admin/products', icon: ShoppingBag,label: 'Products',  roles: ['Admin', 'Manager'] },
   { to: '/admin/customers',icon: Users,      label: 'Customers', roles: ['Admin', 'Manager'] },
+  { to: '/admin/zones',    icon: MapPin,     label: 'Zones',     roles: ['Admin', 'Manager'] },
   { to: '/admin/staff',    icon: UserCog,    label: 'Staff',     roles: ['Admin'] },
   { to: '/admin/settings', icon: Settings,   label: 'Settings',  roles: ['Admin', 'Manager'] },
 ];

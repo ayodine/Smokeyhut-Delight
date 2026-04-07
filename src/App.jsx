@@ -43,6 +43,7 @@ import Products from './pages/dashboard/Products';
 import Customers from './pages/dashboard/Customers';
 import Staff from './pages/dashboard/Staff';
 import Settings from './pages/dashboard/Settings';
+import DeliveryZones from './pages/dashboard/DeliveryZones';
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -99,6 +100,7 @@ export default function App() {
                   <Route path="products" element={<Products />} />
                   <Route path="customers" element={<Customers />} />
                   <Route path="staff" element={<Staff />} />
+                  <Route path="zones" element={<DeliveryZones />} />
                   <Route path="settings" element={<Settings />} />
                 </Route>
 

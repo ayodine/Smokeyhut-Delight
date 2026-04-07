@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Search, Loader2, FileText, Plus, Trash2, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { useOutletContext } from 'react-router-dom';
 
 const fmt = (n) => '₦' + Number(n).toLocaleString();
 const statuses = ['all', 'pending', 'processing', 'shipped', 'delivered', 'cancelled'];
@@ -119,21 +121,26 @@ function generateInvoice(order) {
 </body>
 </html>`;
 
-  const w = window.open('', '_blank');
-  if (w) { w.document.write(html); w.document.close(); }
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const w = window.open(url, '_blank');
+  if (w) { w.addEventListener('load', () => URL.revokeObjectURL(url)); }
 }
 
 const emptyNewOrder = {
-  name: '', phone: '', email: '', address: '',
+  name: '', phone: '', email: '', address: '', store: '',
   channel: 'WhatsApp', payment: 'cash', notes: '',
   items: [{ product: '', name: '', qty: 1, price: '' }],
 };
 
 export default function Orders() {
   const { userRole } = useAuth();
+  const { selectedStore } = useOutletContext() || {};
+  const { showToast } = useToast();
   const isAdmin = userRole === 'Admin';
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
+  const [storeList, setStoreList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -142,16 +149,25 @@ export default function Orders() {
   const [newOrder, setNewOrder] = useState(emptyNewOrder);
   const [savingNew, setSavingNew] = useState(false);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [selectedStore]);
 
   const fetchData = async () => {
     setLoading(true);
-    const [ordersRes, productsRes] = await Promise.all([
-      supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }),
+    let ordersQuery = supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false });
+    if (selectedStore && selectedStore !== 'all') {
+      ordersQuery = ordersQuery.eq('store_id', selectedStore);
+    }
+    const [ordersRes, productsRes, storesRes] = await Promise.all([
+      ordersQuery,
       supabase.from('products').select('id, name, price').order('name'),
+      supabase.from('stores').select('id, name').eq('is_active', true).order('id'),
     ]);
     if (ordersRes.data) setOrders(ordersRes.data);
     if (productsRes.data) setProducts(productsRes.data);
+    if (storesRes.data) {
+      setStoreList(storesRes.data);
+      if (storesRes.data.length > 0) setNewOrder(f => ({ ...f, store: String(storesRes.data[0].id) }));
+    }
     setLoading(false);
   };
 
@@ -211,6 +227,7 @@ export default function Orders() {
         customer_phone: newOrder.phone.trim(),
         delivery_address: newOrder.address.trim() || 'Manual / Offline',
         payment_method: newOrder.payment,
+        store_id: newOrder.store ? Number(newOrder.store) : null,
         total: newOrderTotal,
         delivery_fee: 0,
         status: 'pending',
@@ -231,6 +248,7 @@ export default function Orders() {
       await fetchData();
     } catch (err) {
       console.error('Manual order error:', err);
+      showToast('Save failed', err.message || 'Could not save order', 'error');
     } finally {
       setSavingNew(false);
     }
@@ -303,7 +321,25 @@ export default function Orders() {
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, fontSize: '0.88rem' }}>
                           <div><strong>Address:</strong> {order.delivery_address}</div>
                           <div><strong>Email:</strong> {order.customer_email || 'N/A'}</div>
-                          <div><strong>Store ID:</strong> {order.store_id || 'Unassigned'}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <strong>Store:</strong>
+                            {storeList.length > 1 ? (
+                              <select
+                                value={order.store_id || ''}
+                                onChange={async (e) => {
+                                  const storeId = e.target.value ? Number(e.target.value) : null;
+                                  await supabase.from('orders').update({ store_id: storeId }).eq('id', order.id);
+                                  setOrders(prev => prev.map(o => o.id === order.id ? { ...o, store_id: storeId } : o));
+                                }}
+                                style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.82rem' }}
+                              >
+                                <option value="">Unassigned</option>
+                                {storeList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                              </select>
+                            ) : (
+                              <span>{storeList.find(s => s.id === order.store_id)?.name || order.store_id || 'Unassigned'}</span>
+                            )}
+                          </div>
                           {channel && <div><strong>Channel:</strong> {channel}</div>}
                           {order.notes?.replace(/^\[via .+?\]\n?/, '') && (
                             <div><strong>Notes:</strong> {order.notes.replace(/^\[via .+?\]\n?/, '')}</div>
@@ -365,7 +401,7 @@ export default function Orders() {
             <h3 style={{ marginTop: 0, marginBottom: 6, fontFamily: "'Mona Sans','Mona-Sans','Helvetica Neue',sans-serif" }}>New Manual Order</h3>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 20 }}>Record an order that came through a non-website channel.</p>
 
-            {/* Channel & Payment */}
+            {/* Channel, Payment & Store */}
             <div className="form-row">
               <div className="form-group">
                 <label>Order Channel</label>
@@ -380,6 +416,14 @@ export default function Orders() {
                 </select>
               </div>
             </div>
+            {storeList.length > 0 && (
+              <div className="form-group">
+                <label>Store (fulfilling this order)</label>
+                <select value={newOrder.store} onChange={setField('store')}>
+                  {storeList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            )}
 
             {/* Customer Info */}
             <div className="form-row">
@@ -399,32 +443,42 @@ export default function Orders() {
                   <Plus size={12} /> Add Row
                 </button>
               </div>
-              {newOrder.items.map((item, i) => (
-                <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-                  {products.length > 0 ? (
-                    <select
-                      value={item.product}
-                      onChange={e => e.target.value === '__custom__' ? updateItemField(i, 'product', '') : pickProduct(i, e.target.value)}
-                      style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.85rem' }}
-                    >
-                      <option value="">— Custom item —</option>
-                      {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                  ) : (
-                    <input value={item.name} onChange={e => updateItemField(i, 'name', e.target.value)} placeholder="Item name" style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.85rem' }} />
-                  )}
-                  {products.length > 0 && !item.product && (
-                    <input value={item.name} onChange={e => updateItemField(i, 'name', e.target.value)} placeholder="Item name" style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.85rem', gridColumn: item.product ? '' : 'auto' }} />
-                  )}
-                  <input type="number" min="1" value={item.qty} onChange={e => updateItemField(i, 'qty', e.target.value)} placeholder="Qty" style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.85rem' }} />
-                  <input type="number" value={item.price} onChange={e => updateItemField(i, 'price', e.target.value)} placeholder="Price ₦" style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.85rem' }} />
-                  {newOrder.items.length > 1 && (
-                    <button type="button" onClick={() => removeItemRow(i)} style={{ background: '#fee2e2', border: 'none', borderRadius: 6, padding: '8px', cursor: 'pointer', color: '#991b1b', display: 'flex', alignItems: 'center' }}>
-                      <Trash2 size={14} />
-                    </button>
-                  )}
-                </div>
-              ))}
+              {newOrder.items.map((item, i) => {
+                const isCustom = products.length > 0 && !item.product;
+                return (
+                  <div key={i} style={{ marginBottom: 8 }}>
+                    {/* Row 1: product selector + (custom name if needed) */}
+                    <div style={{ display: 'grid', gridTemplateColumns: products.length > 0 ? (isCustom ? '1fr 1fr' : '1fr') : '1fr', gap: 8, marginBottom: 6 }}>
+                      {products.length > 0 ? (
+                        <select
+                          value={item.product}
+                          onChange={e => e.target.value ? pickProduct(i, e.target.value) : updateItemField(i, 'product', '')}
+                          style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.85rem' }}
+                        >
+                          <option value="">— Custom item —</option>
+                          {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                      ) : null}
+                      {isCustom && (
+                        <input value={item.name} onChange={e => updateItemField(i, 'name', e.target.value)} placeholder="Item name" style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.85rem' }} />
+                      )}
+                      {products.length === 0 && (
+                        <input value={item.name} onChange={e => updateItemField(i, 'name', e.target.value)} placeholder="Item name" style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.85rem' }} />
+                      )}
+                    </div>
+                    {/* Row 2: qty + price + delete */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'center' }}>
+                      <input type="number" min="1" value={item.qty} onChange={e => updateItemField(i, 'qty', e.target.value)} placeholder="Qty" style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.85rem' }} />
+                      <input type="number" value={item.price} onChange={e => updateItemField(i, 'price', e.target.value)} placeholder="Price ₦" style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.85rem' }} />
+                      {newOrder.items.length > 1 ? (
+                        <button type="button" onClick={() => removeItemRow(i)} style={{ background: '#fee2e2', border: 'none', borderRadius: 6, padding: '8px', cursor: 'pointer', color: '#991b1b', display: 'flex', alignItems: 'center' }}>
+                          <Trash2 size={14} />
+                        </button>
+                      ) : <div />}
+                    </div>
+                  </div>
+                );
+              })}
               <div style={{ textAlign: 'right', fontWeight: 800, fontSize: '0.95rem', color: 'var(--red)', marginTop: 6 }}>
                 Total: {fmt(newOrderTotal)}
               </div>

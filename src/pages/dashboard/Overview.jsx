@@ -1,26 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { DollarSign, Package, Truck, Store, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useOutletContext } from 'react-router-dom';
 
 const fmt = (n) => '₦' + n.toLocaleString();
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default function Overview() {
+  const { selectedStore } = useOutletContext() || {};
   const [orders, setOrders] = useState([]);
   const [stores, setStores] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [selectedStore]);
 
   const fetchData = async () => {
     setLoading(true);
+    let ordersQuery = supabase.from('orders').select('*').order('created_at', { ascending: false });
+    if (selectedStore && selectedStore !== 'all') {
+      ordersQuery = ordersQuery.eq('store_id', selectedStore);
+    }
     const [ordersRes, storesRes] = await Promise.all([
-      supabase.from('orders').select('*').order('created_at', { ascending: false }),
+      ordersQuery,
       supabase.from('stores').select('id', { count: 'exact' })
     ]);
-    
+
     if (ordersRes.data) setOrders(ordersRes.data);
     if (storesRes.data) setStores(storesRes.data.length);
 

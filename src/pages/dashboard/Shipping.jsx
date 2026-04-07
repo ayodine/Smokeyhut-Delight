@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Package, Truck, CheckCircle, Loader2, MapPin, Banknote } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../context/ToastContext';
+import { useOutletContext } from 'react-router-dom';
 
 const fmt = (n) => '₦' + Number(n).toLocaleString();
 
@@ -12,6 +13,7 @@ const STATUS_FLOW = {
 };
 
 export default function Shipping() {
+  const { selectedStore } = useOutletContext() || {};
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(null);
@@ -26,15 +28,19 @@ export default function Shipping() {
     { key: 'delivered', label: 'Delivered' },
   ];
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [selectedStore]);
 
   const fetchData = async () => {
     setLoading(true);
-    const { data } = await supabase
+    let query = supabase
       .from('orders')
       .select('id, customer_name, customer_phone, delivery_address, total, delivery_fee, status, created_at, notes')
       .not('status', 'in', '("cancelled")')
       .order('created_at', { ascending: false });
+    if (selectedStore && selectedStore !== 'all') {
+      query = query.eq('store_id', selectedStore);
+    }
+    const { data } = await query;
     if (data) setOrders(data);
     setLoading(false);
   };

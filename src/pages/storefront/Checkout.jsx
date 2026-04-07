@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useCart } from '../../context/CartContext';
 import { useToast } from '../../context/ToastContext';
-import { useSettings } from '../../context/SettingsContext';
-import { supabase } from '../../lib/supabase';
-import { ShoppingCart, Truck, CheckCircle, ChevronRight, Store, Loader2, Home, ShoppingBag, CreditCard } from 'lucide-react';
+import { supabase, publicSupabase } from '../../lib/supabase';
+import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher';
+import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Home, ShoppingBag, CreditCard, Search, MapPin } from 'lucide-react';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -27,119 +27,161 @@ async function notify(type, order) {
 export default function Checkout() {
   const { items, total, clearCart } = useCart();
   const { showToast } = useToast();
-  const { settings } = useSettings();
   const fmt = (n) => '₦' + Number(n).toLocaleString();
 
-  const initialDeliveryId = settings.deliveryOptions?.[0]?.id || '';
-  const [deliveryId, setDeliveryId] = useState(initialDeliveryId);
+  // Delivery state
+  const [deliveryType, setDeliveryType] = useState('delivery'); // 'delivery' | 'pickup'
+  const [zones, setZones] = useState([]);
+  const [locationQuery, setLocationQuery] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [selectedMatch, setSelectedMatch] = useState(null); // { zone, area, matchedOn }
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const inputRef = useRef(null);
+
+  // Order form state
   const [form, setForm] = useState({ firstName: '', lastName: '', phone: '', email: '', address: '', city: 'Lagos', notes: '' });
   const [processing, setProcessing] = useState(false);
   const [transferProcessing, setTransferProcessing] = useState(false);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [successRef, setSuccessRef] = useState(null);
-  const [successMethod, setSuccessMethod] = useState('paystack'); // 'paystack' | 'transfer'
+  const [successMethod, setSuccessMethod] = useState('paystack');
 
-  const selectedOption = settings.deliveryOptions?.find(o => o.id === deliveryId) || { name: 'Delivery', fee: 0 };
-  const isPickup = selectedOption.name.toLowerCase().includes('pickup');
+  const [stores, setStores] = useState([]);
+  const [selectedStoreId, setSelectedStoreId] = useState(null);
+
+  // Fetch zones and active stores on mount
+  useEffect(() => {
+    fetchDeliveryZones(publicSupabase).then(setZones);
+    publicSupabase
+      .from('stores')
+      .select('id, name, address')
+      .eq('is_active', true)
+      .order('id')
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          setStores(data);
+          setSelectedStoreId(data[0].id); // default to first store
+        }
+      });
+  }, []);
+
+  // Update suggestions as user types
+  useEffect(() => {
+    if (locationQuery.trim().length >= 2) {
+      setSuggestions(matchDeliveryZone(locationQuery, zones));
+      setShowSuggestions(true);
+    } else {
+      setSuggestions([]);
+      setShowSuggestions(false);
+    }
+  }, [locationQuery, zones]);
+
+  const isPickup = deliveryType === 'pickup';
   const allFreeShipping = items.length > 0 && items.every(i => i.free_shipping === true);
-  const deliveryFee = (allFreeShipping && !isPickup) ? 0 : selectedOption.fee;
+  const deliveryFee = isPickup ? 0 : (allFreeShipping ? 0 : (selectedMatch?.zone.price ?? 0));
   const grandTotal = total + deliveryFee;
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
-  // Save pending order to Supabase before redirecting to Paystack
-  const saveOrder = async () => {
-    try {
-      const orderId = 'SHD-' + Date.now().toString(36).toUpperCase();
-      const customerName = `${form.firstName} ${form.lastName}`.trim();
-      const deliveryAddress = isPickup ? 'Store Pickup' : `${form.address}, ${form.city}`;
+  const handleSelectSuggestion = (match) => {
+    setSelectedMatch(match);
+    setLocationQuery(match.area ? match.area.name : match.zone.name);
+    setShowSuggestions(false);
+    inputRef.current?.blur();
+  };
 
-      // 1. Create Order
-      const { error: orderError } = await supabase
-        .from('orders')
-        .insert([{
-          id: orderId,
-          customer_name: customerName,
-          customer_email: form.email || null,
-          customer_phone: form.phone,
-          delivery_address: deliveryAddress,
-          payment_method: 'paystack',
-          total: grandTotal,
-          delivery_fee: deliveryFee,
-          status: 'pending',
-          notes: form.notes || null,
-        }]);
-
-      if (orderError) throw orderError;
-
-      // 2. Create Order Items
-      const { error: itemsError } = await supabase.from('order_items').insert(
-        items.map(i => ({ order_id: orderId, product_id: i.id || null, name: i.name, price: i.price, qty: i.qty }))
-      );
-
-      if (itemsError) throw itemsError;
-
-      return orderId;
-    } catch (err) {
-      console.error('Error saving pending order:', err);
-      showToast('Order creation failed', err.message, 'error');
-      return null;
+  const handleDeliveryTypeChange = (type) => {
+    setDeliveryType(type);
+    if (type === 'pickup') {
+      setSelectedMatch(null);
+      setLocationQuery('');
+      // Reset to first store when switching to pickup
+      if (stores.length > 0) setSelectedStoreId(stores[0].id);
     }
   };
 
-  const handlePaystack = async () => {
+  // Save pending order to Supabase before redirecting to Paystack
+  const buildOrderPayload = (orderId, method) => {
+    const customerName = `${form.firstName} ${form.lastName}`.trim();
+    const pickupStore = stores.find(s => s.id === selectedStoreId);
+    const deliveryAddress = isPickup
+      ? `Store Pickup — ${pickupStore?.name || 'Store'}`
+      : `${form.address}, ${selectedMatch?.area?.name || selectedMatch?.zone?.name || form.city}`;
+    const deliveryZoneName = isPickup ? 'Store Pickup' : (selectedMatch?.zone?.name || '');
+
+    return {
+      id: orderId,
+      customer_name: customerName,
+      customer_email: form.email || null,
+      customer_phone: form.phone,
+      delivery_address: deliveryAddress,
+      store_id: selectedStoreId,
+      payment_method: method,
+      total: grandTotal,
+      delivery_fee: deliveryFee,
+      status: 'pending',
+      notes: form.notes || null,
+    };
+  };
+
+  const validateForm = () => {
     if (!form.firstName.trim() || !form.phone.trim()) {
       showToast('Required fields missing', 'Please enter your name and phone number', 'error');
-      return;
+      return false;
     }
     if (!isPickup && !form.address.trim()) {
       showToast('Address required', 'Please enter your delivery address', 'error');
-      return;
+      return false;
+    }
+    if (!isPickup && !selectedMatch) {
+      showToast('Location required', 'Please type and select your delivery area', 'error');
+      inputRef.current?.focus();
+      return false;
     }
     if (items.length === 0) {
       showToast('Cart is empty', 'Add items to your cart first', 'error');
-      return;
+      return false;
     }
+    return true;
+  };
+
+  const handlePaystack = async () => {
+    if (!validateForm()) return;
     if (!window.PaystackPop) {
       showToast('Payment unavailable', 'Payment service failed to load. Please refresh and try again.', 'error');
       return;
     }
 
     setProcessing(true);
-
     try {
-      // 1. Create pending order in Supabase
-      const orderId = await saveOrder();
-      if (!orderId) {
-        setProcessing(false);
-        return;
-      }
+      const orderId = 'SHD-' + Date.now().toString(36).toUpperCase();
+      const { error: orderError } = await publicSupabase.from('orders').insert([buildOrderPayload(orderId, 'paystack')]);
+      if (orderError) throw orderError;
 
-      // 2. Open Paystack popup modal directly with public key
+      const { error: itemsError } = await publicSupabase.from('order_items').insert(
+        items.map(i => ({ order_id: orderId, product_id: i.id || null, name: i.name, price: i.price, qty: i.qty }))
+      );
+      if (itemsError) throw itemsError;
+
       const customerEmail = form.email?.trim() || `${form.phone.replace(/\D/g, '')}@smokeyhut.com`;
-
-      // Guard to prevent onClose toast firing after a successful payment
       let paymentSucceeded = false;
 
       const handler = window.PaystackPop.setup({
         key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
         email: customerEmail,
-        amount: Math.round(grandTotal * 100), // kobo
+        amount: Math.round(grandTotal * 100),
         ref: orderId,
         metadata: {
           order_id: orderId,
           customer_name: `${form.firstName} ${form.lastName}`.trim(),
           phone: form.phone,
         },
-        // Paystack v1 inline uses "callback", NOT "onSuccess"
         callback: async (response) => {
           paymentSucceeded = true;
-          await supabase.from('orders').update({ status: 'processing' }).eq('id', orderId);
+          await publicSupabase.from('orders').update({ status: 'processing' }).eq('id', orderId);
           clearCart();
           setProcessing(false);
           setSuccessMethod('paystack');
           setSuccessRef(response.reference);
-          // Send confirmation email + WhatsApp to customer, alert admin
           notify('order_confirmed', {
             id: orderId,
             customer_name: `${form.firstName} ${form.lastName}`.trim(),
@@ -158,7 +200,6 @@ export default function Checkout() {
       });
 
       handler.openIframe();
-
     } catch (error) {
       console.error('Checkout error:', error);
       showToast('Payment Error', error.message || 'An unexpected error occurred.', 'error');
@@ -166,41 +207,22 @@ export default function Checkout() {
     }
   };
 
-
   const handleTransfer = async () => {
-    if (!form.firstName.trim() || !form.phone.trim()) {
-      showToast('Required fields missing', 'Please enter your name and phone number first', 'error');
-      return;
-    }
-    if (!isPickup && !form.address.trim()) {
-      showToast('Address required', 'Please enter your delivery address', 'error');
-      return;
-    }
-    if (items.length === 0) return;
+    if (!validateForm()) return;
     setTransferProcessing(true);
     try {
       const orderId = 'SHD-' + Date.now().toString(36).toUpperCase();
-      const customerName = `${form.firstName} ${form.lastName}`.trim();
-      const deliveryAddress = isPickup ? 'Store Pickup' : `${form.address}, ${form.city}`;
-      const { error } = await supabase.from('orders').insert([{
+      const { error } = await publicSupabase.from('orders').insert([buildOrderPayload(orderId, 'bank_transfer')]);
+      if (error) throw error;
+      await publicSupabase.from('order_items').insert(
+        items.map(i => ({ order_id: orderId, product_id: i.id || null, name: i.name, price: i.price, qty: i.qty }))
+      );
+      notify('transfer_made', {
         id: orderId,
-        customer_name: customerName,
-        customer_email: form.email || null,
+        customer_name: `${form.firstName} ${form.lastName}`.trim(),
         customer_phone: form.phone,
-        delivery_address: deliveryAddress,
-        payment_method: 'bank_transfer',
         total: grandTotal,
-        delivery_fee: deliveryFee,
-        status: 'pending',
-        notes: form.notes || null,
-      }]);
-      if (!error) {
-        await supabase.from('order_items').insert(
-          items.map(i => ({ order_id: orderId, product_id: i.id || null, name: i.name, price: i.price, qty: i.qty }))
-        );
-        // Alert admin by email
-        notify('transfer_made', { id: orderId, customer_name: customerName, customer_phone: form.phone, total: grandTotal });
-      }
+      });
       clearCart();
       setSuccessMethod('transfer');
       setSuccessRef(orderId);
@@ -210,7 +232,6 @@ export default function Checkout() {
     setTransferProcessing(false);
   };
 
-  // Show success modal regardless of cart state (clearCart empties items)
   if (successRef) {
     return (
       <div style={{ minHeight: '70vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -273,68 +294,170 @@ export default function Checkout() {
           <div className="checkout-grid">
             <div className="checkout-form-card">
               <h3>Delivery Method</h3>
-              <div className="form-group" style={{ marginBottom: 24, position: 'relative' }}>
-                <label>Select preferred location/method</label>
-                <div
-                  onClick={() => setDropdownOpen(!dropdownOpen)}
+
+              {/* Delivery type toggle */}
+              <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+                <button
+                  onClick={() => handleDeliveryTypeChange('delivery')}
                   style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    width: '100%', background: 'var(--black)', border: `1px solid ${dropdownOpen ? 'var(--red)' : 'var(--border-subtle)'}`,
-                    borderRadius: 8, padding: '14px 16px', color: 'var(--text)',
-                    fontSize: '0.95rem', cursor: 'pointer', transition: 'all 0.2s',
-                    boxShadow: dropdownOpen ? '0 0 0 3px rgba(192,32,31,0.1)' : 'none'
+                    flex: 1, padding: '12px 16px', borderRadius: 10, border: `2px solid ${deliveryType === 'delivery' ? 'var(--red)' : 'var(--border-subtle)'}`,
+                    background: deliveryType === 'delivery' ? 'rgba(192,32,31,0.08)' : 'var(--black)',
+                    color: deliveryType === 'delivery' ? 'var(--red)' : 'var(--text-muted)',
+                    fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, transition: 'all 0.2s'
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    {isPickup ? <Store size={18} color="var(--red)" /> : <Truck size={18} color="var(--red)" />}
-                    <span style={{ fontWeight: 700 }}>{selectedOption.name}</span>
-                    <span style={{ color: 'var(--text-muted)' }}>— {deliveryFee === 0 ? 'Free' : fmt(deliveryFee)}</span>
-                  </div>
-                  <ChevronRight size={18} color="var(--text-muted)" style={{ transform: dropdownOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
-                </div>
+                  <Truck size={18} /> Delivery
+                </button>
+                <button
+                  onClick={() => handleDeliveryTypeChange('pickup')}
+                  style={{
+                    flex: 1, padding: '12px 16px', borderRadius: 10, border: `2px solid ${deliveryType === 'pickup' ? 'var(--red)' : 'var(--border-subtle)'}`,
+                    background: deliveryType === 'pickup' ? 'rgba(192,32,31,0.08)' : 'var(--black)',
+                    color: deliveryType === 'pickup' ? 'var(--red)' : 'var(--text-muted)',
+                    fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, transition: 'all 0.2s'
+                  }}
+                >
+                  <Store size={18} /> Store Pickup
+                </button>
+              </div>
 
-                {dropdownOpen && (
-                  <>
-                    <div onClick={() => setDropdownOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 10 }} />
+              {/* Delivery area search */}
+              {deliveryType === 'delivery' && (
+                <div className="form-group" style={{ marginBottom: 20, position: 'relative' }}>
+                  <label>Your Area / Location *</label>
+                  <div style={{ position: 'relative' }}>
+                    <Search size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                    <input
+                      ref={inputRef}
+                      value={locationQuery}
+                      onChange={e => { setLocationQuery(e.target.value); setSelectedMatch(null); }}
+                      onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
+                      onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                      placeholder="Type your area, e.g. Lekki, Surulere, Ikeja..."
+                      style={{ paddingLeft: 40 }}
+                      autoComplete="off"
+                    />
+                  </div>
+
+                  {/* Suggestions dropdown */}
+                  {showSuggestions && suggestions.length > 0 && (
                     <div style={{
                       position: 'absolute', top: '100%', left: 0, right: 0,
                       background: 'var(--card-bg)', border: '1px solid var(--border-subtle)',
-                      borderRadius: 12, marginTop: 8, boxShadow: 'var(--shadow-lg)',
-                      zIndex: 20, overflow: 'hidden', maxHeight: 320, overflowY: 'auto'
+                      borderRadius: 12, marginTop: 6, boxShadow: 'var(--shadow-lg)',
+                      zIndex: 20, overflow: 'hidden'
                     }}>
-                      {settings.deliveryOptions?.map((opt, index) => {
-                        const isOptPickup = opt.name.toLowerCase().includes('pickup');
-                        const isSelected = deliveryId === opt.id;
-                        return (
-                          <div
-                            key={opt.id}
-                            onClick={() => { setDeliveryId(opt.id); setDropdownOpen(false); }}
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: 14, padding: '16px 20px',
-                              cursor: 'pointer', borderBottom: index === settings.deliveryOptions.length - 1 ? 'none' : '1px solid var(--border-subtle)',
-                              background: isSelected ? 'rgba(192,32,31,0.04)' : 'transparent',
-                              transition: 'background 0.2s'
-                            }}
-                            onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = 'var(--black2)'; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.background = isSelected ? 'rgba(192,32,31,0.04)' : 'transparent'; }}
-                          >
-                            <div style={{ background: isSelected ? 'var(--red)' : 'var(--black2)', padding: 10, borderRadius: 8, display: 'flex', transition: 'background 0.2s' }}>
-                              {isOptPickup ? <Store size={18} color={isSelected ? '#fff' : "var(--text-muted)"} /> : <Truck size={18} color={isSelected ? '#fff' : "var(--text-muted)"} />}
-                            </div>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontWeight: isSelected ? 800 : 600, color: isSelected ? 'var(--red)' : 'var(--text)', marginBottom: 2 }}>{opt.name}</div>
-                              <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{opt.fee === 0 ? 'Free pickup directly at the store' : `Delivery fare: ${fmt(opt.fee)}`}</div>
-                            </div>
-                            {isSelected && <CheckCircle size={20} color="var(--red)" />}
+                      {suggestions.map((match, i) => (
+                        <div
+                          key={i}
+                          onMouseDown={() => handleSelectSuggestion(match)}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px',
+                            cursor: 'pointer', borderBottom: i === suggestions.length - 1 ? 'none' : '1px solid var(--border-subtle)',
+                            transition: 'background 0.15s'
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'var(--black2)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                        >
+                          <div style={{ background: 'var(--black2)', padding: 8, borderRadius: 8, display: 'flex', flexShrink: 0 }}>
+                            <MapPin size={16} color="var(--red)" />
                           </div>
-                        );
-                      })}
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{match.area ? match.area.name : match.zone.name}</div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{match.zone.name}</div>
+                          </div>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--red)', flexShrink: 0 }}>
+                            {fmt(match.zone.price)}
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  </>
-                )}
-              </div>
+                  )}
 
-              <h3 style={{ marginTop: 32 }}>Customer Info</h3>
+                  {/* No results hint */}
+                  {showSuggestions && locationQuery.trim().length >= 2 && suggestions.length === 0 && (
+                    <div style={{
+                      position: 'absolute', top: '100%', left: 0, right: 0,
+                      background: 'var(--card-bg)', border: '1px solid var(--border-subtle)',
+                      borderRadius: 12, marginTop: 6, padding: '14px 16px', zIndex: 20,
+                      color: 'var(--text-muted)', fontSize: '0.88rem'
+                    }}>
+                      No areas found for "{locationQuery}". Try a nearby area or contact us.
+                    </div>
+                  )}
+
+                  {/* Selected zone display */}
+                  {selectedMatch && (
+                    <div style={{
+                      marginTop: 10, padding: '10px 14px', background: 'rgba(192,32,31,0.08)',
+                      border: '1px solid rgba(192,32,31,0.3)', borderRadius: 10,
+                      display: 'flex', alignItems: 'center', gap: 10
+                    }}>
+                      <CheckCircle size={16} color="var(--red)" />
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>{selectedMatch.zone.name}</span>
+                        {allFreeShipping
+                          ? <span style={{ marginLeft: 8, fontSize: '0.75rem', background: '#dcfce7', color: '#166534', padding: '1px 7px', borderRadius: 20, fontWeight: 800 }}>FREE SHIP</span>
+                          : <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginLeft: 8 }}>— {fmt(selectedMatch.zone.price)}</span>
+                        }
+                      </div>
+                      <button
+                        onClick={() => { setSelectedMatch(null); setLocationQuery(''); inputRef.current?.focus(); }}
+                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.8rem' }}
+                      >
+                        Change
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Pickup store selector */}
+              {deliveryType === 'pickup' && (
+                <div style={{ marginBottom: 20 }}>
+                  {stores.length > 1 && (
+                    <div className="form-group" style={{ marginBottom: 12 }}>
+                      <label>Select Pickup Location</label>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {stores.map(store => (
+                          <div
+                            key={store.id}
+                            onClick={() => setSelectedStoreId(store.id)}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
+                              borderRadius: 10, cursor: 'pointer', transition: 'all 0.2s',
+                              border: `2px solid ${selectedStoreId === store.id ? 'var(--red)' : 'var(--border-subtle)'}`,
+                              background: selectedStoreId === store.id ? 'rgba(192,32,31,0.06)' : 'var(--black)',
+                            }}
+                          >
+                            <div style={{
+                              width: 18, height: 18, borderRadius: '50%', border: `2px solid ${selectedStoreId === store.id ? 'var(--red)' : 'var(--border-subtle)'}`,
+                              background: selectedStoreId === store.id ? 'var(--red)' : 'transparent', flexShrink: 0, transition: 'all 0.2s'
+                            }} />
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: '0.9rem', color: selectedStoreId === store.id ? 'var(--red)' : 'var(--text)' }}>{store.name}</div>
+                              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{store.address}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div style={{ padding: '12px 16px', background: 'rgba(192,32,31,0.06)', border: '1px solid rgba(192,32,31,0.2)', borderRadius: 10, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                    <Store size={18} color="var(--red)" style={{ flexShrink: 0, marginTop: 2 }} />
+                    <div>
+                      <div style={{ fontWeight: 700, marginBottom: 2, fontSize: '0.9rem' }}>
+                        {stores.length === 1 ? stores[0]?.name : (stores.find(s => s.id === selectedStoreId)?.name || 'Store Pickup')} — Free
+                      </div>
+                      <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                        {stores.find(s => s.id === selectedStoreId)?.address || 'Ready from 10:30am.'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <h3 style={{ marginTop: 8 }}>Customer Info</h3>
               <div className="form-row">
                 <div className="form-group"><label>First Name *</label><input value={form.firstName} onChange={set('firstName')} placeholder="First name" /></div>
                 <div className="form-group"><label>Last Name</label><input value={form.lastName} onChange={set('lastName')} placeholder="Last name" /></div>
@@ -384,7 +507,12 @@ export default function Checkout() {
               ))}
               <div className="order-line" style={{ marginTop: 16 }}><span>Subtotal</span><span>{fmt(total)}</span></div>
               <div className="order-line">
-                <span>Delivery ({selectedOption.name}){allFreeShipping && !isPickup && <span style={{ marginLeft: 6, fontSize: '0.7rem', background: '#dcfce7', color: '#166534', padding: '1px 7px', borderRadius: 20, fontWeight: 800 }}>FREE SHIP</span>}</span>
+                <span>
+                  Delivery
+                  {isPickup && ' (Store Pickup)'}
+                  {!isPickup && selectedMatch && ` (${selectedMatch.zone.name})`}
+                  {allFreeShipping && !isPickup && <span style={{ marginLeft: 6, fontSize: '0.7rem', background: '#dcfce7', color: '#166534', padding: '1px 7px', borderRadius: 20, fontWeight: 800 }}>FREE SHIP</span>}
+                </span>
                 <span>{deliveryFee === 0 ? 'Free' : fmt(deliveryFee)}</span>
               </div>
               <div className="order-line" style={{ borderBottom: 'none', paddingTop: 16 }}>
@@ -413,7 +541,6 @@ export default function Checkout() {
           </div>
         </div>
       </section>
-
     </div>
   );
 }

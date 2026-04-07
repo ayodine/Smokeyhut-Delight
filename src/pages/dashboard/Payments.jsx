@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { DollarSign, CreditCard, Landmark, Banknote, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useOutletContext } from 'react-router-dom';
 
 const fmt = (n) => '₦' + n.toLocaleString();
 
 export default function Payments() {
+  const { selectedStore } = useOutletContext() || {};
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -13,16 +15,19 @@ export default function Payments() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [selectedStore]);
 
   const fetchData = async () => {
     setLoading(true);
-    // Payments are stored on the orders table — no separate payments table
-    const { data } = await supabase
+    let query = supabase
       .from('orders')
-      .select('id, customer_name, customer_email, total, payment_method, status, created_at')
+      .select('id, customer_name, customer_email, total, payment_method, status, created_at, store_id')
       .not('payment_method', 'is', null)
       .order('created_at', { ascending: false });
+    if (selectedStore && selectedStore !== 'all') {
+      query = query.eq('store_id', selectedStore);
+    }
+    const { data } = await query;
     if (data) setPayments(data);
     setLoading(false);
   };

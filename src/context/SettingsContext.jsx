@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { publicSupabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 
 const SettingsContext = createContext(null);
 
@@ -32,13 +34,33 @@ export function SettingsProvider({ children }) {
     return defaultSettings;
   });
 
+  // Always fetch fresh delivery options from Supabase on mount
+  useEffect(() => {
+    publicSupabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'delivery_options')
+      .single()
+      .then(({ data, error }) => {
+        if (!error && Array.isArray(data?.value) && data.value.length > 0) {
+          setSettingsState(prev => ({ ...prev, deliveryOptions: data.value }));
+        }
+      });
+  }, []);
+
   useEffect(() => {
     localStorage.setItem('smokey_settings', JSON.stringify(settings));
   }, [settings]);
 
-  // Merge so we can update only parts of the settings
-  const setSettings = (newSettings) => {
+  const setSettings = async (newSettings) => {
     setSettingsState(prev => ({ ...prev, ...newSettings }));
+    if (newSettings.deliveryOptions) {
+      const { error } = await supabase
+        .from('app_settings')
+        .upsert({ key: 'delivery_options', value: newSettings.deliveryOptions, updated_at: new Date().toISOString() });
+      if (error) return { error };
+    }
+    return { error: null };
   };
 
   return (
