@@ -80,7 +80,6 @@ function generateInvoice(order) {
     <div class="label">Receipt</div>
     <div class="value">${order.id}</div>
     <div class="sub">${dateStr}</div>
-    <div style="margin-top:2mm"><span class="badge">${order.status}</span></div>
   </div>
 
   <hr class="divider" />
@@ -218,7 +217,7 @@ export default function Orders() {
   });
 
   const pickProduct = (i, productId) => {
-    const p = products.find(pr => pr.id === productId);
+    const p = products.find(pr => String(pr.id) === String(productId));
     setNewOrder(f => {
       const items = [...f.items];
       items[i] = { ...items[i], product: productId, name: p ? p.name : '', price: p ? String(p.price) : '' };
