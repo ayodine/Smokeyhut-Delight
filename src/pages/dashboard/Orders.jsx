@@ -24,99 +24,115 @@ function generateInvoice(order) {
   const channel = getChannel(order.notes);
   const notes = order.notes ? order.notes.replace(/^\[via .+?\]\n?/, '') : '';
 
+  const logoUrl = window.location.origin + '/logo.svg';
+
   const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Invoice ${order.id} — Smokeyhut Delight</title>
+  <title>Receipt ${order.id} — Smokeyhut Delight</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #1A1610; max-width: 720px; margin: 0 auto; font-size: 14px; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 36px; padding-bottom: 24px; border-bottom: 2px solid #eee; }
-    .brand-name { font-size: 1.6rem; font-weight: 900; letter-spacing: -0.5px; }
-    .brand-name span { color: #C0201F; }
-    .brand-addr { font-size: 0.78rem; color: #5C5247; margin-top: 4px; }
-    .inv-meta h2 { font-size: 2rem; font-weight: 900; color: #C0201F; line-height: 1; }
-    .inv-meta p { font-size: 0.82rem; color: #5C5247; margin-top: 4px; }
-    .inv-meta .ref { font-weight: 700; color: #1A1610; }
-    .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; background: #fee2e2; color: #991b1b; }
-    .badge.delivered { background: #dcfce7; color: #166534; }
-    .badge.processing { background: #fef9c3; color: #854d0e; }
-    .badge.shipped { background: #dbeafe; color: #1e40af; }
-    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 28px; }
-    .info-block h4 { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 1px; color: #5C5247; margin-bottom: 6px; }
-    .info-block p { font-size: 0.88rem; line-height: 1.6; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 0; }
-    thead th { background: #C0201F; color: #fff; padding: 10px 14px; text-align: left; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; }
-    tbody td { padding: 11px 14px; border-bottom: 1px solid #f0ece5; font-size: 0.88rem; }
-    tbody tr:last-child td { border-bottom: none; }
-    .totals-table { width: 100%; border-collapse: collapse; margin-top: 0; }
-    .totals-table td { padding: 7px 14px; font-size: 0.88rem; }
-    .totals-table .total-row td { font-size: 1.05rem; font-weight: 900; color: #C0201F; padding-top: 12px; border-top: 2px solid #C0201F; }
-    .table-wrap { border: 1px solid #eee; border-radius: 8px; overflow: hidden; margin-bottom: 16px; }
-    .footer { margin-top: 36px; text-align: center; color: #5C5247; font-size: 0.78rem; border-top: 1px solid #eee; padding-top: 20px; line-height: 1.8; }
-    @media print { body { padding: 20px; } @page { margin: 16mm; } }
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      width: 80mm;
+      max-width: 80mm;
+      margin: 0 auto;
+      padding: 4mm 4mm 8mm;
+      font-size: 11px;
+      color: #000;
+      background: #fff;
+    }
+    .center { text-align: center; }
+    .logo { width: 36mm; height: auto; display: block; margin: 0 auto 3mm; }
+    .brand { font-size: 14px; font-weight: 900; letter-spacing: 0.5px; }
+    .brand span { color: #C0201F; }
+    .sub { font-size: 9px; color: #555; margin-top: 1mm; }
+    .divider { border: none; border-top: 1px dashed #aaa; margin: 3mm 0; }
+    .divider-solid { border: none; border-top: 1px solid #000; margin: 3mm 0; }
+    .label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: #555; }
+    .value { font-size: 11px; font-weight: 700; }
+    .row { display: flex; justify-content: space-between; margin-bottom: 1.5mm; font-size: 11px; }
+    .row.bold { font-weight: 700; }
+    .row.total { font-size: 13px; font-weight: 900; border-top: 1px solid #000; padding-top: 2mm; margin-top: 1mm; }
+    .item-name { flex: 1; padding-right: 2mm; }
+    .item-qty { width: 8mm; text-align: center; }
+    .item-price { width: 20mm; text-align: right; }
+    .badge { display: inline-block; border: 1px solid #000; padding: 1px 6px; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; border-radius: 3px; }
+    .footer { font-size: 9px; color: #555; text-align: center; line-height: 1.8; margin-top: 4mm; }
+    @media print {
+      body { margin: 0; padding: 4mm; }
+      @page { size: 80mm auto; margin: 0; }
+    }
   </style>
 </head>
 <body>
-  <div class="header">
-    <div>
-      <div class="brand-name">Smokeyhut <span>Delight</span></div>
-      <div class="brand-addr">13 McNeil St, Yaba, Lagos · smokeyhutdelight.com</div>
-    </div>
-    <div class="inv-meta" style="text-align:right">
-      <h2>INVOICE</h2>
-      <p class="ref">${order.id}</p>
-      <p>${dateStr}</p>
-      <p style="margin-top:6px"><span class="badge ${order.status}">${order.status}</span></p>
-    </div>
+  <div class="center">
+    <img src="${logoUrl}" class="logo" alt="Smokeyhut Delight" onerror="this.style.display='none'" />
+    <div class="brand">Smokeyhut <span>Delight</span></div>
+    <div class="sub">13 McNeil St, Yaba, Lagos</div>
+    <div class="sub">smokeyhutdelight.com</div>
   </div>
 
-  <div class="info-grid">
-    <div class="info-block">
-      <h4>Bill To</h4>
-      <p><strong>${order.customer_name}</strong></p>
-      <p>${order.customer_phone}</p>
-      ${order.customer_email ? `<p>${order.customer_email}</p>` : ''}
-    </div>
-    <div class="info-block">
-      <h4>Delivery Address</h4>
-      <p>${order.delivery_address || '—'}</p>
-      <h4 style="margin-top:12px">Payment Method</h4>
-      <p>${(order.payment_method || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</p>
-      ${channel ? `<h4 style="margin-top:12px">Order Channel</h4><p>${channel}</p>` : ''}
-    </div>
+  <hr class="divider" />
+
+  <div class="center" style="margin-bottom:2mm">
+    <div class="label">Receipt</div>
+    <div class="value">${order.id}</div>
+    <div class="sub">${dateStr}</div>
+    <div style="margin-top:2mm"><span class="badge">${order.status}</span></div>
   </div>
 
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Amount</th></tr></thead>
-      <tbody>
-        ${items.map(item => `
-          <tr>
-            <td>${item.name}</td>
-            <td style="text-align:center">${item.qty}</td>
-            <td style="text-align:right">₦${Number(item.price).toLocaleString()}</td>
-            <td style="text-align:right">₦${(item.price * item.qty).toLocaleString()}</td>
-          </tr>`).join('')}
-      </tbody>
-    </table>
+  <hr class="divider" />
+
+  <div style="margin-bottom:2mm">
+    <div class="label">Customer</div>
+    <div class="value">${order.customer_name}</div>
+    <div class="sub">${order.customer_phone}</div>
+    ${order.customer_email ? `<div class="sub">${order.customer_email}</div>` : ''}
   </div>
 
-  <div style="display:flex;justify-content:flex-end">
-    <table class="totals-table" style="max-width:280px">
-      <tr><td style="color:#5C5247">Subtotal</td><td style="text-align:right">₦${subtotal.toLocaleString()}</td></tr>
-      <tr><td style="color:#5C5247">Delivery Fee</td><td style="text-align:right">${deliveryFee > 0 ? '₦' + deliveryFee.toLocaleString() : 'Free'}</td></tr>
-      ${notes ? `<tr><td colspan="2" style="color:#5C5247;font-size:0.8rem;padding-top:8px">Notes: ${notes}</td></tr>` : ''}
-      <tr class="total-row"><td>Total</td><td style="text-align:right">₦${Number(order.total).toLocaleString()}</td></tr>
-    </table>
+  <div style="margin-bottom:2mm">
+    <div class="label">Delivery Address</div>
+    <div style="font-size:10px">${order.delivery_address || '—'}</div>
   </div>
+
+  <div style="margin-bottom:2mm">
+    <div class="label">Payment</div>
+    <div style="font-size:10px">${(order.payment_method || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</div>
+  </div>
+
+  ${channel ? `<div style="margin-bottom:2mm"><div class="label">Channel</div><div style="font-size:10px">${channel}</div></div>` : ''}
+
+  <hr class="divider-solid" />
+
+  <div class="row bold" style="font-size:9px; text-transform:uppercase; letter-spacing:0.5px; color:#555; margin-bottom:2mm;">
+    <span class="item-name">Item</span>
+    <span class="item-qty">Qty</span>
+    <span class="item-price">Amount</span>
+  </div>
+
+  ${items.map(item => `
+  <div class="row">
+    <span class="item-name">${item.name}</span>
+    <span class="item-qty">${item.qty}</span>
+    <span class="item-price">₦${(item.price * item.qty).toLocaleString()}</span>
+  </div>`).join('')}
+
+  <hr class="divider" />
+
+  <div class="row"><span>Subtotal</span><span>₦${subtotal.toLocaleString()}</span></div>
+  <div class="row"><span>Delivery</span><span>${deliveryFee > 0 ? '₦' + deliveryFee.toLocaleString() : 'Free'}</span></div>
+  ${notes ? `<div style="font-size:9px;color:#555;margin:2mm 0">Notes: ${notes}</div>` : ''}
+  <div class="row total"><span>TOTAL</span><span>₦${Number(order.total).toLocaleString()}</span></div>
 
   <div class="footer">
-    <p><strong>Thank you for choosing Smokeyhut Delight! 🔥</strong></p>
-    <p>Smokeyhut04@gmail.com · 13 McNeil St, Yaba, Lagos</p>
-    <p>This is a computer-generated invoice and does not require a signature.</p>
+    <hr class="divider" />
+    <p><strong>Thank you for choosing Smokeyhut Delight!</strong></p>
+    <p>Smokeyhut04@gmail.com</p>
+    <p>This is a computer-generated receipt.</p>
   </div>
+
   <script>window.onload = () => { window.print(); }</script>
 </body>
 </html>`;

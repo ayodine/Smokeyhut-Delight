@@ -1,12 +1,9 @@
 import React, { useState } from 'react';
 import { useToast } from '../../context/ToastContext';
 import { useSettings } from '../../context/SettingsContext';
-import { useAuth } from '../../context/AuthContext';
-import { Settings as SettingsIcon, Store, Truck, Bell, Plus, Trash2, Save } from 'lucide-react';
+import { Settings as SettingsIcon, Store, Bell, Save } from 'lucide-react';
 
 export default function Settings() {
-  const { userRole } = useAuth();
-  const isAdmin = userRole === 'Admin';
   const { showToast } = useToast();
   const { settings, setSettings } = useSettings();
   
@@ -14,27 +11,6 @@ export default function Settings() {
   const [localSettings, setLocalSettings] = useState(settings);
 
   const set = (k) => (e) => setLocalSettings({ ...localSettings, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
-
-  const addDeliveryOption = () => {
-    setLocalSettings(prev => ({
-      ...prev,
-      deliveryOptions: [...prev.deliveryOptions, { id: Date.now().toString(), name: 'New Area', fee: 0 }]
-    }));
-  };
-
-  const updateDeliveryOption = (id, field, value) => {
-    setLocalSettings(prev => ({
-      ...prev,
-      deliveryOptions: prev.deliveryOptions.map(opt => opt.id === id ? { ...opt, [field]: value } : opt)
-    }));
-  };
-
-  const removeDeliveryOption = (id) => {
-    setLocalSettings(prev => ({
-      ...prev,
-      deliveryOptions: prev.deliveryOptions.filter(opt => opt.id !== id)
-    }));
-  };
 
   const save = () => {
     setSettings(localSettings);
@@ -66,35 +42,6 @@ export default function Settings() {
           <div className="form-row">
             <div className="form-group"><label>Mon – Sat</label><input value={localSettings.weekdayHours} onChange={set('weekdayHours')} /></div>
             <div className="form-group"><label>Sunday</label><input value={localSettings.sundayHours} onChange={set('sundayHours')} /></div>
-          </div>
-        </div>
-
-        <div className="dash-card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-             <h3 style={{ fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif", fontSize: '1.1rem', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Truck size={18} /> Delivery Options
-            </h3>
-            <button className="btn-secondary" onClick={addDeliveryOption} style={{ padding: '6px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 4 }}>
-              <Plus size={14} /> Add Option
-            </button>
-          </div>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {localSettings.deliveryOptions.map(opt => (
-              <div key={opt.id} style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
-                  <input value={opt.name} onChange={(e) => updateDeliveryOption(opt.id, 'name', e.target.value)} placeholder="e.g. Lagos Island" />
-                </div>
-                <div className="form-group" style={{ width: 120, marginBottom: 0 }}>
-                  <input type="number" value={opt.fee} onChange={(e) => updateDeliveryOption(opt.id, 'fee', Number(e.target.value))} placeholder="Fee" />
-                </div>
-                {isAdmin && (
-                  <button onClick={() => removeDeliveryOption(opt.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', padding: 8 }}>
-                    <Trash2 size={18} />
-                  </button>
-                )}
-              </div>
-            ))}
           </div>
         </div>
 
