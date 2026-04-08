@@ -38,7 +38,7 @@ export default function About() {
               </p>
             </div>
             <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-subtle)', borderRadius: 20, overflow: 'hidden', boxShadow: 'var(--shadow-md)' }}>
-              <div style={{ height: 300, background: 'linear-gradient(160deg,#fff5f0,#fff0e8,#fffbe6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fca5a5' }}><Flame size={120} /></div>
+              <div style={{ height: 300, overflow: 'hidden' }}><img src="/shop_front.png" alt="Smokeyhut Delight shop front" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /></div>
               <div style={{ padding: '20px 24px' }}>
                 <div style={{ fontWeight: 800, fontSize: '1rem' }}>Est. Lagos, Nigeria</div>
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}><MapPin size={14} /> Lagos Mainland & Lagos Island</div>
