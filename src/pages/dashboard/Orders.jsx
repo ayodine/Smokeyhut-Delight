@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { useOutletContext } from 'react-router-dom';
+import { fetchDeliveryZones } from '../../lib/deliveryMatcher';
 
 const fmt = (n) => '₦' + Number(n).toLocaleString();
 const statuses = ['all', 'pending', 'processing', 'shipped', 'delivered', 'cancelled'];
@@ -146,6 +147,7 @@ const emptyNewOrder = {
   name: '', phone: '', email: '', address: '', store: '',
   channel: 'WhatsApp', payment: 'cash', notes: '',
   items: [{ product: '', name: '', qty: 1, price: '' }],
+  zoneId: '', deliveryFee: 0,
 };
 
 export default function Orders() {
@@ -156,6 +158,7 @@ export default function Orders() {
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
   const [storeList, setStoreList] = useState([]);
+  const [zones, setZones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -172,10 +175,11 @@ export default function Orders() {
     if (selectedStore && selectedStore !== 'all') {
       ordersQuery = ordersQuery.eq('store_id', selectedStore);
     }
-    const [ordersRes, productsRes, storesRes] = await Promise.all([
+    const [ordersRes, productsRes, storesRes, zonesRes] = await Promise.all([
       ordersQuery,
       supabase.from('products').select('id, name, price').order('name'),
       supabase.from('stores').select('id, name').eq('is_active', true).order('id'),
+      fetchDeliveryZones(supabase),
     ]);
     if (ordersRes.data) setOrders(ordersRes.data);
     if (productsRes.data) setProducts(productsRes.data);
@@ -183,6 +187,7 @@ export default function Orders() {
       setStoreList(storesRes.data);
       if (storesRes.data.length > 0) setNewOrder(f => ({ ...f, store: String(storesRes.data[0].id) }));
     }
+    setZones(zonesRes);
     setLoading(false);
   };
 
@@ -216,6 +221,11 @@ export default function Orders() {
     return { ...f, items };
   });
 
+  const pickZone = (zoneId) => {
+    const zone = zones.find(z => String(z.id) === String(zoneId));
+    setNewOrder(f => ({ ...f, zoneId, deliveryFee: zone ? zone.price : 0 }));
+  };
+
   const pickProduct = (i, productId) => {
     const p = products.find(pr => String(pr.id) === String(productId));
     setNewOrder(f => {
@@ -225,7 +235,8 @@ export default function Orders() {
     });
   };
 
-  const newOrderTotal = newOrder.items.reduce((s, i) => s + (Number(i.qty) * Number(i.price) || 0), 0);
+  const itemsSubtotal = newOrder.items.reduce((s, i) => s + (Number(i.qty) * Number(i.price) || 0), 0);
+  const newOrderTotal = itemsSubtotal + Number(newOrder.deliveryFee || 0);
 
   const handleSaveNewOrder = async () => {
     if (!newOrder.name.trim() || !newOrder.phone.trim()) return;
@@ -244,7 +255,7 @@ export default function Orders() {
         payment_method: newOrder.payment,
         store_id: newOrder.store ? Number(newOrder.store) : null,
         total: newOrderTotal,
-        delivery_fee: 0,
+        delivery_fee: Number(newOrder.deliveryFee || 0),
         status: 'pending',
         notes: notesStr,
       }]);
@@ -449,6 +460,34 @@ export default function Orders() {
               <div className="form-group"><label>Email</label><input type="email" value={newOrder.email} onChange={setField('email')} placeholder="customer@email.com" /></div>
               <div className="form-group"><label>Delivery Address</label><input value={newOrder.address} onChange={setField('address')} placeholder="Street / Pickup / Offline" /></div>
             </div>
+            {zones.length > 0 && (
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Delivery Zone</label>
+                  <select
+                    value={newOrder.zoneId}
+                    onChange={e => pickZone(e.target.value)}
+                  >
+                    <option value="">— No delivery fee (pickup / free) —</option>
+                    {zones.map(z => (
+                      <option key={z.id} value={z.id}>
+                        {z.name} — {fmt(z.price)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Delivery Fee</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={newOrder.deliveryFee}
+                    onChange={e => setNewOrder(f => ({ ...f, deliveryFee: e.target.value, zoneId: '' }))}
+                    placeholder="₦ 0"
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Items */}
             <div style={{ marginBottom: 16 }}>
@@ -494,8 +533,15 @@ export default function Orders() {
                   </div>
                 );
               })}
-              <div style={{ textAlign: 'right', fontWeight: 800, fontSize: '0.95rem', color: 'var(--red)', marginTop: 6 }}>
-                Total: {fmt(newOrderTotal)}
+              <div style={{ textAlign: 'right', marginTop: 6 }}>
+                {Number(newOrder.deliveryFee) > 0 && (
+                  <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 2 }}>
+                    Items: {fmt(itemsSubtotal)} + Delivery: {fmt(newOrder.deliveryFee)}
+                  </div>
+                )}
+                <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--red)' }}>
+                  Total: {fmt(newOrderTotal)}
+                </div>
               </div>
             </div>
 
