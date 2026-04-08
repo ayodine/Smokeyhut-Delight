@@ -6,6 +6,26 @@ import { useOutletContext } from 'react-router-dom';
 
 const fmt = (n) => '₦' + Number(n).toLocaleString();
 
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function weeklyDeliveryChart(orders) {
+  const now = new Date();
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+  monday.setHours(0, 0, 0, 0);
+
+  return DAYS.map((_, i) => {
+    const dayStart = new Date(monday);
+    dayStart.setDate(monday.getDate() + i);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setHours(23, 59, 59, 999);
+    return orders
+      .filter(o => o.status === 'delivered')
+      .filter(o => { const d = new Date(o.created_at); return d >= dayStart && d <= dayEnd; })
+      .reduce((s, o) => s + (Number(o.delivery_fee) || 0), 0);
+  });
+}
+
 const STATUS_FLOW = {
   pending:    { next: 'processing', label: 'Start Processing', color: '#f59e0b' },
   processing: { next: 'shipped',    label: 'Mark Dispatched',  color: '#3b82f6' },
@@ -76,6 +96,9 @@ export default function Shipping() {
   const successfulDeliveries = orders.filter(o => o.status === 'delivered');
   const successfulDeliveryFees = successfulDeliveries.reduce((sum, o) => sum + (Number(o.delivery_fee) || 0), 0);
 
+  const chartData = weeklyDeliveryChart(orders);
+  const maxChart = Math.max(...chartData, 1);
+
   if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><Loader2 className="spin" size={32} color="var(--red)" /></div>;
 
   return (
@@ -115,6 +138,22 @@ export default function Shipping() {
           <div className="kpi-value">{successfulDeliveries.length}</div>
           <div className="kpi-label">Successful Deliveries</div>
           <div style={{ fontSize: '0.82rem', fontWeight: 700, marginTop: 4, opacity: 0.85 }}>{fmt(successfulDeliveryFees)}</div>
+        </div>
+      </div>
+
+      {/* Weekly Delivery Revenue Chart */}
+      <div className="dash-card" style={{ marginBottom: 24 }}>
+        <div className="dash-card-header">
+          <div className="dash-card-title">Weekly Delivery Revenue</div>
+          <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Delivery fees from completed orders this week</div>
+        </div>
+        <div className="chart-container">
+          {chartData.map((val, i) => (
+            <div key={i} className="chart-bar" style={{ height: `${(val / maxChart) * 100}%` }}>
+              <div className="chart-bar-value">{val > 0 ? fmt(val) : ''}</div>
+              <div className="chart-bar-label">{DAYS[i]}</div>
+            </div>
+          ))}
         </div>
       </div>
 
