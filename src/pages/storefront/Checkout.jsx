@@ -507,6 +507,7 @@ export default function Checkout() {
               )}
               <div className="form-group"><label>Order Notes</label><textarea value={form.notes} onChange={set('notes')} placeholder="Any special requests..." /></div>
 
+              {/* Paystack button — hidden until production keys are ready
               <button
                 className="btn-primary"
                 style={{ width: '100%', justifyContent: 'center', padding: '16px 28px', fontSize: '1rem', marginTop: 8 }}
@@ -520,10 +521,10 @@ export default function Checkout() {
                   : `💳 Pay ${fmt(grandTotal)} with Paystack`
                 }
               </button>
-
               <p style={{ textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 12 }}>
                 🔒 Secured by Paystack · Card, Bank Transfer, USSD & more
               </p>
+              */}
             </div>
 
             <div className="order-summary">
@@ -560,7 +561,7 @@ export default function Checkout() {
               <div style={{ marginTop: 20, padding: '18px 16px', background: 'var(--black2)', borderRadius: 10, textAlign: 'center' }}>
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Transfer To</div>
                 <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: 4 }}>Smokeyhut Delight</div>
-                <h3 style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--text)', margin: '0 0 4px' }}>2003910300</h3>
+                <h3 style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--text)', margin: '0 0 4px' }}>5655718527</h3>
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 14 }}>Moniepoint</div>
                 <button
                   className="btn-secondary"
