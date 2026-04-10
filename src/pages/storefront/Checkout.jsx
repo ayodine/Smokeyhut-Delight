@@ -4,7 +4,7 @@ import { useCart } from '../../context/CartContext';
 import { useToast } from '../../context/ToastContext';
 import { supabase, publicSupabase } from '../../lib/supabase';
 import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher';
-import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Home, ShoppingBag, CreditCard, Search, MapPin } from 'lucide-react';
+import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Home, ShoppingBag, CreditCard, Search, MapPin, MessageCircle } from 'lucide-react';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -59,6 +59,7 @@ export default function Checkout() {
   const [processing, setProcessing] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [transferProcessing, setTransferProcessing] = useState(false);
+  const [waProcessing, setWaProcessing] = useState(false);
   const [successRef, setSuccessRef] = useState(null);
   const [successMethod, setSuccessMethod] = useState('paystack');
 
@@ -242,6 +243,53 @@ export default function Checkout() {
     }
   };
 
+  const handleWhatsApp = async () => {
+    if (!validateForm()) return;
+    setWaProcessing(true);
+    try {
+      const orderId = 'SHD-' + Date.now().toString(36).toUpperCase();
+      const { error } = await publicSupabase.from('orders').insert([buildOrderPayload(orderId, 'whatsapp')]);
+      if (error) throw error;
+      await publicSupabase.from('order_items').insert(
+        items.map(i => ({ order_id: orderId, product_id: i.id || null, name: i.name, price: i.price, qty: i.qty }))
+      );
+
+      // Build pre-filled WhatsApp message
+      const customerName = `${form.firstName} ${form.lastName}`.trim();
+      const pickupStore  = stores.find(s => s.id === selectedStoreId);
+      const deliveryLine = isPickup
+        ? `🏪 Pickup: ${pickupStore?.name || 'Store'}`
+        : `📍 Delivery: ${form.address}, ${selectedMatch?.area?.name || selectedMatch?.zone?.name || form.city}\n🚚 Zone: ${selectedMatch?.zone?.name || 'TBD'} — ${deliveryFee === 0 ? 'Free' : fmt(deliveryFee)}`;
+      const itemLines = items.map(i => `  • ${i.name} × ${i.qty} = ${fmt(i.price * i.qty)}`).join('\n');
+
+      const message = [
+        `🛍️ *New Order — ${orderId}*`,
+        ``,
+        `👤 Name: ${customerName}`,
+        `📞 Phone: ${form.phone}`,
+        form.email ? `✉️ Email: ${form.email}` : null,
+        ``,
+        `📦 Items:`,
+        itemLines,
+        ``,
+        deliveryLine,
+        ``,
+        `💰 *Total: ${fmt(grandTotal)}*`,
+        form.notes ? `📝 Notes: ${form.notes}` : null,
+        ``,
+        `_Please confirm my order 🙏_`,
+      ].filter(l => l !== null).join('\n');
+
+      clearCart();
+      setSuccessMethod('whatsapp');
+      setSuccessRef(orderId);
+      window.open(`https://wa.me/2348141748281?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      showToast('Error', err.message, 'error');
+    }
+    setWaProcessing(false);
+  };
+
   const handleTransfer = async () => {
     if (!validateForm()) return;
     setTransferProcessing(true);
@@ -275,11 +323,15 @@ export default function Checkout() {
             <CheckCircle size={56} color="var(--red)" />
           </div>
           <h2 style={{ fontSize: '2rem', fontWeight: 900, marginBottom: 12 }}>
-            {successMethod === 'transfer' ? <>Transfer <span className="accent">Noted!</span></> : <>Order <span className="accent">Confirmed!</span></>}
+            {successMethod === 'transfer'  ? <>Transfer <span className="accent">Noted!</span></> :
+             successMethod === 'whatsapp' ? <>Order <span className="accent">Sent!</span></> :
+             <>Order <span className="accent">Confirmed!</span></>}
           </h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '1rem', lineHeight: 1.7, marginBottom: 20 }}>
             {successMethod === 'transfer'
               ? <>Thank you! We have received your transfer notification and will confirm your payment shortly. Your order reference is below.</>
+              : successMethod === 'whatsapp'
+              ? <>Your order has been saved and WhatsApp has opened with your order details. <strong>Please send the message</strong> to complete your order — we'll confirm it shortly.</>
               : <>Thank you for choosing <strong>Smokeyhut Delight</strong>! Your payment was successful and your order is being prepared.</>
             }
           </p>
@@ -575,6 +627,32 @@ export default function Checkout() {
                   }
                 </button>
               </div>
+
+              {/* WhatsApp order option */}
+              <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ flex: 1, height: 1, background: 'var(--border-subtle)' }} />
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>OR</span>
+                <div style={{ flex: 1, height: 1, background: 'var(--border-subtle)' }} />
+              </div>
+              <button
+                onClick={handleWhatsApp}
+                disabled={waProcessing}
+                style={{
+                  marginTop: 12, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                  padding: '14px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                  background: '#25D366', color: '#fff', fontWeight: 700, fontSize: '0.95rem',
+                  boxShadow: '0 4px 14px rgba(37,211,102,0.35)', transition: 'opacity 0.15s',
+                  opacity: waProcessing ? 0.6 : 1,
+                }}
+              >
+                {waProcessing
+                  ? <><Loader2 size={18} className="spin" /> Preparing order...</>
+                  : <><MessageCircle size={20} /> Order via WhatsApp</>
+                }
+              </button>
+              <p style={{ textAlign: 'center', fontSize: '0.77rem', color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5 }}>
+                Saves your order &amp; opens WhatsApp with details pre-filled — just hit send.
+              </p>
             </div>
           </div>
         </div>
