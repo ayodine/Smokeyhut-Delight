@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { publicSupabase } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
 
@@ -18,7 +18,14 @@ const defaultSettings = {
     { id: '2', name: 'Island Delivery', fee: 4000 },
     { id: '3', name: 'Extended Area', fee: 5000 },
     { id: '4', name: 'Store Pickup', fee: 0 }
-  ]
+  ],
+  tickerItems: [
+    '🔥 BEST GUINEAFOWL IN LAGOS | Firewood-grilled daily — Order now!',
+    '📍 13 McNeil St, Yaba, Lagos | Open Mon–Sat 8am–6pm',
+    '🍗 Combo Deal: 2 Guineafowls + 2 Drinks = ₦22,000',
+    '🚚 SAME-DAY DELIVERY | Order before 10am for first-batch dispatch!',
+    '🌿 FRESH DAILY: Guineafowl • Rice • Palm Wine • Zobo',
+  ],
 };
 
 export function SettingsProvider({ children }) {
@@ -34,18 +41,34 @@ export function SettingsProvider({ children }) {
     return defaultSettings;
   });
 
-  // Always fetch fresh delivery options from Supabase on mount
+  const bcRef = useRef(null);
+
+  // Always fetch fresh settings from Supabase on mount
   useEffect(() => {
-    publicSupabase
-      .from('app_settings')
-      .select('value')
-      .eq('key', 'delivery_options')
-      .single()
-      .then(({ data, error }) => {
-        if (!error && Array.isArray(data?.value) && data.value.length > 0) {
-          setSettingsState(prev => ({ ...prev, deliveryOptions: data.value }));
+    Promise.all([
+      publicSupabase.from('app_settings').select('value').eq('key', 'delivery_options').single(),
+      publicSupabase.from('app_settings').select('value').eq('key', 'ticker_items').single(),
+    ]).then(([deliveryRes, tickerRes]) => {
+      setSettingsState(prev => ({
+        ...prev,
+        ...(Array.isArray(deliveryRes.data?.value) && deliveryRes.data.value.length > 0
+          ? { deliveryOptions: deliveryRes.data.value } : {}),
+        ...(Array.isArray(tickerRes.data?.value) && tickerRes.data.value.length > 0
+          ? { tickerItems: tickerRes.data.value } : {}),
+      }));
+    });
+
+    // Cross-tab sync via BroadcastChannel — only fires in other tabs, never loops back
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel('smokey_settings_bc');
+      bc.onmessage = (e) => {
+        if (e.data?.type === 'settings_updated') {
+          setSettingsState(prev => ({ ...prev, ...e.data.settings }));
         }
-      });
+      };
+      bcRef.current = bc;
+      return () => bc.close();
+    }
   }, []);
 
   useEffect(() => {
@@ -54,11 +77,21 @@ export function SettingsProvider({ children }) {
 
   const setSettings = async (newSettings) => {
     setSettingsState(prev => ({ ...prev, ...newSettings }));
+
+    // Broadcast update to all other open tabs immediately
+    bcRef.current?.postMessage({ type: 'settings_updated', settings: newSettings });
+
+    const upserts = [];
     if (newSettings.deliveryOptions) {
-      const { error } = await supabase
-        .from('app_settings')
-        .upsert({ key: 'delivery_options', value: newSettings.deliveryOptions, updated_at: new Date().toISOString() });
-      if (error) return { error };
+      upserts.push(supabase.from('app_settings').upsert({ key: 'delivery_options', value: newSettings.deliveryOptions, updated_at: new Date().toISOString() }));
+    }
+    if (newSettings.tickerItems) {
+      upserts.push(supabase.from('app_settings').upsert({ key: 'ticker_items', value: newSettings.tickerItems, updated_at: new Date().toISOString() }));
+    }
+    if (upserts.length > 0) {
+      const results = await Promise.all(upserts);
+      const err = results.find(r => r.error);
+      if (err) return { error: err.error };
     }
     return { error: null };
   };

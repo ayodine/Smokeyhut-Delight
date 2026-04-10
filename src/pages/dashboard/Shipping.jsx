@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Package, Truck, CheckCircle, Loader2, MapPin, Banknote } from 'lucide-react';
+import { SkelKpiGrid, SkelTable, SkelLine } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../context/ToastContext';
 import { useOutletContext } from 'react-router-dom';
@@ -99,7 +100,20 @@ export default function Shipping() {
   const chartData = weeklyDeliveryChart(orders);
   const maxChart = Math.max(...chartData, 1);
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><Loader2 className="spin" size={32} color="var(--red)" /></div>;
+  if (loading) return (
+    <div>
+      <SkelKpiGrid count={3} />
+      <div style={{ marginBottom: 24 }}>
+        <SkelLine lg style={{ width: 200, marginBottom: 16 }} />
+        <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-subtle)', borderRadius: 16, padding: 24, display: 'flex', alignItems: 'flex-end', gap: 8, height: 160 }}>
+          {Array.from({ length: 7 }).map((_, i) => (
+            <div key={i} className="skel" style={{ flex: 1, height: `${20 + Math.random() * 70}%`, borderRadius: 6 }} />
+          ))}
+        </div>
+      </div>
+      <SkelTable rows={6} cols={5} />
+    </div>
+  );
 
   return (
     <div>
@@ -175,6 +189,7 @@ export default function Shipping() {
                 <th><MapPin size={13} style={{ verticalAlign: 'text-bottom' }} /> Delivery Address</th>
                 <th>Amount</th>
                 <th>Delivery Fee</th>
+                <th>Time</th>
                 <th>Status</th>
                 <th>Action</th>
               </tr>
@@ -195,6 +210,10 @@ export default function Shipping() {
                     </td>
                     <td style={{ fontWeight: 700 }}>{fmt(order.total)}</td>
                     <td style={{ fontWeight: 700, color: 'var(--green)' }}>{order.delivery_fee ? fmt(order.delivery_fee) : '—'}</td>
+                    <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                      <div>{new Date(order.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                      <div style={{ fontWeight: 600 }}>{new Date(order.created_at).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}</div>
+                    </td>
                     <td><span className={`status-badge ${order.status}`}>{order.status}</span></td>
                     <td>
                       {next ? (
@@ -219,7 +238,7 @@ export default function Shipping() {
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                  <td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                     No orders in this category.
                   </td>
                 </tr>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { DollarSign, Package, Truck, Store, Loader2 } from 'lucide-react';
+import { DollarSign, Package, Truck, Store } from 'lucide-react';
+import { SkelKpiGrid, SkelTable, SkelLine } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import { useOutletContext } from 'react-router-dom';
 
@@ -64,7 +65,21 @@ export default function Overview() {
   })();
   const maxChart = Math.max(...chartData, 1);
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><Loader2 className="spin" size={32} color="var(--red)" /></div>;
+  if (loading) return (
+    <div>
+      <SkelKpiGrid count={4} />
+      <div style={{ marginBottom: 24 }}>
+        <SkelLine lg style={{ width: 160, marginBottom: 16 }} />
+        <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-subtle)', borderRadius: 16, padding: 24, display: 'flex', alignItems: 'flex-end', gap: 8, height: 180 }}>
+          {Array.from({ length: 7 }).map((_, i) => (
+            <div key={i} className="skel" style={{ flex: 1, height: `${30 + Math.random() * 60}%`, borderRadius: 6 }} />
+          ))}
+        </div>
+      </div>
+      <SkelLine lg style={{ width: 160, marginBottom: 16 }} />
+      <SkelTable rows={5} cols={4} />
+    </div>
+  );
 
   return (
     <div>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Trash2, Edit2, Image as ImageIcon, X, FolderKanban, Loader2 } from 'lucide-react';
+import { SkelList } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
@@ -158,7 +159,7 @@ export default function Products() {
     }
   };
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><Loader2 className="spin" size={32} color="var(--red)" /></div>;
+  if (loading) return <SkelList rows={6} height={80} />;
 
   return (
     <div>

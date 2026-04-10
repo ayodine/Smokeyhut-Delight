@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Loader2, FileText, Plus, Trash2, X } from 'lucide-react';
+import { SkelTable, SkelLine } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -288,7 +289,16 @@ export default function Orders() {
     return matchStatus && matchSearch;
   });
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><Loader2 className="spin" size={32} color="var(--red)" /></div>;
+  if (loading) return (
+    <div>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+        <SkelLine style={{ width: 220, height: 36, borderRadius: 10 }} />
+        <SkelLine style={{ width: 120, height: 36, borderRadius: 10 }} />
+        <SkelLine style={{ width: 120, height: 36, borderRadius: 10 }} />
+      </div>
+      <SkelTable rows={8} cols={5} />
+    </div>
+  );
 
   return (
     <div>

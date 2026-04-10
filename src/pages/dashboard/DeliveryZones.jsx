@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../context/ToastContext';
 import { MapPin, Plus, Trash2, Edit2, Check, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { SkelList } from '../../components/Skeleton';
 
 export default function DeliveryZones() {
   const { showToast } = useToast();
@@ -114,7 +115,7 @@ export default function DeliveryZones() {
       )}
 
       {loading ? (
-        <div style={{ color: 'var(--text-muted)', padding: 20 }}>Loading zones...</div>
+        <SkelList rows={5} height={56} />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {zones.map(zone => (

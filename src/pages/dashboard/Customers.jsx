@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Users, DollarSign, Package, Trash2, Loader2 } from 'lucide-react';
+import { SkelTable } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 
@@ -56,7 +57,7 @@ export default function Customers() {
     }
   };
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><Loader2 className="spin" size={32} color="var(--red)" /></div>;
+  if (loading) return <SkelTable rows={8} cols={5} />;
 
   return (
     <div>

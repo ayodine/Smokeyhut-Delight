@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { UserPlus, Shield, Mail, Phone, Trash2, Loader2, Eye, EyeOff } from 'lucide-react';
+import { SkelList } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../context/ToastContext';
 
@@ -100,7 +101,7 @@ export default function Staff() {
     }
   };
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><Loader2 className="spin" size={32} color="var(--red)" /></div>;
+  if (loading) return <SkelList rows={4} height={90} />;
 
   return (
     <div>

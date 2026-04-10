@@ -4,7 +4,7 @@ import { useCart } from '../../context/CartContext';
 import { useToast } from '../../context/ToastContext';
 import ProductCard from '../../components/ProductCard';
 import { supabase } from '../../lib/supabase';
-import { ShoppingCart, Trash2, Drumstick } from 'lucide-react';
+import { ShoppingCart, Trash2 } from 'lucide-react';
 
 export default function Cart() {
   const { items, updateQty, removeItem, total, itemCount } = useCart();
@@ -66,7 +66,7 @@ export default function Cart() {
                       ) : isEmojiStr || item.emoji ? (
                          <div>{item.image || item.emoji}</div>
                       ) : (
-                         <Drumstick size={32} color="#fca5a5" />
+                         <div style={{ width: '100%', height: '100%', background: 'var(--black3)' }} />
                       )}
                     </div>
                     <div className="cart-detail-info">

@@ -14,7 +14,11 @@ export function CartProvider({ children }) {
   });
 
   useEffect(() => {
-    localStorage.setItem(CART_KEY, JSON.stringify(items));
+    try {
+      localStorage.setItem(CART_KEY, JSON.stringify(items));
+    } catch {
+      // localStorage unavailable (iOS Private Browsing) or quota exceeded — cart stays in memory
+    }
   }, [items]);
 
   const addItem = (product) => {

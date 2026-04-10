@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DollarSign, CreditCard, Landmark, Banknote, Loader2 } from 'lucide-react';
+import { SkelKpiGrid, SkelTable } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import { useOutletContext } from 'react-router-dom';
 
@@ -42,7 +43,12 @@ export default function Payments() {
     byMethod[p.payment_method] = (byMethod[p.payment_method] || 0) + Number(p.total);
   });
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><Loader2 className="spin" size={32} color="var(--red)" /></div>;
+  if (loading) return (
+    <div>
+      <SkelKpiGrid count={3} />
+      <SkelTable rows={8} cols={5} />
+    </div>
+  );
 
   return (
     <div>

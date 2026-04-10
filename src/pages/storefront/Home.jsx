@@ -54,7 +54,7 @@ function Countdown() {
       <div className="countdown-info">
         <div className="countdown-info-item"><Clock size={12} /> First batch processed until <strong>10:00am</strong></div>
         <div className="countdown-info-item"><Truck size={12} /> Dispatch begins from <strong>10:30am</strong></div>
-        <div className="countdown-info-item">⏱ Delivery time: <strong>4–5 hrs</strong> depending on location</div>
+        <div className="countdown-info-item">⏱ Delivery time: <strong>3–4 hrs</strong> depending on location</div>
       </div>
     </div>
   );

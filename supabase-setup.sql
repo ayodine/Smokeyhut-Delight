@@ -189,6 +189,63 @@ create policy "Auth manage shipments"
   using (auth.role() = 'authenticated')
   with check (auth.role() = 'authenticated');
 
+-- ── 9. COUPONS ──────────────────────────────────────────────
+create table if not exists public.coupons (
+  id                uuid primary key default gen_random_uuid(),
+  code              text not null unique,
+  type              text not null default 'percent', -- 'percent' | 'fixed'
+  value             numeric not null default 0,
+  min_order_amount  numeric,
+  max_uses          int,
+  uses              int not null default 0,
+  expires_at        timestamptz,
+  is_active         boolean not null default true,
+  created_at        timestamptz default now()
+);
+alter table public.coupons enable row level security;
+
+-- Public can read active coupons (needed for validation at checkout)
+create policy "Public read active coupons"
+  on public.coupons for select using (true);
+
+-- Auth users can manage coupons
+create policy "Auth manage coupons"
+  on public.coupons for all
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
+
+-- RPC to safely increment use count (avoids race condition)
+create or replace function increment_coupon_uses(coupon_id uuid)
+returns void
+language sql
+security definer
+as $$
+  update public.coupons set uses = uses + 1 where id = coupon_id;
+$$;
+
+-- ── 9b. ORDERS — coupon columns (run if orders table already exists) ──
+alter table public.orders
+  add column if not exists coupon_code     text,
+  add column if not exists coupon_discount numeric default 0;
+
+-- ── 10. APP SETTINGS ─────────────────────────────────────────
+create table if not exists public.app_settings (
+  key        text primary key,
+  value      jsonb,
+  updated_at timestamptz default now()
+);
+alter table public.app_settings enable row level security;
+
+-- Anyone can read settings (ticker, delivery options shown on storefront)
+create policy "Public read app_settings"
+  on public.app_settings for select using (true);
+
+-- Only authenticated users can write settings
+create policy "Auth write app_settings"
+  on public.app_settings for all
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
+
 -- ============================================================
 -- DONE! Tables created. Now go to:
 -- Authentication > Users > Add user

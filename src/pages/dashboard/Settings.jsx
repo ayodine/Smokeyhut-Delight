@@ -1,20 +1,50 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useToast } from '../../context/ToastContext';
 import { useSettings } from '../../context/SettingsContext';
-import { Settings as SettingsIcon, Store, Bell, Save } from 'lucide-react';
+import { Settings as SettingsIcon, Store, Bell, Save, Radio, Trash2, Plus, Pencil, Check, X } from 'lucide-react';
 
 export default function Settings() {
   const { showToast } = useToast();
   const { settings, setSettings } = useSettings();
   
-  // Local state for editing before saving
   const [localSettings, setLocalSettings] = useState(settings);
+  const [newTicker, setNewTicker] = useState('');
+
+  // Sync when context updates (e.g. after Supabase fetch completes on mount)
+  useEffect(() => {
+    setLocalSettings(settings);
+  }, [settings]);
+  const [editingIdx, setEditingIdx] = useState(null);
+  const [editingText, setEditingText] = useState('');
 
   const set = (k) => (e) => setLocalSettings({ ...localSettings, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
 
   const save = () => {
     setSettings(localSettings);
     showToast('Settings saved!', 'Changes applied successfully', 'success');
+  };
+
+  const tickerItems = localSettings.tickerItems || [];
+
+  const addTicker = () => {
+    const text = newTicker.trim();
+    if (!text) return;
+    setLocalSettings(prev => ({ ...prev, tickerItems: [...(prev.tickerItems || []), text] }));
+    setNewTicker('');
+  };
+
+  const deleteTicker = (i) => {
+    setLocalSettings(prev => ({ ...prev, tickerItems: prev.tickerItems.filter((_, idx) => idx !== i) }));
+  };
+
+  const startEdit = (i) => { setEditingIdx(i); setEditingText(tickerItems[i]); };
+  const saveEdit = () => {
+    if (!editingText.trim()) return;
+    setLocalSettings(prev => ({
+      ...prev,
+      tickerItems: prev.tickerItems.map((t, i) => i === editingIdx ? editingText.trim() : t),
+    }));
+    setEditingIdx(null);
   };
 
   return (
@@ -55,6 +85,54 @@ export default function Settings() {
               <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{label}</span>
             </label>
           ))}
+        </div>
+
+        <div className="dash-card">
+          <h3 style={{ fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif", fontSize: '1.1rem', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Radio size={18} /> Ticker Messages
+          </h3>
+          <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 16 }}>
+            These messages scroll across the top banner of the storefront.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+            {tickerItems.map((item, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg)', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '8px 12px' }}>
+                {editingIdx === i ? (
+                  <>
+                    <input
+                      value={editingText}
+                      onChange={e => setEditingText(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && saveEdit()}
+                      style={{ flex: 1, border: 'none', background: 'transparent', fontSize: '0.88rem', outline: 'none', fontFamily: 'inherit' }}
+                      autoFocus
+                    />
+                    <button onClick={saveEdit} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#16a34a', padding: 4 }}><Check size={16} /></button>
+                    <button onClick={() => setEditingIdx(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><X size={16} /></button>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ flex: 1, fontSize: '0.88rem', color: 'var(--text)' }}>{item}</span>
+                    <button onClick={() => startEdit(i)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><Pencil size={15} /></button>
+                    <button onClick={() => deleteTicker(i)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--red)', padding: 4 }}><Trash2 size={15} /></button>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              value={newTicker}
+              onChange={e => setNewTicker(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addTicker()}
+              placeholder="Add a new ticker message..."
+              style={{ flex: 1 }}
+            />
+            <button onClick={addTicker} className="btn-primary" style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Plus size={16} /> Add
+            </button>
+          </div>
         </div>
 
         <button className="btn-primary" onClick={save} style={{ justifyContent: 'center', padding: '14px 28px', display: 'flex', gap: 8, alignItems: 'center' }}>

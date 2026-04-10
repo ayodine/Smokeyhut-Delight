@@ -54,6 +54,21 @@ button { font-family: 'DM Sans', sans-serif; }
 }
 @keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 @keyframes pulse { 0%, 100% { opacity: 0.6; } 50% { opacity: 0.3; } }
+@keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+.skel {
+  background: linear-gradient(90deg, var(--black2) 25%, rgba(255,255,255,0.06) 50%, var(--black2) 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite linear;
+  border-radius: 6px;
+}
+.skel-line  { height: 14px; width: 100%; }
+.skel-line.sm { height: 10px; width: 60%; }
+.skel-line.xs { height: 10px; width: 40%; }
+.skel-line.lg { height: 18px; width: 80%; }
+.skel-circle { border-radius: 50%; }
+.skel-kpi { border-radius: 16px; height: 118px; }
+.skel-row { height: 52px; border-radius: 10px; margin-bottom: 8px; }
+.skel-card { border-radius: 16px; }
 .ticker-item { display: flex; align-items: center; gap: 8px; padding: 0 20px; }
 .ticker-item span { color: var(--yellow-bright); }
 .ticker-close {

@@ -33,7 +33,16 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     // onAuthStateChange fires INITIAL_SESSION on mount — no need for separate getSession()
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Password recovery link clicked — redirect to reset page, do NOT establish a dashboard session
+      if (event === 'PASSWORD_RECOVERY') {
+        if (window.location.pathname !== '/admin/reset-password') {
+          window.location.replace('/admin/reset-password');
+        }
+        setLoading(false);
+        return;
+      }
+
       const authUser = session?.user ?? null;
       setUser(authUser);
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MapPin, Phone, Edit2, Trash2, X, Store as StoreIcon, Loader2 } from 'lucide-react';
+import { SkelList } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 
@@ -22,8 +23,26 @@ export default function Stores() {
 
   const fetchData = async () => {
     setLoading(true);
-    const { data } = await supabase.from('stores').select('*').order('id', { ascending: true });
-    if (data) setStoreList(data);
+    const [storesRes, ordersRes, staffRes] = await Promise.all([
+      supabase.from('stores').select('*').order('id', { ascending: true }),
+      supabase.from('orders').select('store_id, total, status').neq('status', 'cancelled'),
+      supabase.from('profiles').select('id').not('role', 'eq', 'customer'),
+    ]);
+
+    const orders = ordersRes.data || [];
+    const staffCount = staffRes.data?.length || 0;
+
+    const enriched = (storesRes.data || []).map(store => {
+      const storeOrders = orders.filter(o => o.store_id === store.id);
+      return {
+        ...store,
+        revenue: storeOrders.reduce((sum, o) => sum + Number(o.total || 0), 0),
+        orders: storeOrders.length,
+        staff: staffCount,
+      };
+    });
+
+    setStoreList(enriched);
     setLoading(false);
   };
 
@@ -58,7 +77,7 @@ export default function Stores() {
     setSaving(false);
   };
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><Loader2 className="spin" size={32} color="var(--red)" /></div>;
+  if (loading) return <SkelList rows={3} height={140} />;
 
   return (
     <div>

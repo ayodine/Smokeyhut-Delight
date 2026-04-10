@@ -4,7 +4,7 @@ import { useCart } from '../../context/CartContext';
 import { useToast } from '../../context/ToastContext';
 import { supabase, publicSupabase } from '../../lib/supabase';
 import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher';
-import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Home, ShoppingBag, CreditCard, Search, MapPin, MessageCircle } from 'lucide-react';
+import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Home, ShoppingBag, CreditCard, Search, MapPin, MessageCircle, Tag, X } from 'lucide-react';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -66,6 +66,12 @@ export default function Checkout() {
   const [stores, setStores] = useState([]);
   const [selectedStoreId, setSelectedStoreId] = useState(null);
 
+  // Coupon state
+  const [couponCode, setCouponCode] = useState('');
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState(null); // { id, code, type, value, discount }
+  const [couponError, setCouponError] = useState('');
+
   // Fetch zones and active stores on mount
   useEffect(() => {
     fetchDeliveryZones(publicSupabase).then(setZones);
@@ -96,7 +102,44 @@ export default function Checkout() {
   const isPickup = deliveryType === 'pickup';
   const allFreeShipping = items.length > 0 && items.every(i => i.free_shipping === true);
   const deliveryFee = isPickup ? 0 : (allFreeShipping ? 0 : (selectedMatch?.zone.price ?? 0));
-  const grandTotal = total + deliveryFee;
+  const couponDiscount = appliedCoupon?.discount ?? 0;
+  const grandTotal = Math.max(0, total + deliveryFee - couponDiscount);
+
+  const applyCoupon = async () => {
+    const code = couponCode.trim().toUpperCase();
+    if (!code) return;
+    setCouponError('');
+    setCouponLoading(true);
+    const { data, error } = await publicSupabase
+      .from('coupons')
+      .select('*')
+      .eq('code', code)
+      .eq('is_active', true)
+      .maybeSingle();
+    setCouponLoading(false);
+    if (error || !data) { setCouponError('Invalid or expired coupon code'); return; }
+    const now = new Date();
+    if (data.expires_at && new Date(data.expires_at) < now) { setCouponError('This coupon has expired'); return; }
+    if (data.max_uses !== null && data.uses >= data.max_uses) { setCouponError('This coupon has reached its usage limit'); return; }
+    if (data.min_order_amount && total < data.min_order_amount) {
+      setCouponError(`Minimum order of ${fmt(data.min_order_amount)} required for this coupon`); return;
+    }
+    const discount = data.type === 'percent'
+      ? Math.round((total + deliveryFee) * (data.value / 100))
+      : data.value;
+    setAppliedCoupon({ id: data.id, code: data.code, type: data.type, value: data.value, discount: Math.min(discount, total + deliveryFee) });
+  };
+
+  const removeCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponCode('');
+    setCouponError('');
+  };
+
+  const incrementCouponUse = async () => {
+    if (!appliedCoupon?.id) return;
+    await publicSupabase.rpc('increment_coupon_uses', { coupon_id: appliedCoupon.id });
+  };
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
@@ -136,6 +179,8 @@ export default function Checkout() {
       payment_method: method,
       total: grandTotal,
       delivery_fee: deliveryFee,
+      coupon_code: appliedCoupon?.code || null,
+      coupon_discount: appliedCoupon?.discount || 0,
       status: 'pending',
       notes: form.notes || null,
     };
@@ -206,6 +251,7 @@ export default function Checkout() {
             // Server-side verification with secret key — never trust the callback alone
             await verifyPaystackPayment(response.reference);
             clearCart();
+            await incrementCouponUse();
             setSuccessMethod('paystack');
             setSuccessRef(response.reference);
             notify('order_confirmed', {
@@ -246,6 +292,10 @@ export default function Checkout() {
   const handleWhatsApp = async () => {
     if (!validateForm()) return;
     setWaProcessing(true);
+
+    // Open the window synchronously BEFORE any awaits — iOS Safari blocks window.open() after async operations
+    const waWindow = window.open('', '_blank');
+
     try {
       const orderId = 'SHD-' + Date.now().toString(36).toUpperCase();
       const { error } = await publicSupabase.from('orders').insert([buildOrderPayload(orderId, 'whatsapp')]);
@@ -280,11 +330,22 @@ export default function Checkout() {
         `_Please confirm my order 🙏_`,
       ].filter(l => l !== null).join('\n');
 
+      const waUrl = `https://wa.me/2348141748281?text=${encodeURIComponent(message)}`;
+
+      // Navigate the already-opened window to the WhatsApp URL
+      if (waWindow) {
+        waWindow.location.href = waUrl;
+      } else {
+        // Popup was blocked — fall back to same-tab navigation
+        window.location.href = waUrl;
+      }
+
       clearCart();
+      await incrementCouponUse();
       setSuccessMethod('whatsapp');
       setSuccessRef(orderId);
-      window.open(`https://wa.me/2348141748281?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
     } catch (err) {
+      if (waWindow) waWindow.close();
       showToast('Error', err.message, 'error');
     }
     setWaProcessing(false);
@@ -307,6 +368,7 @@ export default function Checkout() {
         total: grandTotal,
       });
       clearCart();
+      await incrementCouponUse();
       setSuccessMethod('transfer');
       setSuccessRef(orderId);
     } catch (err) {
@@ -605,6 +667,48 @@ export default function Checkout() {
                 </span>
                 <span>{deliveryFee === 0 ? 'Free' : fmt(deliveryFee)}</span>
               </div>
+
+              {/* Coupon input */}
+              {!appliedCoupon ? (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      value={couponCode}
+                      onChange={e => { setCouponCode(e.target.value.toUpperCase()); setCouponError(''); }}
+                      placeholder="Coupon code"
+                      style={{ flex: 1, fontSize: '0.88rem', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)' }}
+                      onKeyDown={e => e.key === 'Enter' && applyCoupon()}
+                    />
+                    <button
+                      onClick={applyCoupon}
+                      disabled={couponLoading || !couponCode.trim()}
+                      style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black2)', color: 'var(--text)', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', opacity: couponLoading || !couponCode.trim() ? 0.5 : 1 }}
+                    >
+                      {couponLoading ? <Loader2 size={14} className="spin" /> : <Tag size={14} />} Apply
+                    </button>
+                  </div>
+                  {couponError && <p style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: 6 }}>{couponError}</p>}
+                </div>
+              ) : (
+                <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8 }}>
+                  <Tag size={14} color="#16a34a" />
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontWeight: 700, fontSize: '0.88rem', color: '#16a34a' }}>{appliedCoupon.code}</span>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginLeft: 8 }}>
+                      {appliedCoupon.type === 'percent' ? `${appliedCoupon.value}% off` : `${fmt(appliedCoupon.value)} off`}
+                    </span>
+                  </div>
+                  <button onClick={removeCoupon} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 0 }}><X size={16} /></button>
+                </div>
+              )}
+
+              {appliedCoupon && (
+                <div className="order-line" style={{ color: '#16a34a' }}>
+                  <span>Discount ({appliedCoupon.code})</span>
+                  <span>−{fmt(couponDiscount)}</span>
+                </div>
+              )}
+
               <div className="order-line" style={{ borderBottom: 'none', paddingTop: 16 }}>
                 <span style={{ fontWeight: 900, fontSize: '1.1rem' }}>Total</span>
                 <span className="order-total">{fmt(grandTotal)}</span>
@@ -628,31 +732,35 @@ export default function Checkout() {
                 </button>
               </div>
 
-              {/* WhatsApp order option */}
-              <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ flex: 1, height: 1, background: 'var(--border-subtle)' }} />
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>OR</span>
-                <div style={{ flex: 1, height: 1, background: 'var(--border-subtle)' }} />
-              </div>
-              <button
-                onClick={handleWhatsApp}
-                disabled={waProcessing}
-                style={{
-                  marginTop: 12, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-                  padding: '14px', borderRadius: 10, border: 'none', cursor: 'pointer',
-                  background: '#25D366', color: '#fff', fontWeight: 700, fontSize: '0.95rem',
-                  boxShadow: '0 4px 14px rgba(37,211,102,0.35)', transition: 'opacity 0.15s',
-                  opacity: waProcessing ? 0.6 : 1,
-                }}
-              >
-                {waProcessing
-                  ? <><Loader2 size={18} className="spin" /> Preparing order...</>
-                  : <><MessageCircle size={20} /> Order via WhatsApp</>
-                }
-              </button>
-              <p style={{ textAlign: 'center', fontSize: '0.77rem', color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5 }}>
-                Saves your order &amp; opens WhatsApp with details pre-filled — just hit send.
-              </p>
+              {/* WhatsApp order option — hidden */}
+              {false && (
+                <>
+                  <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ flex: 1, height: 1, background: 'var(--border-subtle)' }} />
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>OR</span>
+                    <div style={{ flex: 1, height: 1, background: 'var(--border-subtle)' }} />
+                  </div>
+                  <button
+                    onClick={handleWhatsApp}
+                    disabled={waProcessing}
+                    style={{
+                      marginTop: 12, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                      padding: '14px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                      background: '#25D366', color: '#fff', fontWeight: 700, fontSize: '0.95rem',
+                      boxShadow: '0 4px 14px rgba(37,211,102,0.35)', transition: 'opacity 0.15s',
+                      opacity: waProcessing ? 0.6 : 1,
+                    }}
+                  >
+                    {waProcessing
+                      ? <><Loader2 size={18} className="spin" /> Preparing order...</>
+                      : <><MessageCircle size={20} /> Order via WhatsApp</>
+                    }
+                  </button>
+                  <p style={{ textAlign: 'center', fontSize: '0.77rem', color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5 }}>
+                    Saves your order &amp; opens WhatsApp with details pre-filled — just hit send.
+                  </p>
+                </>
+              )}
             </div>
           </div>
         </div>

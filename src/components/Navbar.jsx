@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
+import { useSettings } from '../context/SettingsContext';
 import { ShoppingCart, Home, Store, Menu, X, Info } from 'lucide-react';
 
 export default function Navbar({ onCartOpen }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [tickerVisible, setTickerVisible] = useState(true);
   const { itemCount } = useCart();
+  const { settings } = useSettings();
   const location = useLocation();
 
   const links = [
@@ -18,13 +20,7 @@ export default function Navbar({ onCartOpen }) {
     { to: '/store-rules', label: 'Store Rules' },
   ];
 
-  const tickerItems = [
-    '🔥 <span>BEST GUINEAFOWL IN LAGOS</span> | Firewood-grilled daily — Order now!',
-    '📍 <span>13 McNeil St, Yaba, Lagos</span> | Open Mon–Sat 8am–6pm',
-    '🍗 <span>Combo Deal:</span> 2 Guineafowls + 2 Drinks = ₦22,000',
-    '🚚 <span>SAME-DAY DELIVERY</span> | Order before 10am for first-batch dispatch!',
-    '🌿 <span>FRESH DAILY:</span> Guineafowl • Rice • Palm Wine • Zobo',
-  ];
+  const tickerItems = settings.tickerItems || [];
 
   return (
     <>
@@ -33,7 +29,7 @@ export default function Navbar({ onCartOpen }) {
           <div className="ticker-banner">
             <div className="ticker-content">
               {[...tickerItems, ...tickerItems].map((item, i) => (
-                <div key={i} className="ticker-item" dangerouslySetInnerHTML={{ __html: item }} />
+                <div key={i} className="ticker-item">{item}</div>
               ))}
             </div>
             <button className="ticker-close" onClick={() => setTickerVisible(false)} aria-label="Close banner">✕</button>

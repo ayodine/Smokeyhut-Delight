@@ -1,7 +1,7 @@
 import React from 'react';
 import { useCart } from '../context/CartContext';
 import { useNavigate } from 'react-router-dom';
-import { ShoppingCart, Drumstick, Trash2 } from 'lucide-react';
+import { ShoppingCart, Trash2 } from 'lucide-react';
 
 export default function CartSidebar({ isOpen, onClose }) {
   const { items, updateQty, removeItem, total, itemCount } = useCart();
@@ -30,7 +30,7 @@ export default function CartSidebar({ isOpen, onClose }) {
                 {item.image ? (
                   <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
-                  <Drumstick size={24} color="#fca5a5" />
+                  <div style={{ width: '100%', height: '100%', background: 'var(--black3)' }} />
                 )}
               </div>
               <div className="cart-item-info">

@@ -14,7 +14,6 @@ export default function ResetPassword() {
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    // Supabase picks up the recovery token from the URL hash and fires PASSWORD_RECOVERY
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') setReady(true);
     });
@@ -28,8 +27,10 @@ export default function ResetPassword() {
     if (password !== confirm) { setError('Passwords do not match'); return; }
     setLoading(true);
     const { error: err } = await supabase.auth.updateUser({ password });
+    if (err) { setLoading(false); setError(err.message); return; }
+    // Clear the recovery session so they log in fresh with the new password
+    await supabase.auth.signOut();
     setLoading(false);
-    if (err) { setError(err.message); return; }
     setDone(true);
     setTimeout(() => navigate('/admin/login'), 3000);
   };
