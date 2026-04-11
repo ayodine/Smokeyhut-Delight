@@ -21,7 +21,8 @@ const getChannel = (notes) => {
 function generateInvoice(order) {
   const items = order.order_items || [];
   const deliveryFee = order.delivery_fee || 0;
-  const subtotal = (order.total || 0) - deliveryFee;
+  const couponDiscount = order.coupon_discount || 0;
+  const subtotal = items.reduce((s, i) => s + (i.price * i.qty), 0) || ((order.total || 0) + couponDiscount - deliveryFee);
   const dateStr = new Date(order.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' });
   const channel = getChannel(order.notes);
   const notes = order.notes ? order.notes.replace(/^\[via .+?\]\n?/, '') : '';
@@ -124,6 +125,7 @@ function generateInvoice(order) {
 
   <div class="row"><span>Subtotal</span><span>₦${subtotal.toLocaleString()}</span></div>
   <div class="row"><span>Delivery</span><span>${deliveryFee > 0 ? '₦' + deliveryFee.toLocaleString() : 'Free'}</span></div>
+  ${couponDiscount > 0 ? `<div class="row" style="color:#16a34a"><span>Discount (${order.coupon_code})</span><span>−₦${couponDiscount.toLocaleString()}</span></div>` : ''}
   ${notes ? `<div style="font-size:9px;color:#555;margin:2mm 0">Notes: ${notes}</div>` : ''}
   <div class="row total"><span>TOTAL</span><span>₦${Number(order.total).toLocaleString()}</span></div>
 
@@ -344,7 +346,14 @@ export default function Orders() {
                         <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{order.customer_phone}</div>
                       </td>
                       <td>{itemsCount} item{itemsCount !== 1 ? 's' : ''}</td>
-                      <td style={{ fontWeight: 700 }}>{fmt(order.total || 0)}</td>
+                      <td style={{ fontWeight: 700 }}>
+                        {fmt(order.total || 0)}
+                        {order.coupon_code && (
+                          <div style={{ fontSize: '0.7rem', background: 'rgba(34,197,94,0.12)', color: '#16a34a', padding: '1px 7px', borderRadius: 20, display: 'inline-block', fontWeight: 800, marginLeft: 6 }}>
+                            {order.coupon_code}
+                          </div>
+                        )}
+                      </td>
                       <td style={{ fontSize: '0.82rem' }}>
                         {channel && <div style={{ fontSize: '0.72rem', background: 'rgba(192,32,31,0.08)', color: 'var(--red)', padding: '2px 7px', borderRadius: 20, display: 'inline-block', fontWeight: 800, marginBottom: 2 }}>{channel}</div>}
                         <div style={{ color: 'var(--text-muted)' }}>{(order.payment_method || '').replace(/_/g, ' ')}</div>
@@ -391,6 +400,14 @@ export default function Orders() {
                             {order.delivery_fee > 0 && (
                               <div style={{ marginTop: 6, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
                                 Delivery fee: {fmt(order.delivery_fee)}
+                              </div>
+                            )}
+                            {order.coupon_code && (
+                              <div style={{ marginTop: 6, fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ background: 'rgba(34,197,94,0.12)', color: '#16a34a', padding: '2px 10px', borderRadius: 20, fontWeight: 800, fontSize: '0.75rem' }}>
+                                  COUPON: {order.coupon_code}
+                                </span>
+                                <span style={{ color: '#16a34a', fontWeight: 700 }}>−{fmt(order.coupon_discount || 0)}</span>
                               </div>
                             )}
                             <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(0,0,0,0.05)', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
