@@ -3,32 +3,37 @@ import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext(null);
 
-async function fetchRole(authUser) {
+async function fetchProfile(authUser) {
   if (!authUser) return null;
   try {
     const { data, error } = await supabase
       .from('profiles')
-      .select('role')
+      .select('role, permissions')
       .eq('id', authUser.id)
       .maybeSingle();
-    if (error || !data?.role) return null; // no profile = not authorized staff
-    return data.role;
+    if (error || !data?.role) return null;
+    return data;
   } catch {
-    return null; // fail secure
+    return null;
   }
 }
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  // Seed from sessionStorage so role is available instantly on re-renders / token refreshes
   const [userRole, setUserRole] = useState(() => sessionStorage.getItem('sd_role') || null);
+  const [userPermissions, setUserPermissions] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('sd_perms') || '[]'); } catch { return []; }
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const applyRole = (role) => {
+  const applyProfile = (profile) => {
+    const role = profile?.role || null;
+    const perms = profile?.permissions || [];
     setUserRole(role);
-    if (role) sessionStorage.setItem('sd_role', role);
-    else sessionStorage.removeItem('sd_role');
+    setUserPermissions(perms);
+    if (role) { sessionStorage.setItem('sd_role', role); sessionStorage.setItem('sd_perms', JSON.stringify(perms)); }
+    else { sessionStorage.removeItem('sd_role'); sessionStorage.removeItem('sd_perms'); }
   };
 
   useEffect(() => {
@@ -47,22 +52,21 @@ export function AuthProvider({ children }) {
       setUser(authUser);
 
       if (authUser) {
-        // Fetch role with a timeout — if we can't confirm a role, deny access (fail secure)
-        const role = await Promise.race([
-          fetchRole(authUser),
-          new Promise(resolve => setTimeout(() => resolve(sessionStorage.getItem('sd_role') || null), 6000)),
+        const cachedRole = sessionStorage.getItem('sd_role');
+        const profile = await Promise.race([
+          fetchProfile(authUser),
+          new Promise(resolve => setTimeout(() => resolve(cachedRole ? { role: cachedRole, permissions: [] } : null), 6000)),
         ]);
 
-        if (!role) {
-          // Authenticated user has no staff profile — sign them out immediately
+        if (!profile?.role) {
           await supabase.auth.signOut();
           setUser(null);
-          applyRole(null);
+          applyProfile(null);
         } else {
-          applyRole(role);
+          applyProfile(profile);
         }
       } else {
-        applyRole(null);
+        applyProfile(null);
       }
 
       setLoading(false);
@@ -94,11 +98,11 @@ export function AuthProvider({ children }) {
   const signOut = async () => {
     await supabase.auth.signOut();
     setUser(null);
-    applyRole(null);
+    applyProfile(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, userRole, loading, error, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, userRole, userPermissions, loading, error, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );

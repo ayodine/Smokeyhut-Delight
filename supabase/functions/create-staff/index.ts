@@ -83,7 +83,12 @@ serve(async (req) => {
         )
       }
 
-      // Delete auth user (cascades naturally; profile row deleted separately)
+      // Nullify foreign key references before deleting the auth user.
+      // Without this, any table with user_id → auth.users(id) (no CASCADE) blocks deletion.
+      await supabaseAdmin.from('orders').update({ user_id: null }).eq('user_id', userId)
+      await supabaseAdmin.from('profiles').delete().eq('id', userId)
+
+      // Now safe to delete the auth user
       const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(userId)
       if (authError) {
         return new Response(
@@ -91,9 +96,6 @@ serve(async (req) => {
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
         )
       }
-
-      // Delete profile row
-      await supabaseAdmin.from('profiles').delete().eq('id', userId)
 
       return new Response(
         JSON.stringify({ success: true }),

@@ -45,6 +45,8 @@ import Staff from './pages/dashboard/Staff';
 import Settings from './pages/dashboard/Settings';
 import DeliveryZones from './pages/dashboard/DeliveryZones';
 import Coupons from './pages/dashboard/Coupons';
+import SalesReport from './pages/dashboard/finance/SalesReport';
+import Expenses from './pages/dashboard/finance/Expenses';
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -115,6 +117,8 @@ export default function App() {
                   <Route path="staff" element={<Staff />} />
                   <Route path="zones" element={<DeliveryZones />} />
                   <Route path="coupons" element={<Coupons />} />
+                  <Route path="finance/sales" element={<SalesReport />} />
+                  <Route path="finance/expenses" element={<Expenses />} />
                   <Route path="settings" element={<Settings />} />
                 </Route>
 

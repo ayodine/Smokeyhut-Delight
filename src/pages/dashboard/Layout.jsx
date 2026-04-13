@@ -2,32 +2,63 @@ import { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { BarChart2, Package, Truck, CreditCard, Store, ShoppingBag, Users, Settings, LogOut, Globe, Menu, UserCog, MapPin, Tag } from 'lucide-react';
+import {
+  BarChart2, Package, Truck, CreditCard, Store, ShoppingBag, Users,
+  Settings, LogOut, Globe, Menu, UserCog, MapPin, Tag,
+  DollarSign, TrendingUp, Receipt, ChevronDown,
+} from 'lucide-react';
 
 const allNavItems = [
-  { to: '/admin',          icon: BarChart2,  label: 'Overview',  end: true,  roles: ['Admin', 'Manager'] },
-  { to: '/admin/orders',   icon: Package,    label: 'Orders',    roles: ['Admin', 'Manager'] },
-  { to: '/admin/shipping', icon: Truck,      label: 'Shipping',  roles: ['Admin', 'Manager', 'Rider'] },
-  { to: '/admin/payments', icon: CreditCard, label: 'Payments',  roles: ['Admin', 'Manager'] },
-  { to: '/admin/stores',   icon: Store,      label: 'Stores',    roles: ['Admin', 'Manager'] },
-  { to: '/admin/products', icon: ShoppingBag,label: 'Products',  roles: ['Admin', 'Manager'] },
-  { to: '/admin/customers',icon: Users,      label: 'Customers', roles: ['Admin', 'Manager'] },
-  { to: '/admin/zones',    icon: MapPin,     label: 'Zones',     roles: ['Admin', 'Manager'] },
-  { to: '/admin/coupons',  icon: Tag,        label: 'Coupons',   roles: ['Admin', 'Manager'] },
-  { to: '/admin/staff',    icon: UserCog,    label: 'Staff',     roles: ['Admin'] },
-  { to: '/admin/settings', icon: Settings,   label: 'Settings',  roles: ['Admin', 'Manager'] },
+  { to: '/admin',           icon: BarChart2,   label: 'Overview',  end: true, roles: ['Admin', 'Manager', 'Staff'] },
+  { to: '/admin/orders',    icon: Package,     label: 'Orders',               roles: ['Admin', 'Manager', 'Staff'] },
+  { to: '/admin/shipping',  icon: Truck,       label: 'Shipping',             roles: ['Admin', 'Manager', 'Rider', 'Staff'] },
+  { to: '/admin/payments',  icon: CreditCard,  label: 'Payments',             roles: ['Admin', 'Manager', 'Staff'] },
+  { to: '/admin/stores',    icon: Store,       label: 'Stores',               roles: ['Admin', 'Manager', 'Staff'] },
+  { to: '/admin/products',  icon: ShoppingBag, label: 'Products',             roles: ['Admin', 'Manager', 'Staff'] },
+  { to: '/admin/customers', icon: Users,       label: 'Customers',            roles: ['Admin', 'Manager', 'Staff'] },
+  { to: '/admin/zones',     icon: MapPin,      label: 'Zones',                roles: ['Admin', 'Manager', 'Staff'] },
+  { to: '/admin/coupons',   icon: Tag,         label: 'Coupons',              roles: ['Admin', 'Manager', 'Staff'] },
+  {
+    type: 'group', icon: DollarSign, label: 'Finance', roles: ['Admin', 'Manager', 'Staff'],
+    children: [
+      { to: '/admin/finance/sales',    icon: TrendingUp, label: 'Sales Report', roles: ['Admin', 'Manager', 'Staff'] },
+      { to: '/admin/finance/expenses', icon: Receipt,    label: 'Expenses',     roles: ['Admin', 'Manager', 'Staff'] },
+    ],
+  },
+  { to: '/admin/staff',     icon: UserCog,     label: 'Staff',                roles: ['Admin'] },
+  { to: '/admin/settings',  icon: Settings,    label: 'Settings',             roles: ['Admin', 'Manager', 'Staff'] },
 ];
 
+function passesPermission(label, role, userPermissions) {
+  if (role === 'Admin') return true;
+  const perms = userPermissions || [];
+  if (perms.length === 0) return role !== 'Staff';
+  return perms.some(p => p.startsWith(label + ':'));
+}
+
 export default function DashboardLayout() {
-  const { signOut, user, userRole } = useAuth();
+  const { signOut, user, userRole, userPermissions } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedStore, setSelectedStore] = useState('all');
   const [storeOptions, setStoreOptions] = useState([]);
+  const [financeOpen, setFinanceOpen] = useState(location.pathname.startsWith('/admin/finance'));
 
   const role = userRole || 'Admin';
-  const navItems = allNavItems.filter(item => item.roles.includes(role));
+
+  const navItems = allNavItems.reduce((acc, item) => {
+    if (!item.roles.includes(role)) return acc;
+    if (item.type === 'group') {
+      const children = item.children.filter(c =>
+        c.roles.includes(role) && passesPermission(c.label, role, userPermissions)
+      );
+      if (children.length > 0) acc.push({ ...item, children });
+    } else {
+      if (passesPermission(item.label, role, userPermissions)) acc.push(item);
+    }
+    return acc;
+  }, []);
 
   useEffect(() => {
     supabase.from('stores').select('id, name').order('id').then(({ data }) => {
@@ -35,15 +66,24 @@ export default function DashboardLayout() {
     });
   }, []);
 
+  // Keep finance sub-menu open when navigating within it
+  useEffect(() => {
+    if (location.pathname.startsWith('/admin/finance')) setFinanceOpen(true);
+  }, [location.pathname]);
+
   // Redirect to first allowed page if current path is not permitted
   useEffect(() => {
     if (!userRole) return;
-    const allowed = navItems.map(item => item.to);
+    const allowed = navItems.flatMap(item =>
+      item.type === 'group' ? item.children.map(c => c.to) : [item.to]
+    );
     const isAllowed = allowed.some(path =>
       path === '/admin' ? location.pathname === '/admin' : location.pathname.startsWith(path)
     );
     if (!isAllowed) {
-      navigate(navItems[0]?.to || '/admin/shipping', { replace: true });
+      const first = navItems[0];
+      const firstPath = first?.type === 'group' ? first.children[0]?.to : first?.to;
+      navigate(firstPath || '/admin/shipping', { replace: true });
     }
   }, [userRole, location.pathname]);
 
@@ -52,7 +92,8 @@ export default function DashboardLayout() {
     navigate('/admin/login');
   };
 
-  const roleLabel = { Admin: '🔑 Admin', Manager: '🧑‍💼 Manager', Rider: '🛵 Rider' }[role] || role;
+  const roleLabel = { Admin: '🔑 Admin', Manager: '🧑‍💼 Manager', Rider: '🛵 Rider', Staff: '👤 Staff' }[role] || role;
+  const isFinanceActive = location.pathname.startsWith('/admin/finance');
 
   return (
     <div className="dash-layout">
@@ -63,6 +104,43 @@ export default function DashboardLayout() {
         </div>
         <nav className="dash-nav">
           {navItems.map(item => {
+            if (item.type === 'group') {
+              const Icon = item.icon;
+              return (
+                <div key={item.label}>
+                  <button
+                    className={`dash-nav-item dash-nav-group-btn${isFinanceActive ? ' active' : ''}`}
+                    onClick={() => setFinanceOpen(v => !v)}
+                  >
+                    <Icon className="nav-icon" size={18} />
+                    {item.label}
+                    <ChevronDown
+                      size={14}
+                      style={{ marginLeft: 'auto', transform: financeOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}
+                    />
+                  </button>
+                  {financeOpen && (
+                    <div className="dash-nav-sub">
+                      {item.children.map(child => {
+                        const CIcon = child.icon;
+                        return (
+                          <NavLink
+                            key={child.to}
+                            to={child.to}
+                            className={({ isActive }) => `dash-nav-item dash-nav-sub-item${isActive ? ' active' : ''}`}
+                            onClick={() => setSidebarOpen(false)}
+                          >
+                            <CIcon size={14} style={{ opacity: 0.7 }} />
+                            {child.label}
+                          </NavLink>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
             const Icon = item.icon;
             return (
               <NavLink

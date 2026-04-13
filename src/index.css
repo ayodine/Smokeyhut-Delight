@@ -246,7 +246,7 @@ section { padding: 80px 20px; }
 /* ── COUNTDOWN ── */
 .countdown-bar {
   background: var(--white); border-top: 1px solid var(--border-subtle);
-  border-bottom: 1px solid var(--border-subtle); padding: 16px 20px; text-align: center;
+  border-bottom: 1px solid var(--border-subtle); padding: 42px 20px; text-align: center;
 }
 .countdown-inner { width: 100%; max-width: 1200px; padding: 0 10px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; -ms-overflow-style: none; scrollbar-width: none; }
 .countdown-inner::-webkit-scrollbar { display: none; }
@@ -406,6 +406,12 @@ section { padding: 80px 20px; }
 }
 .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
   border-color: var(--red); box-shadow: 0 0 0 3px rgba(192,32,31,0.10);
+}
+.form-group select {
+  -webkit-appearance: none; appearance: none; cursor: pointer;
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235C5247' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center;
 }
 .form-group textarea { height: 120px; resize: vertical; }
 .contact-info-cards { display: flex; flex-direction: column; gap: 16px; }
@@ -607,6 +613,10 @@ section { padding: 80px 20px; }
 .dash-nav-item:hover { color: #fff; background: rgba(255,255,255,0.08); }
 .dash-nav-item.active { color: #fff; background: var(--red); }
 .dash-nav-item .nav-icon { font-size: 1.1rem; width: 24px; text-align: center; }
+.dash-nav-group-btn { font-family: 'DM Sans', sans-serif; }
+.dash-nav-group-btn.active { color: #fff; background: rgba(255,255,255,0.1); }
+.dash-nav-sub { margin: 0 0 4px 12px; border-left: 2px solid rgba(255,255,255,0.12); padding-left: 4px; }
+.dash-nav-sub-item { font-size: 0.84rem !important; padding: 8px 12px !important; margin-bottom: 2px !important; }
 .dash-sidebar-footer {
   padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.08);
   font-size: 0.78rem; color: rgba(255,255,255,0.35);
@@ -620,9 +630,12 @@ section { padding: 80px 20px; }
 .dash-topbar-title { font-family: 'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif; font-size: 1.3rem; font-weight: 900; }
 .dash-topbar-right { display: flex; align-items: center; gap: 16px; }
 .dash-store-select {
-  padding: 8px 14px; border: 1px solid var(--border-subtle); border-radius: 8px;
+  padding: 8px 32px 8px 14px; border: 1px solid var(--border-subtle); border-radius: 8px;
   font-size: 0.85rem; background: var(--black2); color: var(--text); cursor: pointer;
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'DM Sans', sans-serif; outline: none;
+  -webkit-appearance: none; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%235C5247' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
 }
 .dash-content { padding: 32px; }
 .dash-menu-toggle { display: none; }
@@ -682,6 +695,7 @@ section { padding: 80px 20px; }
 .status-badge.shipped, .status-badge.in_transit { background: #e0e7ff; color: #3730a3; }
 .status-badge.delivered, .status-badge.success { background: #dcfce7; color: #166534; }
 .status-badge.cancelled, .status-badge.refunded { background: #fee2e2; color: #991b1b; }
+.status-badge.info { background: #eff6ff; color: #1d4ed8; }
 
 /* ── DASH FILTERS ── */
 .dash-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }

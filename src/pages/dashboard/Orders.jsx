@@ -332,7 +332,7 @@ export default function Orders() {
       <div className="dash-card">
         <div style={{ overflowX: 'auto' }}>
           <table className="dash-table">
-            <thead><tr><th>ID</th><th>Customer</th><th>Items</th><th>Total</th><th>Channel / Payment</th><th>Status</th><th>Date</th></tr></thead>
+            <thead><tr><th>ID</th><th>Customer</th><th>Items</th><th>Total</th><th>Channel / Payment</th><th>Status</th><th>Date &amp; Time</th></tr></thead>
             <tbody>
               {filtered.map(order => {
                 const itemsCount = order.order_items?.length || 0;
@@ -359,7 +359,10 @@ export default function Orders() {
                         <div style={{ color: 'var(--text-muted)' }}>{(order.payment_method || '').replace(/_/g, ' ')}</div>
                       </td>
                       <td><span className={`status-badge ${order.status}`}>{order.status}</span></td>
-                      <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{new Date(order.created_at).toLocaleDateString()}</td>
+                      <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                        <div>{new Date(order.created_at).toLocaleDateString()}</div>
+                        <div style={{ fontSize: '0.75rem', marginTop: 2 }}>{new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                      </td>
                     </tr>
                     {expandedId === order.id && (
                       <tr><td colSpan="7" style={{ background: 'var(--black2)', padding: '16px 20px' }}>
@@ -376,7 +379,7 @@ export default function Orders() {
                                   await supabase.from('orders').update({ store_id: storeId }).eq('id', order.id);
                                   setOrders(prev => prev.map(o => o.id === order.id ? { ...o, store_id: storeId } : o));
                                 }}
-                                style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.82rem' }}
+                                style={{ padding: '6px 28px 6px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', background: 'var(--black2)', color: 'var(--text)', fontSize: '0.82rem', fontFamily: "'DM Sans', sans-serif", outline: 'none', WebkitAppearance: 'none', appearance: 'none', cursor: 'pointer', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%235C5247' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
                               >
                                 <option value="">Unassigned</option>
                                 {storeList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -412,7 +415,7 @@ export default function Orders() {
                             )}
                             <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(0,0,0,0.05)', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
                               <strong style={{ fontSize: '0.8rem' }}>Actions:</strong>
-                              <select value={order.status} onChange={e => updateStatus(order.id, e.target.value)} style={{ padding: '6px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+                              <select value={order.status} onChange={e => updateStatus(order.id, e.target.value)} style={{ padding: '6px 28px 6px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', background: 'var(--black2)', color: 'var(--text)', fontSize: '0.82rem', fontFamily: "'DM Sans', sans-serif", outline: 'none', WebkitAppearance: 'none', appearance: 'none', cursor: 'pointer', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%235C5247' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}>
                                 {statuses.filter(s => s !== 'all').map(s => <option key={s} value={s}>{s}</option>)}
                               </select>
                               <button
@@ -458,13 +461,13 @@ export default function Orders() {
             <div className="form-row">
               <div className="form-group">
                 <label>Order Channel</label>
-                <select value={newOrder.channel} onChange={setField('channel')}>
+                <select value={newOrder.channel} onChange={setField('channel')} style={{ width: '100%', padding: '12px 36px 12px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.9rem', fontFamily: "'DM Sans', sans-serif", outline: 'none', WebkitAppearance: 'none', appearance: 'none', cursor: 'pointer', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235C5247' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}>
                   {CHANNELS.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div className="form-group">
                 <label>Payment Method</label>
-                <select value={newOrder.payment} onChange={setField('payment')}>
+                <select value={newOrder.payment} onChange={setField('payment')} style={{ width: '100%', padding: '12px 36px 12px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.9rem', fontFamily: "'DM Sans', sans-serif", outline: 'none', WebkitAppearance: 'none', appearance: 'none', cursor: 'pointer', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235C5247' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}>
                   {PAYMENT_METHODS.map(p => <option key={p} value={p}>{p.replace(/_/g, ' ')}</option>)}
                 </select>
               </div>
@@ -472,7 +475,7 @@ export default function Orders() {
             {storeList.length > 0 && (
               <div className="form-group">
                 <label>Store (fulfilling this order)</label>
-                <select value={newOrder.store} onChange={setField('store')}>
+                <select value={newOrder.store} onChange={setField('store')} style={{ width: '100%', padding: '12px 36px 12px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.9rem', fontFamily: "'DM Sans', sans-serif", outline: 'none', WebkitAppearance: 'none', appearance: 'none', cursor: 'pointer', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235C5247' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}>
                   {storeList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
@@ -494,6 +497,7 @@ export default function Orders() {
                   <select
                     value={newOrder.zoneId}
                     onChange={e => pickZone(e.target.value)}
+                    style={{ width: '100%', padding: '12px 36px 12px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.9rem', fontFamily: "'DM Sans', sans-serif", outline: 'none', WebkitAppearance: 'none', appearance: 'none', cursor: 'pointer', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235C5247' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}
                   >
                     <option value="">— No delivery fee (pickup / free) —</option>
                     {zones.map(z => (
@@ -534,7 +538,7 @@ export default function Orders() {
                         <select
                           value={item.product}
                           onChange={e => e.target.value ? pickProduct(i, e.target.value) : updateItemField(i, 'product', '')}
-                          style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.85rem' }}
+                          style={{ padding: '8px 28px 8px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', background: 'var(--black2)', color: 'var(--text)', fontSize: '0.85rem', fontFamily: "'DM Sans', sans-serif", outline: 'none', WebkitAppearance: 'none', appearance: 'none', cursor: 'pointer', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%235C5247' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
                         >
                           <option value="">— Custom item —</option>
                           {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}

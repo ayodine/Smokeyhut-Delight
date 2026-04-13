@@ -273,7 +273,7 @@ export default function Products() {
             </div>
             <div className="form-row">
               <div className="form-group"><label>Category</label>
-                <select value={form.category} onChange={set('category')}>
+                <select value={form.category} onChange={set('category')} style={{ width: '100%', padding: '12px 36px 12px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.9rem', fontFamily: "'DM Sans', sans-serif", outline: 'none', WebkitAppearance: 'none', appearance: 'none', cursor: 'pointer', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235C5247' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}>
                   {catList.length === 0 && <option value="">No categories available</option>}
                   {catList.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
                 </select>

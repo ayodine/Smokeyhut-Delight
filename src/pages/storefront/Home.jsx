@@ -5,55 +5,28 @@ import OrderingGuidePopup from '../../components/OrderingGuidePopup';
 import { Clock, Flame, ShoppingCart, Leaf, Truck, Award, Store, Camera } from 'lucide-react';
 import { getProducts } from '../../lib/productsCache';
 
-const BATCHES = [
-  { num: 1, start: [10, 30], end: [12, 30] },
-  { num: 2, start: [12, 30], end: [14, 30] },
-  { num: 3, start: [14, 30], end: [16, 30] },
-  { num: 4, start: [16, 30], end: [18, 30] },
-];
-
-function toMins([h, m]) { return h * 60 + m; }
-function fmtTime([h, m]) { const ampm = h < 12 ? 'am' : 'pm'; const h12 = h % 12 || 12; return `${h12}:${String(m).padStart(2, '0')}${ampm}`; }
-
 function Countdown() {
   const [time, setTime] = useState({ h: '00', m: '00', s: '00' });
-  const [label, setLabel] = useState('');
-  const [subLabel, setSubLabel] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+  const [isSunday, setIsSunday] = useState(false);
 
   useEffect(() => {
     const tick = () => {
-      const now = new Date();
-      // Always use Lagos time (Africa/Lagos = UTC+1, no DST) regardless of viewer's timezone
-      const lagosNow = new Date(now.toLocaleString('en-US', { timeZone: 'Africa/Lagos' }));
+      const lagosNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos' }));
       const nowMins = lagosNow.getHours() * 60 + lagosNow.getMinutes();
+      const sunday = lagosNow.getDay() === 0;
+      const openHour = sunday ? 10 : 8;
+      const closeHour = sunday ? 16 : 18;
+      const open = nowMins >= openHour * 60 && nowMins < closeHour * 60;
+      setIsOpen(open);
+      setIsSunday(sunday);
 
-      let activeBatch = null;
-      let nextBatch = null;
-
-      for (const batch of BATCHES) {
-        const s = toMins(batch.start);
-        const e = toMins(batch.end);
-        if (nowMins >= s && nowMins < e) { activeBatch = batch; break; }
-        if (nowMins < s && !nextBatch) { nextBatch = batch; }
-      }
-
-      // Build target using lagosNow as base so diff is always in correct ms
       const target = new Date(lagosNow);
-      let lbl, sub;
-
-      if (activeBatch) {
-        target.setHours(activeBatch.end[0], activeBatch.end[1], 0, 0);
-        lbl = `Batch ${activeBatch.num} closes in:`;
-        sub = `Order now — dispatches in this batch window`;
-      } else if (nextBatch) {
-        target.setHours(nextBatch.start[0], nextBatch.start[1], 0, 0);
-        lbl = `Batch ${nextBatch.num} opens in:`;
-        sub = `Next dispatch window at ${fmtTime(nextBatch.start)}`;
+      if (open) {
+        target.setHours(closeHour, 0, 0, 0);
       } else {
-        target.setDate(target.getDate() + 1);
-        target.setHours(BATCHES[0].start[0], BATCHES[0].start[1], 0, 0);
-        lbl = 'Next batch opens in:';
-        sub = `Ordering closed for today. First batch tomorrow at ${fmtTime(BATCHES[0].start)}`;
+        if (nowMins >= closeHour * 60) target.setDate(target.getDate() + 1);
+        target.setHours(openHour, 0, 0, 0);
       }
 
       const diff = Math.max(0, target - lagosNow);
@@ -62,8 +35,6 @@ function Countdown() {
         m: String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0'),
         s: String(Math.floor((diff % 60000) / 1000)).padStart(2, '0'),
       });
-      setLabel(lbl);
-      setSubLabel(sub);
     };
     tick();
     const id = setInterval(tick, 1000);
@@ -74,7 +45,7 @@ function Countdown() {
     <div className="countdown-bar">
       <div className="countdown-inner">
         <div className="countdown-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Clock size={16} /> {label}
+          <Clock size={16} /> {isOpen ? 'We close in:' : 'We open in:'}
         </div>
         <div className="countdown-digits">
           <div className="cd-block"><div className="cd-num">{time.h}</div><div className="cd-unit">hrs</div></div>
@@ -84,14 +55,15 @@ function Countdown() {
           <div className="cd-block"><div className="cd-num">{time.s}</div><div className="cd-unit">sec</div></div>
         </div>
         <div className="countdown-offer" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Flame size={14} /> {subLabel}
+          {isOpen
+            ? <><Flame size={14} /> Order now — we're open until {isSunday ? '4:00pm' : '6:00pm'}</>
+            : <><Truck size={14} /> {isSunday ? 'Ordering opens at 10:00am on Sundays' : 'Ordering opens daily at 8:00am'}</>
+          }
         </div>
       </div>
       <div className="countdown-info">
-        <div className="countdown-info-item"><Clock size={12} /> Batch 1: <strong>10:30am – 12:30pm</strong></div>
-        <div className="countdown-info-item"><Clock size={12} /> Batch 2: <strong>12:30pm – 2:30pm</strong></div>
-        <div className="countdown-info-item"><Clock size={12} /> Batch 3: <strong>2:30pm – 4:30pm</strong></div>
-        <div className="countdown-info-item"><Clock size={12} /> Batch 4: <strong>4:30pm – 6:30pm</strong></div>
+        <div className="countdown-info-item"><Clock size={12} /> Mon – Sat: <strong>8:00am – 6:00pm</strong></div>
+        <div className="countdown-info-item"><Clock size={12} /> Sunday: <strong>10:00am – 4:00pm</strong></div>
         <div className="countdown-info-item">⏱ Delivery: <strong>3–4 hrs</strong> depending on location</div>
       </div>
     </div>
