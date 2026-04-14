@@ -1,10 +1,17 @@
 import { useState } from 'react';
 import { MapPin, Clock, Camera, Truck } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import { useSEO } from '../../hooks/useSEO';
 
 const CONTACT_EMAIL = 'Smokeyhut04@gmail.com';
 
 export default function Contact() {
+  useSEO({
+    title: 'Contact Us – Smokeyhut Delight',
+    description: "Get in touch with Smokeyhut Delight. Call, WhatsApp, or visit us at 13 McNeil Street, Yaba, Lagos. We're open Mon–Sat 8am–6pm.",
+    path: '/contact',
+  });
+
   const { showToast } = useToast();
   const [form, setForm] = useState({ name: '', phone: '', email: '', subject: 'Order Inquiry', message: '' });
 

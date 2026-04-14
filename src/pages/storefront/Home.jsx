@@ -4,6 +4,7 @@ import ProductCard from '../../components/ProductCard';
 import OrderingGuidePopup from '../../components/OrderingGuidePopup';
 import { Clock, Flame, ShoppingCart, Leaf, Truck, Award, Store, Camera } from 'lucide-react';
 import { getProducts } from '../../lib/productsCache';
+import { useSEO } from '../../hooks/useSEO';
 
 function Countdown() {
   const [time, setTime] = useState({ h: '00', m: '00', s: '00' });
@@ -42,31 +43,73 @@ function Countdown() {
   }, []);
 
   return (
-    <div className="countdown-bar">
-      <div className="countdown-inner">
-        <div className="countdown-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Clock size={16} /> {isOpen ? 'We close in:' : 'We open in:'}
+    <section className="status-band">
+      <div className="status-band-inner">
+
+        {/* LEFT — status + timer */}
+        <div className="status-left">
+          <div className={`status-pill ${isOpen ? 'open' : 'closed'}`}>
+            <span className="status-dot" />
+            {isOpen ? 'Kitchen is Open' : 'Kitchen is Closed'}
+          </div>
+
+          <p className="status-headline">
+            {isOpen ? 'Closes in' : 'Opens in'}
+          </p>
+
+          <div className="timer-row">
+            <div className="timer-block">
+              <span className="timer-num">{time.h}</span>
+              <span className="timer-unit">hrs</span>
+            </div>
+            <span className="timer-sep">:</span>
+            <div className="timer-block">
+              <span className="timer-num">{time.m}</span>
+              <span className="timer-unit">min</span>
+            </div>
+            <span className="timer-sep">:</span>
+            <div className="timer-block">
+              <span className="timer-num">{time.s}</span>
+              <span className="timer-unit">sec</span>
+            </div>
+          </div>
+
+          <p className="status-tagline">
+            {isOpen
+              ? <><Flame size={13} style={{ display:'inline', marginRight:5, verticalAlign:'middle' }} />Order now — hot &amp; smoky until {isSunday ? '4:00 pm' : '6:00 pm'}</>
+              : <><Truck size={13} style={{ display:'inline', marginRight:5, verticalAlign:'middle' }} />{isSunday ? 'Ordering opens at 10:00 am on Sundays' : 'Ordering opens daily at 8:00 am'}</>
+            }
+          </p>
         </div>
-        <div className="countdown-digits">
-          <div className="cd-block"><div className="cd-num">{time.h}</div><div className="cd-unit">hrs</div></div>
-          <div className="cd-colon">:</div>
-          <div className="cd-block"><div className="cd-num">{time.m}</div><div className="cd-unit">min</div></div>
-          <div className="cd-colon">:</div>
-          <div className="cd-block"><div className="cd-num">{time.s}</div><div className="cd-unit">sec</div></div>
+
+        {/* RIGHT — hours card */}
+        <div className="status-right">
+          <div className="hours-card">
+            <div className="hours-card-title">
+              <Clock size={13} style={{ marginRight: 6, opacity: 0.6, verticalAlign: 'middle' }} />
+              Opening Hours
+            </div>
+            <div className="hours-row">
+              <span className="hours-day">Mon – Sat</span>
+              <span className="hours-time">8:00 am – 6:00 pm</span>
+            </div>
+            <div className="hours-row">
+              <span className="hours-day">Sunday</span>
+              <span className="hours-time">10:00 am – 4:00 pm</span>
+            </div>
+            <div className="hours-divider" />
+            <div className="hours-row hours-delivery">
+              <span className="hours-day">
+                <Truck size={12} style={{ marginRight: 5, verticalAlign: 'middle', opacity: 0.7 }} />
+                Delivery time
+              </span>
+              <span className="hours-time">3 – 4 hrs</span>
+            </div>
+          </div>
         </div>
-        <div className="countdown-offer" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {isOpen
-            ? <><Flame size={14} /> Order now — we're open until {isSunday ? '4:00pm' : '6:00pm'}</>
-            : <><Truck size={14} /> {isSunday ? 'Ordering opens at 10:00am on Sundays' : 'Ordering opens daily at 8:00am'}</>
-          }
-        </div>
+
       </div>
-      <div className="countdown-info">
-        <div className="countdown-info-item"><Clock size={12} /> Mon – Sat: <strong>8:00am – 6:00pm</strong></div>
-        <div className="countdown-info-item"><Clock size={12} /> Sunday: <strong>10:00am – 4:00pm</strong></div>
-        <div className="countdown-info-item">⏱ Delivery: <strong>3–4 hrs</strong> depending on location</div>
-      </div>
-    </div>
+    </section>
   );
 }
 
@@ -89,6 +132,12 @@ const features = [
 ];
 
 export default function Home() {
+  useSEO({
+    title: 'Smokeyhut Delight – Best Firewood Grilled Guineafowl in Lagos',
+    description: "Lagos's #1 firewood-grilled guineafowl. Order fresh, smoky guineafowl online for same-day delivery across Lagos. Open Mon–Sat 8am–6pm, Sun 10am–4pm.",
+    path: '/',
+  });
+
   const [bestsellers, setBestsellers] = useState([]);
 
   useEffect(() => {

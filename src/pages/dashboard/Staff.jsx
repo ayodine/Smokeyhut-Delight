@@ -24,6 +24,10 @@ const ACTIONS = ['view', 'manage', 'delete'];
 const ACTION_LABELS = { view: 'View', manage: 'Manage', delete: 'Delete' };
 const ACTION_COLORS = { view: '#3b82f6', manage: '#f59e0b', delete: '#ef4444' };
 
+// Pages that support a 'create' sub-permission (controls whether the user can add new records)
+const CREATABLE_PAGES = ['Orders'];
+const CREATE_LABEL = 'Add New';
+
 const EMPTY_FORM = { name: '', email: '', role: 'Staff', phone: '', password: '' };
 
 // permissions stored as ['Orders:view', 'Orders:manage', 'Products:view', ...]
@@ -32,13 +36,13 @@ const hasPerm = (permissions, page, action) => permissions.includes(`${page}:${a
 const togglePerm = (permissions, page, action) => {
   const key = `${page}:${action}`;
   if (permissions.includes(key)) {
-    // Unchecking view also removes manage + delete for that page
+    // Unchecking view removes ALL actions for that page (manage, delete, create)
     if (action === 'view') {
       return permissions.filter(p => !p.startsWith(`${page}:`));
     }
     return permissions.filter(p => p !== key);
   } else {
-    // Checking manage or delete auto-adds view
+    // Checking manage, delete, or create auto-adds view
     const toAdd = [key];
     if (action !== 'view' && !permissions.includes(`${page}:view`)) {
       toAdd.push(`${page}:view`);
@@ -77,7 +81,7 @@ export default function Staff() {
     setLoading(true);
     const { data } = await supabase
       .from('profiles')
-      .select('*')
+      .select('id,full_name,email,role,phone,permissions,created_at')
       .in('role', ['Admin', 'Manager', 'Rider', 'Staff'])
       .order('created_at', { ascending: false });
     if (data) setStaff(data);
@@ -383,9 +387,9 @@ export default function Staff() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                     <thead>
                       <tr>
-                        <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-muted)', fontWeight: 600, borderBottom: '1px solid var(--border-subtle)', width: '40%' }}>Page</th>
+                        <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-muted)', fontWeight: 600, borderBottom: '1px solid var(--border-subtle)', width: '35%' }}>Page</th>
                         {ACTIONS.map(action => (
-                          <th key={action} style={{ textAlign: 'center', padding: '6px 4px', borderBottom: '1px solid var(--border-subtle)', width: '20%' }}>
+                          <th key={action} style={{ textAlign: 'center', padding: '6px 4px', borderBottom: '1px solid var(--border-subtle)', width: '16%' }}>
                             <div style={{ color: ACTION_COLORS[action], fontWeight: 700, fontSize: '0.75rem', marginBottom: 4 }}>{ACTION_LABELS[action]}</div>
                             <button
                               type="button"
@@ -396,20 +400,26 @@ export default function Staff() {
                             </button>
                           </th>
                         ))}
+                        <th style={{ textAlign: 'center', padding: '6px 4px', borderBottom: '1px solid var(--border-subtle)', width: '17%' }}>
+                          <div style={{ color: '#8b5cf6', fontWeight: 700, fontSize: '0.75rem', marginBottom: 4 }}>{CREATE_LABEL}</div>
+                          <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>per page</span>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
                       {GRANTABLE_PAGES.map((page, i) => {
-                        const rowHasAny = ACTIONS.some(a => hasPerm(permissions, page, a));
+                        const rowHasAny = ACTIONS.some(a => hasPerm(permissions, page, a)) || hasPerm(permissions, page, 'create');
+                        const isCreatable = CREATABLE_PAGES.includes(page);
+                        const borderStyle = i < GRANTABLE_PAGES.length - 1 ? '1px solid var(--border-subtle)' : 'none';
                         return (
                           <tr key={page} style={{ background: rowHasAny ? 'rgba(192,32,31,0.05)' : 'transparent' }}>
-                            <td style={{ padding: '7px 8px', fontWeight: rowHasAny ? 600 : 400, color: rowHasAny ? 'var(--text)' : 'var(--text-muted)', borderBottom: i < GRANTABLE_PAGES.length - 1 ? '1px solid var(--border-subtle)' : 'none' }}>
+                            <td style={{ padding: '7px 8px', fontWeight: rowHasAny ? 600 : 400, color: rowHasAny ? 'var(--text)' : 'var(--text-muted)', borderBottom: borderStyle }}>
                               {page}
                             </td>
                             {ACTIONS.map(action => {
                               const checked = hasPerm(permissions, page, action);
                               return (
-                                <td key={action} style={{ textAlign: 'center', borderBottom: i < GRANTABLE_PAGES.length - 1 ? '1px solid var(--border-subtle)' : 'none' }}>
+                                <td key={action} style={{ textAlign: 'center', borderBottom: borderStyle }}>
                                   <div
                                     onClick={() => setPermissions(prev => togglePerm(prev, page, action))}
                                     style={{
@@ -425,6 +435,25 @@ export default function Staff() {
                                 </td>
                               );
                             })}
+                            {/* Add New column — only active for CREATABLE_PAGES */}
+                            <td style={{ textAlign: 'center', borderBottom: borderStyle }}>
+                              {isCreatable ? (
+                                <div
+                                  onClick={() => setPermissions(prev => togglePerm(prev, page, 'create'))}
+                                  style={{
+                                    width: 18, height: 18, borderRadius: 4, margin: '0 auto', cursor: 'pointer',
+                                    border: `2px solid ${hasPerm(permissions, page, 'create') ? '#8b5cf6' : 'var(--border-subtle)'}`,
+                                    background: hasPerm(permissions, page, 'create') ? '#8b5cf6' : 'transparent',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    transition: 'all 0.15s',
+                                  }}
+                                >
+                                  {hasPerm(permissions, page, 'create') && <Check size={11} color="#fff" strokeWidth={3} />}
+                                </div>
+                              ) : (
+                                <span style={{ color: 'var(--border-subtle)', fontSize: '0.7rem' }}>—</span>
+                              )}
+                            </td>
                           </tr>
                         );
                       })}

@@ -43,12 +43,19 @@ export function SettingsProvider({ children }) {
 
   const bcRef = useRef(null);
 
-  // Always fetch fresh settings from Supabase on mount
+  // Fetch settings from Supabase on mount, but skip if cached data is < 5 minutes old
   useEffect(() => {
+    const SETTINGS_TTL_MS = 5 * 60 * 1000; // 5 minutes
+    const lastFetched = Number(localStorage.getItem('smokey_settings_fetched_at') || 0);
+    const isStale = Date.now() - lastFetched > SETTINGS_TTL_MS;
+
+    if (!isStale) return; // Use cached localStorage data, skip the Supabase request
+
     Promise.all([
       publicSupabase.from('app_settings').select('value').eq('key', 'delivery_options').single(),
       publicSupabase.from('app_settings').select('value').eq('key', 'ticker_items').single(),
     ]).then(([deliveryRes, tickerRes]) => {
+      localStorage.setItem('smokey_settings_fetched_at', String(Date.now()));
       setSettingsState(prev => ({
         ...prev,
         ...(Array.isArray(deliveryRes.data?.value) && deliveryRes.data.value.length > 0
@@ -92,6 +99,8 @@ export function SettingsProvider({ children }) {
       const results = await Promise.all(upserts);
       const err = results.find(r => r.error);
       if (err) return { error: err.error };
+      // Bust TTL so next load re-fetches the new values
+      localStorage.removeItem('smokey_settings_fetched_at');
     }
     return { error: null };
   };

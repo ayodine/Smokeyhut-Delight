@@ -212,7 +212,7 @@ export default function Shipping() {
                     <td style={{ fontWeight: 700, color: 'var(--green)' }}>{order.delivery_fee ? fmt(order.delivery_fee) : '—'}</td>
                     <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                       <div>{new Date(order.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
-                      <div style={{ fontWeight: 600 }}>{new Date(order.created_at).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}</div>
+                      <div style={{ fontWeight: 600 }}>{new Date(order.created_at).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
                     </td>
                     <td><span className={`status-badge ${order.status}`}>{order.status}</span></td>
                     <td>

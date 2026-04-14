@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Loader2, FileText, Plus, Trash2, X } from 'lucide-react';
-import { SkelTable, SkelLine } from '../../components/Skeleton';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Search, Loader2, FileText, Plus, Trash2, X, ChevronUp, ChevronDown, Clock, Truck, CheckCircle, XCircle, RefreshCw, RotateCcw, AlertTriangle } from 'lucide-react';
+import { SkelTable, SkelLine, SkelKpiGrid } from '../../components/Skeleton';
+import Pagination from '../../components/Pagination';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -9,6 +10,25 @@ import { fetchDeliveryZones } from '../../lib/deliveryMatcher';
 
 const fmt = (n) => '₦' + Number(n).toLocaleString();
 const statuses = ['all', 'pending', 'processing', 'shipped', 'delivered', 'cancelled'];
+
+const PERIODS = [
+  { label: 'Today',      value: 'today' },
+  { label: 'This Week',  value: 'week' },
+  { label: 'This Month', value: 'month' },
+  { label: 'This Year',  value: 'year' },
+  { label: 'All Time',   value: 'all' },
+];
+
+function getStartDate(period) {
+  const now = new Date();
+  switch (period) {
+    case 'today': { const d = new Date(now); d.setHours(0,0,0,0); return d; }
+    case 'week':  { const d = new Date(now); d.setDate(now.getDate() - ((now.getDay() + 6) % 7)); d.setHours(0,0,0,0); return d; }
+    case 'month': { return new Date(now.getFullYear(), now.getMonth(), 1); }
+    case 'year':  { return new Date(now.getFullYear(), 0, 1); }
+    default: return null;
+  }
+}
 const CHANNELS = ['WhatsApp', 'Instagram', 'Facebook', 'Offline', 'Walk-in', 'Phone', 'Website'];
 const PAYMENT_METHODS = ['cash', 'bank_transfer', 'paystack', 'pos', 'other'];
 
@@ -36,13 +56,14 @@ function generateInvoice(order) {
   <title>Receipt ${order.id} — Smokeyhut Delight</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
+    html, body { width: 100%; background: #fff; }
+    body { display: flex; justify-content: center; align-items: flex-start; }
+    .receipt {
       font-family: 'Courier New', Courier, monospace;
-      width: 80mm;
-      max-width: 80mm;
-      margin: 0 auto;
-      padding: 4mm 4mm 8mm;
-      font-size: 11px;
+      width: 148mm;
+      max-width: 148mm;
+      padding: 10mm 12mm 14mm;
+      font-size: 12px;
       color: #000;
       background: #fff;
     }
@@ -64,12 +85,14 @@ function generateInvoice(order) {
     .badge { display: inline-block; border: 1px solid #000; padding: 1px 6px; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; border-radius: 3px; }
     .footer { font-size: 9px; color: #555; text-align: center; line-height: 1.8; margin-top: 4mm; }
     @media print {
-      body { margin: 0; padding: 4mm; }
-      @page { size: 80mm auto; margin: 0; }
+      html, body { width: 100%; margin: 0; padding: 0; display: flex; justify-content: center; }
+      .receipt { padding: 10mm 12mm 14mm; }
+      @page { size: A5 portrait; margin: 0; }
     }
   </style>
 </head>
 <body>
+<div class="receipt">
   <div class="center">
     <img src="${logoUrl}" class="logo" alt="Smokeyhut Delight" onerror="this.style.display='none'" />
     <div class="brand">Smokeyhut <span>Delight</span></div>
@@ -137,6 +160,7 @@ function generateInvoice(order) {
   </div>
 
   <script>window.onload = () => { window.print(); }</script>
+</div>
 </body>
 </html>`;
 
@@ -154,37 +178,64 @@ const emptyNewOrder = {
 };
 
 export default function Orders() {
-  const { userRole } = useAuth();
+  const { userRole, userPermissions } = useAuth();
   const { selectedStore } = useOutletContext() || {};
   const { showToast } = useToast();
   const isAdmin = userRole === 'Admin';
+  const canCreateOrder = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Orders:create');
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
   const [storeList, setStoreList] = useState([]);
   const [zones, setZones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
+  const [period, setPeriod] = useState('all');
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [expandedId, setExpandedId] = useState(null);
+  const [sortKey, setSortKey] = useState('created_at');
+  const [sortDir, setSortDir] = useState('desc');
+  const [page, setPage] = useState(1);
+  const PER_PAGE = 15;
   const [showNewOrder, setShowNewOrder] = useState(false);
   const [newOrder, setNewOrder] = useState(emptyNewOrder);
   const [savingNew, setSavingNew] = useState(false);
+  const [trashView, setTrashView] = useState(false);
+  const [deletedOrders, setDeletedOrders] = useState([]);
 
   useEffect(() => { fetchData(); }, [selectedStore]);
+  useEffect(() => { setPage(1); }, [filter, period, debouncedSearch]);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 250);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const fetchData = async () => {
     setLoading(true);
-    let ordersQuery = supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false });
-    if (selectedStore && selectedStore !== 'all') {
-      ordersQuery = ordersQuery.eq('store_id', selectedStore);
-    }
-    const [ordersRes, productsRes, storesRes, zonesRes] = await Promise.all([
-      ordersQuery,
+    const storeFilter = selectedStore && selectedStore !== 'all' ? selectedStore : null;
+
+    const buildBase = () => {
+      let q = supabase.from('orders').select('*, order_items(*)');
+      if (storeFilter) q = q.eq('store_id', storeFilter);
+      return q;
+    };
+
+    // Deleted orders only need summary columns — skip order_items join to save egress
+    const buildDeletedBase = () => {
+      let q = supabase.from('orders').select('id, customer_name, customer_email, customer_phone, delivery_address, total, status, created_at, deleted_at, store_id, notes');
+      if (storeFilter) q = q.eq('store_id', storeFilter);
+      return q;
+    };
+
+    const [ordersRes, deletedRes, productsRes, storesRes, zonesRes] = await Promise.all([
+      buildBase().is('deleted_at', null).order('created_at', { ascending: false }),
+      buildDeletedBase().not('deleted_at', 'is', null).order('deleted_at', { ascending: false }),
       supabase.from('products').select('id, name, price').order('name'),
       supabase.from('stores').select('id, name').eq('is_active', true).order('id'),
       fetchDeliveryZones(supabase),
     ]);
     if (ordersRes.data) setOrders(ordersRes.data);
+    if (deletedRes.data) setDeletedOrders(deletedRes.data);
     if (productsRes.data) setProducts(productsRes.data);
     if (storesRes.data) {
       setStoreList(storesRes.data);
@@ -200,10 +251,34 @@ export default function Orders() {
   };
 
   const deleteOrder = async (id) => {
-    if (window.confirm('Delete this order?')) {
-      await supabase.from('order_items').delete().eq('order_id', id);
-      const { error } = await supabase.from('orders').delete().eq('id', id);
-      if (!error) setOrders(prev => prev.filter(o => o.id !== id));
+    if (!window.confirm('Move this order to trash? You can recover it later.')) return;
+    const now = new Date().toISOString();
+    const { error } = await supabase.from('orders').update({ deleted_at: now }).eq('id', id);
+    if (!error) {
+      const moved = orders.find(o => o.id === id);
+      setOrders(prev => prev.filter(o => o.id !== id));
+      if (moved) setDeletedOrders(prev => [{ ...moved, deleted_at: now }, ...prev]);
+      showToast('Order moved to trash', 'You can recover it from Trash.', 'info');
+    }
+  };
+
+  const restoreOrder = async (id) => {
+    const { error } = await supabase.from('orders').update({ deleted_at: null }).eq('id', id);
+    if (!error) {
+      const moved = deletedOrders.find(o => o.id === id);
+      setDeletedOrders(prev => prev.filter(o => o.id !== id));
+      if (moved) setOrders(prev => [{ ...moved, deleted_at: null }, ...prev]);
+      showToast('Order restored', '', 'success');
+    }
+  };
+
+  const permanentDelete = async (id) => {
+    if (!window.confirm('Permanently delete this order? This cannot be undone.')) return;
+    await supabase.from('order_items').delete().eq('order_id', id);
+    const { error } = await supabase.from('orders').delete().eq('id', id);
+    if (!error) {
+      setDeletedOrders(prev => prev.filter(o => o.id !== id));
+      showToast('Order permanently deleted', '', 'info');
     }
   };
 
@@ -283,16 +358,62 @@ export default function Orders() {
     }
   };
 
-  // ── Filter ───────────────────────────────────────────────
-  const filtered = orders.filter(o => {
-    const matchStatus = filter === 'all' || o.status === filter;
-    const matchSearch = String(o.customer_name || '').toLowerCase().includes(search.toLowerCase()) ||
-                        String(o.id).toLowerCase().includes(search.toLowerCase());
-    return matchStatus && matchSearch;
-  });
+  // ── Filter + Sort ────────────────────────────────────────
+  const startDate = useMemo(() => getStartDate(period), [period]);
+
+  // Period + search only (used for status tab counts)
+  const periodSearchFiltered = useMemo(() => {
+    const q = debouncedSearch.toLowerCase();
+    return orders.filter(o => {
+      const matchSearch = !q ||
+        String(o.customer_name || '').toLowerCase().includes(q) ||
+        String(o.id).toLowerCase().includes(q);
+      const matchPeriod = !startDate || new Date(o.created_at) >= startDate;
+      return matchSearch && matchPeriod;
+    });
+  }, [orders, debouncedSearch, startDate]);
+
+  // Period + search + status (final set before sort)
+  const baseFiltered = useMemo(() =>
+    periodSearchFiltered.filter(o => filter === 'all' || o.status === filter),
+    [periodSearchFiltered, filter]
+  );
+
+  const filtered = useMemo(() => [...baseFiltered].sort((a, b) => {
+    let av, bv;
+    if (sortKey === 'total') { av = Number(a.total || 0); bv = Number(b.total || 0); }
+    else if (sortKey === 'created_at') { av = a.created_at; bv = b.created_at; }
+    else if (sortKey === 'items') { av = a.order_items?.length || 0; bv = b.order_items?.length || 0; }
+    else { av = String(a[sortKey] || '').toLowerCase(); bv = String(b[sortKey] || '').toLowerCase(); }
+    if (av < bv) return sortDir === 'asc' ? -1 : 1;
+    if (av > bv) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  }), [baseFiltered, sortKey, sortDir]);
+
+  const handleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+  const SortIcon = ({ col }) => {
+    if (sortKey !== col) return <ChevronUp size={11} style={{ opacity: 0.25, verticalAlign: 'middle', marginLeft: 3 }} />;
+    return sortDir === 'asc'
+      ? <ChevronUp size={11} style={{ verticalAlign: 'middle', marginLeft: 3, color: 'var(--red)' }} />
+      : <ChevronDown size={11} style={{ verticalAlign: 'middle', marginLeft: 3, color: 'var(--red)' }} />;
+  };
+  const thStyle = (col) => ({ cursor: 'pointer', userSelect: 'none', background: sortKey === col ? 'var(--black2)' : undefined });
+
+  const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+
+  // KPIs — computed from period+search filtered orders (ignores status tab)
+  const kpiPending   = useMemo(() => periodSearchFiltered.filter(o => o.status === 'pending').length, [periodSearchFiltered]);
+  const kpiProcessing = useMemo(() => periodSearchFiltered.filter(o => o.status === 'processing').length, [periodSearchFiltered]);
+  const kpiShipped   = useMemo(() => periodSearchFiltered.filter(o => o.status === 'shipped').length, [periodSearchFiltered]);
+  const kpiDelivered = useMemo(() => periodSearchFiltered.filter(o => o.status === 'delivered').length, [periodSearchFiltered]);
+  const kpiCancelled = useMemo(() => periodSearchFiltered.filter(o => o.status === 'cancelled').length, [periodSearchFiltered]);
 
   if (loading) return (
     <div>
+      <SkelKpiGrid count={4} />
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <SkelLine style={{ width: 220, height: 36, borderRadius: 10 }} />
         <SkelLine style={{ width: 120, height: 36, borderRadius: 10 }} />
@@ -304,27 +425,184 @@ export default function Orders() {
 
   return (
     <div>
-      <div className="dash-card-header" style={{ marginBottom: 20 }}>
-        <div className="dash-card-title" style={{ fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif", fontSize: '1.4rem' }}>Orders Management</div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <div style={{ position: 'relative' }}>
-            <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 12, top: 12 }} />
-            <input className="dash-search" placeholder="Search orders..." value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 40 }} />
+      <div className="dash-card-header" style={{ marginBottom: 20, alignItems: 'flex-start' }}>
+        <div>
+          <div className="dash-card-title" style={{ fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif", fontSize: '1.4rem' }}>
+            {trashView ? 'Trash — Deleted Orders' : 'Orders Management'}
           </div>
-          <button
-            className="btn-primary"
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', fontSize: '0.85rem', whiteSpace: 'nowrap' }}
-            onClick={() => setShowNewOrder(true)}
-          >
-            <Plus size={16} /> New Order
-          </button>
+          {trashView && (
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: 4 }}>
+              Orders here are not visible to the storefront. Recover or delete permanently.
+            </p>
+          )}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
+          {/* Period filter */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {PERIODS.map(p => (
+              <button
+                key={p.value}
+                onClick={() => setPeriod(p.value)}
+                style={{
+                  padding: '6px 14px', borderRadius: 20,
+                  border: `1px solid ${period === p.value ? 'var(--red)' : 'var(--border-subtle)'}`,
+                  background: period === p.value ? 'var(--red)' : 'var(--white)',
+                  color: period === p.value ? '#fff' : 'var(--text)',
+                  fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer',
+                  fontFamily: "'DM Sans',sans-serif", transition: 'all 0.15s',
+                }}
+              >{p.label}</button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <div style={{ position: 'relative' }}>
+              <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 12, top: 12 }} />
+              <input className="dash-search" placeholder="Search orders..." value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 40 }} />
+            </div>
+            <button
+              onClick={() => setTrashView(v => !v)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px',
+                fontSize: '0.85rem', whiteSpace: 'nowrap', borderRadius: 8, cursor: 'pointer',
+                border: `1px solid ${trashView ? 'var(--red)' : 'var(--border-subtle)'}`,
+                background: trashView ? 'var(--red)' : 'var(--white)',
+                color: trashView ? '#fff' : 'var(--text)', fontWeight: 700,
+                fontFamily: "'DM Sans',sans-serif", position: 'relative',
+              }}
+            >
+              <Trash2 size={15} /> Trash
+              {deletedOrders.length > 0 && (
+                <span style={{
+                  position: 'absolute', top: -6, right: -6,
+                  background: '#ef4444', color: '#fff', borderRadius: '50%',
+                  width: 18, height: 18, fontSize: '0.65rem', fontWeight: 800,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>{deletedOrders.length}</span>
+              )}
+            </button>
+            {canCreateOrder && !trashView && (
+              <button
+                className="btn-primary"
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', fontSize: '0.85rem', whiteSpace: 'nowrap' }}
+                onClick={() => setShowNewOrder(true)}
+              >
+                <Plus size={16} /> New Order
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {trashView ? (
+        /* ── Trash View ── */
+        <div className="dash-card">
+          {deletedOrders.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text-muted)' }}>
+              <Trash2 size={40} style={{ opacity: 0.3, marginBottom: 12 }} />
+              <div style={{ fontWeight: 700 }}>Trash is empty</div>
+              <div style={{ fontSize: '0.82rem', marginTop: 4 }}>Deleted orders will appear here.</div>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, padding: '10px 14px', background: 'rgba(239,68,68,0.07)', borderRadius: 10, border: '1px solid rgba(239,68,68,0.2)' }}>
+                <AlertTriangle size={16} color="#ef4444" />
+                <span style={{ fontSize: '0.83rem', color: '#ef4444', fontWeight: 600 }}>
+                  {deletedOrders.length} deleted order{deletedOrders.length !== 1 ? 's' : ''}. Recover to restore them or delete permanently.
+                </span>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table className="dash-table">
+                  <thead>
+                    <tr>
+                      <th>Order ID</th>
+                      <th>Customer</th>
+                      <th>Total</th>
+                      <th>Status</th>
+                      <th>Original Date</th>
+                      <th>Deleted</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {deletedOrders.map(order => (
+                      <tr key={order.id} style={{ opacity: 0.8 }}>
+                        <td style={{ fontWeight: 700, color: 'var(--text-muted)' }}>{order.id}</td>
+                        <td>
+                          <div style={{ fontWeight: 700 }}>{order.customer_name}</div>
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{order.customer_phone}</div>
+                        </td>
+                        <td style={{ fontWeight: 700 }}>{fmt(order.total || 0)}</td>
+                        <td><span className={`status-badge ${order.status}`}>{order.status}</span></td>
+                        <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                          {new Date(order.created_at).toLocaleDateString()}
+                        </td>
+                        <td style={{ fontSize: '0.82rem', color: '#ef4444' }}>
+                          {new Date(order.deleted_at).toLocaleDateString()}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <button
+                              onClick={() => restoreOrder(order.id)}
+                              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 7, border: '1px solid #22c55e', background: 'rgba(34,197,94,0.1)', color: '#16a34a', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer' }}
+                            >
+                              <RotateCcw size={13} /> Recover
+                            </button>
+                            <button
+                              onClick={() => permanentDelete(order.id)}
+                              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 7, border: '1px solid rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.08)', color: '#ef4444', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer' }}
+                            >
+                              <Trash2 size={13} /> Delete Forever
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      ) : (
+      <>
+      {/* KPI Cards */}
+      <div className="kpi-grid" style={{ marginBottom: 20 }}>
+        <div className="kpi-card yellow">
+          <div className="kpi-icon"><Clock size={24} /></div>
+          <div className="kpi-value">{kpiPending}</div>
+          <div className="kpi-label">Pending</div>
+          <div className="kpi-change down">Awaiting action</div>
+        </div>
+        <div className="kpi-card blue">
+          <div className="kpi-icon"><RefreshCw size={24} /></div>
+          <div className="kpi-value">{kpiProcessing}</div>
+          <div className="kpi-label">Processing</div>
+          <div className="kpi-change up">Being prepared</div>
+        </div>
+        <div className="kpi-card purple">
+          <div className="kpi-icon"><Truck size={24} /></div>
+          <div className="kpi-value">{kpiShipped}</div>
+          <div className="kpi-label">Shipped</div>
+          <div className="kpi-change up">On the way</div>
+        </div>
+        <div className="kpi-card green">
+          <div className="kpi-icon"><CheckCircle size={24} /></div>
+          <div className="kpi-value">{kpiDelivered}</div>
+          <div className="kpi-label">Delivered</div>
+          <div className="kpi-change up">Completed</div>
+        </div>
+        <div className="kpi-card red">
+          <div className="kpi-icon"><XCircle size={24} /></div>
+          <div className="kpi-value">{kpiCancelled}</div>
+          <div className="kpi-label">Cancelled</div>
+          <div className="kpi-change down">{kpiCancelled > 0 ? 'Review needed' : 'None this period'}</div>
         </div>
       </div>
 
       <div className="dash-filters">
         {statuses.map(s => (
           <button key={s} className={`dash-filter-btn${filter === s ? ' active' : ''}`} onClick={() => setFilter(s)}>
-            {s === 'all' ? `All (${orders.length})` : `${s.charAt(0).toUpperCase() + s.slice(1)} (${orders.filter(o => o.status === s).length})`}
+            {s === 'all' ? `All (${periodSearchFiltered.length})` : `${s.charAt(0).toUpperCase() + s.slice(1)} (${periodSearchFiltered.filter(o => o.status === s).length})`}
           </button>
         ))}
       </div>
@@ -332,9 +610,17 @@ export default function Orders() {
       <div className="dash-card">
         <div style={{ overflowX: 'auto' }}>
           <table className="dash-table">
-            <thead><tr><th>ID</th><th>Customer</th><th>Items</th><th>Total</th><th>Channel / Payment</th><th>Status</th><th>Date &amp; Time</th></tr></thead>
+            <thead><tr>
+              <th style={thStyle('id')} onClick={() => handleSort('id')}>ID <SortIcon col="id" /></th>
+              <th style={thStyle('customer_name')} onClick={() => handleSort('customer_name')}>Customer <SortIcon col="customer_name" /></th>
+              <th style={thStyle('items')} onClick={() => handleSort('items')}>Items <SortIcon col="items" /></th>
+              <th style={thStyle('total')} onClick={() => handleSort('total')}>Total <SortIcon col="total" /></th>
+              <th>Channel / Payment</th>
+              <th style={thStyle('status')} onClick={() => handleSort('status')}>Status <SortIcon col="status" /></th>
+              <th style={thStyle('created_at')} onClick={() => handleSort('created_at')}>Date &amp; Time <SortIcon col="created_at" /></th>
+            </tr></thead>
             <tbody>
-              {filtered.map(order => {
+              {paged.map(order => {
                 const itemsCount = order.order_items?.length || 0;
                 const channel = getChannel(order.notes);
                 return (
@@ -361,7 +647,7 @@ export default function Orders() {
                       <td><span className={`status-badge ${order.status}`}>{order.status}</span></td>
                       <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
                         <div>{new Date(order.created_at).toLocaleDateString()}</div>
-                        <div style={{ fontSize: '0.75rem', marginTop: 2 }}>{new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                        <div style={{ fontSize: '0.75rem', marginTop: 2 }}>{new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
                       </td>
                     </tr>
                     {expandedId === order.id && (
@@ -445,7 +731,10 @@ export default function Orders() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} total={filtered.length} perPage={PER_PAGE} onChange={setPage} />
       </div>
+      </>
+      )}
 
       {/* ── New Manual Order Modal ── */}
       {showNewOrder && (

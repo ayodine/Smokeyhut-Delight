@@ -1,6 +1,13 @@
 import React from 'react';
+import { useSEO } from '../../hooks/useSEO';
 
 export default function Refund() {
+  useSEO({
+    title: 'Refund & Cancellation Policy',
+    description: 'Understand the refund and cancellation policy at Smokeyhut Delight. Learn what happens if you need to cancel or request a refund.',
+    path: '/refund',
+  });
+
   return (
     <div>
       <section className="about-hero">

@@ -1,15 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import ProductCard from '../../components/ProductCard';
 import { Search } from 'lucide-react';
 import { getProducts } from '../../lib/productsCache';
+import { useSEO } from '../../hooks/useSEO';
 
 export default function Shop() {
+  useSEO({
+    title: 'Order Online – Guineafowl, Rice & More',
+    description: 'Browse and order from our full menu — firewood-grilled guineafowl, rice, palm wine, zobo & more. Same-day delivery across Lagos.',
+    path: '/shop',
+  });
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([{ id: 'all', label: 'All Items' }]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
   useEffect(() => {
     getProducts().then(({ products: p, categories: c }) => {
@@ -19,12 +26,19 @@ export default function Shop() {
     });
   }, []);
 
-  const filtered = products.filter(p => {
-    const matchCat = activeFilter === 'all' || p.category_id === activeFilter;
-    const matchSearch = String(p.name).toLowerCase().includes(search.toLowerCase()) ||
-                        String(p.description || '').toLowerCase().includes(search.toLowerCase());
-    return matchCat && matchSearch;
-  });
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 200);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const filtered = useMemo(() => {
+    const q = debouncedSearch.toLowerCase();
+    return products.filter(p => {
+      const matchCat = activeFilter === 'all' || p.category_id === activeFilter;
+      const matchSearch = !q || String(p.name).toLowerCase().includes(q) || String(p.short_desc || '').toLowerCase().includes(q);
+      return matchCat && matchSearch;
+    });
+  }, [products, debouncedSearch, activeFilter]);
 
   return (
     <div>

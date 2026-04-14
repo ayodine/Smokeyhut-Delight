@@ -1,7 +1,14 @@
 import React, { useState } from 'react';
 import { faqs } from '../../data/mockData';
+import { useSEO } from '../../hooks/useSEO';
 
 export default function FAQ() {
+  useSEO({
+    title: 'FAQ – Frequently Asked Questions',
+    description: 'Got questions about ordering, delivery, or our food? Find answers to the most common questions about Smokeyhut Delight here.',
+    path: '/faq',
+  });
+
   const [openIdx, setOpenIdx] = useState(null);
 
   return (

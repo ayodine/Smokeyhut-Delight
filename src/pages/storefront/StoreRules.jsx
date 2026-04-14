@@ -1,5 +1,6 @@
 import React from 'react';
 import { Clock, Package, ClipboardList, Truck, CheckCircle, Map } from 'lucide-react';
+import { useSEO } from '../../hooks/useSEO';
 
 const regs = [
   { icon: Clock, title: 'Opening Hours', items: ['Monday – Saturday: 8:00am – 6:00pm', 'Sunday: 10:00am – 4:00pm', 'Orders after closing delivered next day'] },
@@ -11,6 +12,12 @@ const regs = [
 ];
 
 export default function StoreRules() {
+  useSEO({
+    title: 'Store Rules & Ordering Guide',
+    description: 'How ordering works at Smokeyhut Delight — opening hours, order cutoffs, delivery windows, and payment options.',
+    path: '/store-rules',
+  });
+
   return (
     <div>
       <section className="about-hero">

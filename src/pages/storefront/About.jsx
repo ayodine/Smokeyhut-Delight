@@ -1,8 +1,14 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Flame, Leaf, Heart, Zap, MapPin } from 'lucide-react';
+import { useSEO } from '../../hooks/useSEO';
 
 export default function About() {
+  useSEO({
+    title: 'Our Story – Authentic Nigerian Grilled Food',
+    description: "From a passion for authentic flavours to Lagos's most beloved guineafowl brand. Learn the story behind Smokeyhut Delight in Yaba, Lagos.",
+    path: '/about',
+  });
   const values = [
     { icon: Flame, title: 'Authenticity', desc: 'Real firewood. Real spices. Real Nigerian food culture. No compromises.' },
     { icon: Leaf, title: 'Freshness', desc: 'Every order is prepared fresh. We grill daily and never store overnight.' },

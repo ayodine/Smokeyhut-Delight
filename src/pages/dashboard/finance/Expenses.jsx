@@ -1,13 +1,33 @@
-import { useState, useEffect } from 'react';
-import { Plus, Trash2, Loader2, FolderOpen, Receipt, Edit2, Check, X } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Plus, Trash2, Loader2, FolderOpen, Receipt, Edit2, Check, X, ChevronUp, ChevronDown, DollarSign, Hash, Tag, TrendingDown } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { useToast } from '../../../context/ToastContext';
-import { SkelList } from '../../../components/Skeleton';
+import { SkelList, SkelKpiGrid } from '../../../components/Skeleton';
+import Pagination from '../../../components/Pagination';
 
 const fmt = v => `₦${Number(v || 0).toLocaleString('en-NG')}`;
 
 const EMPTY_EXPENSE  = { category_id: '', amount: '', date: new Date().toISOString().split('T')[0], note: '' };
 const EMPTY_CATEGORY = { name: '', description: '' };
+
+const PERIODS = [
+  { label: 'Today',      value: 'today' },
+  { label: 'This Week',  value: 'week' },
+  { label: 'This Month', value: 'month' },
+  { label: 'This Year',  value: 'year' },
+  { label: 'All Time',   value: 'all' },
+];
+
+function getStartDateStr(period) {
+  const now = new Date();
+  switch (period) {
+    case 'today': return now.toISOString().split('T')[0];
+    case 'week': { const d = new Date(now); d.setDate(now.getDate() - ((now.getDay() + 6) % 7)); return d.toISOString().split('T')[0]; }
+    case 'month': return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    case 'year': return `${now.getFullYear()}-01-01`;
+    default: return null;
+  }
+}
 
 const SELECT_STYLE = {
   width: '100%', padding: '12px 36px 12px 16px', borderRadius: 8,
@@ -31,9 +51,15 @@ export default function Expenses() {
   const [deleting, setDeleting]   = useState(null);
   const [editingCatId, setEditingCatId] = useState(null);
   const [editingCatVal, setEditingCatVal] = useState('');
+  const [period, setPeriod]       = useState('all');
+  const [sortKey, setSortKey]     = useState('date');
+  const [sortDir, setSortDir]     = useState('desc');
+  const [page, setPage]           = useState(1);
+  const PER_PAGE = 20;
   const { showToast } = useToast();
 
   useEffect(() => { fetchAll(); }, []);
+  useEffect(() => { setPage(1); }, [period, sortKey, sortDir, tab]);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -108,9 +134,57 @@ export default function Expenses() {
     setEditingCatId(null);
   };
 
-  const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+  // Period filter + sort
+  const startDateStr = getStartDateStr(period);
+  const periodExpenses = startDateStr
+    ? expenses.filter(e => e.date >= startDateStr)
+    : expenses;
 
-  if (loading) return <SkelList rows={5} height={72} />;
+  const sortedExpenses = [...periodExpenses].sort((a, b) => {
+    let av, bv;
+    if (sortKey === 'amount') { av = Number(a.amount || 0); bv = Number(b.amount || 0); }
+    else if (sortKey === 'category') { av = (a.expense_categories?.name || '').toLowerCase(); bv = (b.expense_categories?.name || '').toLowerCase(); }
+    else if (sortKey === 'note') { av = (a.note || '').toLowerCase(); bv = (b.note || '').toLowerCase(); }
+    else { av = a.date || ''; bv = b.date || ''; } // date
+    if (av < bv) return sortDir === 'asc' ? -1 : 1;
+    if (av > bv) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const handleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+  const SortIcon = ({ col }) => {
+    if (sortKey !== col) return <ChevronUp size={11} style={{ opacity: 0.25, verticalAlign: 'middle', marginLeft: 3 }} />;
+    return sortDir === 'asc'
+      ? <ChevronUp size={11} style={{ verticalAlign: 'middle', marginLeft: 3, color: 'var(--red)' }} />
+      : <ChevronDown size={11} style={{ verticalAlign: 'middle', marginLeft: 3, color: 'var(--red)' }} />;
+  };
+  const thStyle = (col) => ({ cursor: 'pointer', userSelect: 'none', background: sortKey === col ? 'var(--black2)' : undefined });
+
+  const pagedExpenses = sortedExpenses.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+
+  // KPIs
+  const kpiTotal    = useMemo(() => periodExpenses.reduce((s, e) => s + Number(e.amount || 0), 0), [periodExpenses]);
+  const kpiCount    = useMemo(() => periodExpenses.length, [periodExpenses]);
+  const kpiAvg      = useMemo(() => kpiCount > 0 ? Math.round(kpiTotal / kpiCount) : 0, [kpiTotal, kpiCount]);
+  const kpiTopCat   = useMemo(() => {
+    const map = {};
+    periodExpenses.forEach(e => {
+      const name = e.expense_categories?.name || 'Uncategorised';
+      map[name] = (map[name] || 0) + Number(e.amount || 0);
+    });
+    const top = Object.entries(map).sort((a, b) => b[1] - a[1])[0];
+    return top ? top[0] : '—';
+  }, [periodExpenses]);
+
+  if (loading) return (
+    <div>
+      <SkelKpiGrid count={4} />
+      <SkelList rows={5} height={72} />
+    </div>
+  );
 
   return (
     <div>
@@ -130,19 +204,49 @@ export default function Expenses() {
         </div>
       </div>
 
-      {/* Summary strip */}
-      <div style={{ background: 'var(--white)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '16px 24px', marginBottom: 24, display: 'flex', gap: 32, flexWrap: 'wrap', boxShadow: 'var(--shadow)' }}>
-        <div>
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Expenses</div>
-          <div style={{ fontSize: '1.4rem', fontWeight: 900, color: 'var(--red)' }}>{fmt(totalExpenses)}</div>
+      {/* Period filter */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
+        {PERIODS.map(p => (
+          <button
+            key={p.value}
+            onClick={() => setPeriod(p.value)}
+            style={{
+              padding: '7px 16px', borderRadius: 20,
+              border: `1px solid ${period === p.value ? 'var(--red)' : 'var(--border-subtle)'}`,
+              background: period === p.value ? 'var(--red)' : 'var(--white)',
+              color: period === p.value ? '#fff' : 'var(--text)',
+              fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer',
+              fontFamily: "'DM Sans',sans-serif", transition: 'all 0.15s',
+            }}
+          >{p.label}</button>
+        ))}
+      </div>
+
+      {/* KPI Cards */}
+      <div className="kpi-grid">
+        <div className="kpi-card red">
+          <div className="kpi-icon"><DollarSign size={24} /></div>
+          <div className="kpi-value">{fmt(kpiTotal)}</div>
+          <div className="kpi-label">Total Expenses</div>
+          <div className="kpi-change down">{PERIODS.find(p => p.value === period)?.label}</div>
         </div>
-        <div>
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Records</div>
-          <div style={{ fontSize: '1.4rem', fontWeight: 900 }}>{expenses.length}</div>
+        <div className="kpi-card blue">
+          <div className="kpi-icon"><Hash size={24} /></div>
+          <div className="kpi-value">{kpiCount}</div>
+          <div className="kpi-label">Records</div>
+          <div className="kpi-change up">{PERIODS.find(p => p.value === period)?.label}</div>
         </div>
-        <div>
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Categories</div>
-          <div style={{ fontSize: '1.4rem', fontWeight: 900 }}>{categories.length}</div>
+        <div className="kpi-card yellow">
+          <div className="kpi-icon"><TrendingDown size={24} /></div>
+          <div className="kpi-value">{fmt(kpiAvg)}</div>
+          <div className="kpi-label">Avg per Expense</div>
+          <div className="kpi-change down">Per record</div>
+        </div>
+        <div className="kpi-card green">
+          <div className="kpi-icon"><Tag size={24} /></div>
+          <div className="kpi-value" style={{ fontSize: '1.2rem', wordBreak: 'break-word' }}>{kpiTopCat}</div>
+          <div className="kpi-label">Top Category</div>
+          <div className="kpi-change up">Highest spend</div>
         </div>
       </div>
 
@@ -173,17 +277,17 @@ export default function Expenses() {
             <table className="dash-table">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Category</th>
-                  <th>Amount</th>
-                  <th>Note</th>
+                  <th style={thStyle('date')} onClick={() => handleSort('date')}>Date <SortIcon col="date" /></th>
+                  <th style={thStyle('category')} onClick={() => handleSort('category')}>Category <SortIcon col="category" /></th>
+                  <th style={thStyle('amount')} onClick={() => handleSort('amount')}>Amount <SortIcon col="amount" /></th>
+                  <th style={thStyle('note')} onClick={() => handleSort('note')}>Note <SortIcon col="note" /></th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {expenses.map(e => (
+                {pagedExpenses.map(e => (
                   <tr key={e.id}>
-                    <td style={{ whiteSpace: 'nowrap' }}>{new Date(e.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{new Date(e.date + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
                     <td>
                       {e.expense_categories?.name
                         ? <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: '0.76rem', fontWeight: 700, background: '#eff6ff', color: '#1d4ed8' }}>{e.expense_categories.name}</span>
@@ -202,12 +306,13 @@ export default function Expenses() {
                     </td>
                   </tr>
                 ))}
-                {expenses.length === 0 && (
-                  <tr><td colSpan="5" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No expenses recorded yet.</td></tr>
+                {sortedExpenses.length === 0 && (
+                  <tr><td colSpan="5" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No expenses in this period.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
+          <Pagination page={page} total={sortedExpenses.length} perPage={PER_PAGE} onChange={setPage} />
         </div>
       )}
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 
 // Prefetch products as early as possible
@@ -11,13 +11,13 @@ import { CartProvider } from './context/CartContext';
 import { ToastProvider } from './context/ToastContext';
 import { SettingsProvider } from './context/SettingsContext';
 
-// Components
+// Components (eager — needed for storefront shell)
 import Navbar from './components/Navbar';
 import CartSidebar from './components/CartSidebar';
 import Footer from './components/Footer';
 import ProtectedRoute from './components/ProtectedRoute';
 
-// Storefront Pages
+// Storefront Pages (eager — user-facing, prefetch already running)
 import Home from './pages/storefront/Home';
 import Shop from './pages/storefront/Shop';
 import CartPage from './pages/storefront/Cart';
@@ -30,23 +30,32 @@ import Privacy from './pages/storefront/Privacy';
 import Refund from './pages/storefront/Refund';
 import PaymentSuccess from './pages/storefront/PaymentSuccess';
 
-// Dashboard Pages
-import Login from './pages/dashboard/Login';
-import ResetPassword from './pages/dashboard/ResetPassword';
-import DashboardLayout from './pages/dashboard/Layout';
-import Overview from './pages/dashboard/Overview';
-import Orders from './pages/dashboard/Orders';
-import Shipping from './pages/dashboard/Shipping';
-import Payments from './pages/dashboard/Payments';
-import Stores from './pages/dashboard/Stores';
-import Products from './pages/dashboard/Products';
-import Customers from './pages/dashboard/Customers';
-import Staff from './pages/dashboard/Staff';
-import Settings from './pages/dashboard/Settings';
-import DeliveryZones from './pages/dashboard/DeliveryZones';
-import Coupons from './pages/dashboard/Coupons';
-import SalesReport from './pages/dashboard/finance/SalesReport';
-import Expenses from './pages/dashboard/finance/Expenses';
+// Dashboard Pages (lazy — only loaded when admin navigates to /admin)
+const Login         = lazy(() => import('./pages/dashboard/Login'));
+const ResetPassword = lazy(() => import('./pages/dashboard/ResetPassword'));
+const DashboardLayout = lazy(() => import('./pages/dashboard/Layout'));
+const Overview      = lazy(() => import('./pages/dashboard/Overview'));
+const Orders        = lazy(() => import('./pages/dashboard/Orders'));
+const Shipping      = lazy(() => import('./pages/dashboard/Shipping'));
+const Payments      = lazy(() => import('./pages/dashboard/Payments'));
+const Stores        = lazy(() => import('./pages/dashboard/Stores'));
+const Products      = lazy(() => import('./pages/dashboard/Products'));
+const Customers     = lazy(() => import('./pages/dashboard/Customers'));
+const Staff         = lazy(() => import('./pages/dashboard/Staff'));
+const Settings      = lazy(() => import('./pages/dashboard/Settings'));
+const DeliveryZones = lazy(() => import('./pages/dashboard/DeliveryZones'));
+const Coupons       = lazy(() => import('./pages/dashboard/Coupons'));
+const SalesReport   = lazy(() => import('./pages/dashboard/finance/SalesReport'));
+const Expenses      = lazy(() => import('./pages/dashboard/finance/Expenses'));
+const Inventory     = lazy(() => import('./pages/dashboard/finance/Inventory'));
+
+function AdminLoader() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'var(--bg)' }}>
+      <div style={{ width: 32, height: 32, border: '3px solid var(--border-subtle)', borderTopColor: 'var(--red)', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+    </div>
+  );
+}
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -99,27 +108,30 @@ export default function App() {
             <ToastProvider>
               <ScrollToTop />
               <Routes>
-                {/* Admin */}
-                <Route path="/admin/login" element={<Login />} />
-                <Route path="/admin/reset-password" element={<ResetPassword />} />
+                {/* Admin (lazy-loaded) */}
+                <Route path="/admin/login" element={<Suspense fallback={<AdminLoader />}><Login /></Suspense>} />
+                <Route path="/admin/reset-password" element={<Suspense fallback={<AdminLoader />}><ResetPassword /></Suspense>} />
                 <Route path="/admin" element={
-                  <ProtectedRoute>
-                    <DashboardLayout />
-                  </ProtectedRoute>
+                  <Suspense fallback={<AdminLoader />}>
+                    <ProtectedRoute>
+                      <DashboardLayout />
+                    </ProtectedRoute>
+                  </Suspense>
                 }>
-                  <Route index element={<Overview />} />
-                  <Route path="orders" element={<Orders />} />
-                  <Route path="shipping" element={<Shipping />} />
-                  <Route path="payments" element={<Payments />} />
-                  <Route path="stores" element={<Stores />} />
-                  <Route path="products" element={<Products />} />
-                  <Route path="customers" element={<Customers />} />
-                  <Route path="staff" element={<Staff />} />
-                  <Route path="zones" element={<DeliveryZones />} />
-                  <Route path="coupons" element={<Coupons />} />
-                  <Route path="finance/sales" element={<SalesReport />} />
-                  <Route path="finance/expenses" element={<Expenses />} />
-                  <Route path="settings" element={<Settings />} />
+                  <Route index element={<Suspense fallback={null}><Overview /></Suspense>} />
+                  <Route path="orders" element={<Suspense fallback={null}><Orders /></Suspense>} />
+                  <Route path="shipping" element={<Suspense fallback={null}><Shipping /></Suspense>} />
+                  <Route path="payments" element={<Suspense fallback={null}><Payments /></Suspense>} />
+                  <Route path="stores" element={<Suspense fallback={null}><Stores /></Suspense>} />
+                  <Route path="products" element={<Suspense fallback={null}><Products /></Suspense>} />
+                  <Route path="customers" element={<Suspense fallback={null}><Customers /></Suspense>} />
+                  <Route path="staff" element={<Suspense fallback={null}><Staff /></Suspense>} />
+                  <Route path="zones" element={<Suspense fallback={null}><DeliveryZones /></Suspense>} />
+                  <Route path="coupons" element={<Suspense fallback={null}><Coupons /></Suspense>} />
+                  <Route path="finance/sales" element={<Suspense fallback={null}><SalesReport /></Suspense>} />
+                  <Route path="finance/expenses" element={<Suspense fallback={null}><Expenses /></Suspense>} />
+                  <Route path="finance/inventory" element={<Suspense fallback={null}><Inventory /></Suspense>} />
+                  <Route path="settings" element={<Suspense fallback={null}><Settings /></Suspense>} />
                 </Route>
 
                 {/* Storefront */}

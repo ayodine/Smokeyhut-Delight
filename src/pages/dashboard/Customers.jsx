@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Users, DollarSign, Package, Trash2, Download, Mail, Send, Loader2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { SkelTable } from '../../components/Skeleton';
+import Pagination from '../../components/Pagination';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 
@@ -24,6 +25,8 @@ export default function Customers() {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const PER_PAGE = 20;
 
   // Campaign state
   const [campaigns, setCampaigns] = useState([]);
@@ -34,6 +37,7 @@ export default function Customers() {
 
   useEffect(() => { fetchData(); }, []);
   useEffect(() => { if (tab === 'campaigns') fetchCampaigns(); }, [tab]);
+  useEffect(() => { setPage(1); }, [search]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -71,6 +75,7 @@ export default function Customers() {
     String(c.name || '').toLowerCase().includes(search.toLowerCase()) ||
     String(c.email || '').toLowerCase().includes(search.toLowerCase())
   );
+  const pagedCustomers = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
   const getAudience = (filter) => {
     let list = customers.filter(c => c.email);
@@ -252,7 +257,7 @@ export default function Customers() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(c => (
+                  {pagedCustomers.map(c => (
                     <tr key={c.id}>
                       <td style={{ fontWeight: 700 }}>{c.name}</td>
                       <td>{c.email || <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
@@ -279,6 +284,7 @@ export default function Customers() {
                 </tbody>
               </table>
             </div>
+            <Pagination page={page} total={filtered.length} perPage={PER_PAGE} onChange={setPage} />
           </div>
         </>
       )}

@@ -1,6 +1,13 @@
 import React from 'react';
+import { useSEO } from '../../hooks/useSEO';
 
 export default function Privacy() {
+  useSEO({
+    title: 'Privacy Policy',
+    description: 'Read our privacy policy to understand how Smokeyhut Delight handles your personal data and order information.',
+    path: '/privacy',
+  });
+
   return (
     <div>
       <section className="about-hero">

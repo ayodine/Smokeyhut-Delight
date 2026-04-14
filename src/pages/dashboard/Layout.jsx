@@ -5,7 +5,7 @@ import { supabase } from '../../lib/supabase';
 import {
   BarChart2, Package, Truck, CreditCard, Store, ShoppingBag, Users,
   Settings, LogOut, Globe, Menu, UserCog, MapPin, Tag,
-  DollarSign, TrendingUp, Receipt, ChevronDown,
+  DollarSign, TrendingUp, Receipt, Archive, ChevronDown,
 } from 'lucide-react';
 
 const allNavItems = [
@@ -21,8 +21,9 @@ const allNavItems = [
   {
     type: 'group', icon: DollarSign, label: 'Finance', roles: ['Admin', 'Manager', 'Staff'],
     children: [
-      { to: '/admin/finance/sales',    icon: TrendingUp, label: 'Sales Report', roles: ['Admin', 'Manager', 'Staff'] },
-      { to: '/admin/finance/expenses', icon: Receipt,    label: 'Expenses',     roles: ['Admin', 'Manager', 'Staff'] },
+      { to: '/admin/finance/sales',     icon: TrendingUp, label: 'Sales Report', roles: ['Admin', 'Manager', 'Staff'] },
+      { to: '/admin/finance/expenses',  icon: Receipt,    label: 'Expenses',     roles: ['Admin', 'Manager', 'Staff'] },
+      { to: '/admin/finance/inventory', icon: Archive,    label: 'Inventory',    roles: ['Admin', 'Manager', 'Staff'] },
     ],
   },
   { to: '/admin/staff',     icon: UserCog,     label: 'Staff',                roles: ['Admin'] },

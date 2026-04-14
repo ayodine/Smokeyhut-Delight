@@ -5,45 +5,37 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const RESEND_API_KEY     = Deno.env.get('RESEND_API_KEY') ?? '';
-const ADMIN_EMAIL        = Deno.env.get('ADMIN_EMAIL') ?? 'Smokeyhut04@gmail.com';
-const FROM_EMAIL         = Deno.env.get('FROM_EMAIL') ?? 'Smokeyhut Delight <orders@smokeyhutdelight.com>';
-// Optional WhatsApp via Twilio — skip if not configured
-const TWILIO_ACCOUNT_SID   = Deno.env.get('TWILIO_ACCOUNT_SID') ?? '';
-const TWILIO_AUTH_TOKEN    = Deno.env.get('TWILIO_AUTH_TOKEN') ?? '';
-const TWILIO_WA_FROM       = Deno.env.get('TWILIO_WHATSAPP_FROM') ?? ''; // e.g. whatsapp:+14155238886
+const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
+const ADMIN_EMAIL    = Deno.env.get('ADMIN_EMAIL') ?? 'Smokeyhut04@gmail.com';
+const ADMIN_EMAIL_2  = 'Smokeyhutdelight01@gmail.com';
+const FROM_EMAIL     = Deno.env.get('FROM_EMAIL') ?? 'Smokeyhut Delight <orders@smokeyhutdelight.com>';
 
-// Status copy for order progress emails / WhatsApp messages
-const STATUS_INFO: Record<string, { subject: string; heading: string; body: string; wa: string }> = {
+// Status copy for order progress emails
+const STATUS_INFO: Record<string, { subject: string; heading: string; body: string }> = {
   processing: {
     subject: 'Order Processing',
     heading: 'Your order is being processed',
     body: 'We have received your order and our team is getting it ready for you.',
-    wa: 'Your order is being processed. Our team is getting it ready! 🍗',
   },
   shipped: {
     subject: 'Order Shipped',
     heading: 'Your order is on the way!',
     body: 'Your order has been picked up by our delivery team and is heading to you.',
-    wa: 'Your order has been shipped and is on the way to you. 🚗',
   },
   out_for_delivery: {
     subject: 'Out for Delivery',
     heading: 'Your rider is on the way',
     body: 'Your rider is heading to your address right now. Please be available to receive your order.',
-    wa: 'Your order is out for delivery! Your rider is heading to you now. Please be available. 📦',
   },
   arrived: {
     subject: 'Order Arrived',
     heading: 'Your order has arrived',
     body: 'Your order has arrived at your location. Enjoy your meal!',
-    wa: 'Your order has arrived! Enjoy your meal from Smokeyhut Delight. 🎉',
   },
   delivered: {
     subject: 'Order Delivered',
     heading: 'Order delivered!',
     body: 'Your order has been delivered successfully. Thank you for choosing Smokeyhut Delight! We hope you enjoy every bite.',
-    wa: 'Your order has been delivered! Thank you for choosing Smokeyhut Delight. Enjoy! 🔥',
   },
 };
 
@@ -83,27 +75,12 @@ async function sendEmail(to: string, subject: string, html: string): Promise<voi
   });
 }
 
-// ── WhatsApp (Twilio) ─────────────────────────────────────────────────────────
-
-async function sendWhatsApp(rawPhone: string, message: string): Promise<void> {
-  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_WA_FROM) return;
-  // Normalise Nigerian numbers: 08012345678 → +2348012345678
-  const digits = rawPhone.replace(/\D/g, '');
-  const e164 = digits.startsWith('234') ? `+${digits}`
-    : digits.startsWith('0') ? `+234${digits.slice(1)}`
-    : `+${digits}`;
-  const body = new URLSearchParams({ To: `whatsapp:${e164}`, From: TWILIO_WA_FROM, Body: message });
-  await fetch(
-    `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Authorization: `Basic ${btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`)}`,
-      },
-      body: body.toString(),
-    }
-  );
+// Sends to both admin emails in parallel
+async function sendAdminEmails(subject: string, html: string): Promise<void> {
+  await Promise.all([
+    sendEmail(ADMIN_EMAIL, subject, html),
+    sendEmail(ADMIN_EMAIL_2, subject, html),
+  ]);
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -121,6 +98,7 @@ serve(async (req) => {
       if (record.status !== old_record.status) {
         const info = STATUS_INFO[record.status];
         if (info) {
+          // Notify customer
           if (record.customer_email) {
             await sendEmail(
               record.customer_email,
@@ -128,12 +106,16 @@ serve(async (req) => {
               buildEmail(info.heading, info.body, record.id),
             );
           }
-          if (record.customer_phone) {
-            await sendWhatsApp(
-              record.customer_phone,
-              `[Smokeyhut Delight] Order ${record.id}: ${info.wa}`,
-            );
-          }
+          // Notify both admins of the status change
+          await sendAdminEmails(
+            `Order Status Update: ${info.subject}`,
+            buildEmail(
+              `Order ${record.id} — ${info.subject}`,
+              `Status changed to <strong style="color:#fff">${record.status}</strong> for order by ${record.customer_name}.`,
+              record.id,
+              `<a href="https://smokeyhut-delight.web.app/admin/orders" style="display:inline-block;background:#c0201f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700">View in Dashboard &rarr;</a>`,
+            ),
+          );
         }
       }
       return new Response(JSON.stringify({ ok: true }), {
@@ -159,16 +141,9 @@ serve(async (req) => {
           ),
         );
       }
-      if (order.customer_phone) {
-        await sendWhatsApp(
-          order.customer_phone,
-          `[Smokeyhut Delight] Hi ${firstName}! Your order ${order.id} is confirmed and being prepared. We'll keep you updated! 🍗🔥`,
-        );
-      }
 
-      // Admin
-      await sendEmail(
-        ADMIN_EMAIL,
+      // Both admins
+      await sendAdminEmails(
         'New Order Received',
         buildEmail(
           'New Order Received',
@@ -187,8 +162,7 @@ serve(async (req) => {
 
     // ── 3. Frontend call — bank transfer made ──────────────────────
     if (type === 'transfer_made') {
-      await sendEmail(
-        ADMIN_EMAIL,
+      await sendAdminEmails(
         'Bank Transfer Alert',
         buildEmail(
           'Bank Transfer Alert',
