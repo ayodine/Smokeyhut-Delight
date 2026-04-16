@@ -25,6 +25,7 @@ async function verifyPaystackPayment(reference) {
   return data;
 }
 
+
 // Fire-and-forget — notifications are non-critical, never block the UI
 async function notify(type, order) {
   try {
@@ -112,7 +113,7 @@ export default function Checkout() {
     setCouponLoading(true);
     const { data, error } = await publicSupabase
       .from('coupons')
-      .select('*')
+      .select('id,code,type,value,expires_at,max_uses,uses,min_order_amount')
       .eq('code', code)
       .eq('is_active', true)
       .maybeSingle();

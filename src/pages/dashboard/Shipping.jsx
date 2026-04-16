@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Package, Truck, CheckCircle, Loader2, MapPin, Banknote } from 'lucide-react';
+import { Package, Truck, CheckCircle, Loader2, MapPin, Banknote, X } from 'lucide-react';
 import { SkelKpiGrid, SkelTable, SkelLine } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../context/ToastContext';
@@ -39,6 +39,7 @@ export default function Shipping() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(null);
   const [filter, setFilter] = useState('active');
+  const [dateFilter, setDateFilter] = useState('');
   const { showToast } = useToast();
 
   const filters = [
@@ -79,8 +80,11 @@ export default function Shipping() {
   };
 
   const filtered = orders.filter(o => {
-    if (filter === 'active') return ['pending', 'processing', 'shipped'].includes(o.status);
-    return o.status === filter;
+    const matchStatus = filter === 'active'
+      ? ['pending', 'processing', 'shipped'].includes(o.status)
+      : o.status === filter;
+    const matchDate = !dateFilter || new Date(o.created_at).toLocaleDateString('en-CA') === dateFilter;
+    return matchStatus && matchDate;
   });
 
   const counts = {
@@ -171,12 +175,35 @@ export default function Shipping() {
         </div>
       </div>
 
-      <div className="dash-filters" style={{ marginBottom: 16 }}>
-        {filters.map(f => (
-          <button key={f.key} className={`dash-filter-btn${filter === f.key ? ' active' : ''}`} onClick={() => setFilter(f.key)}>
-            {f.label} {f.key !== 'active' && <span style={{ opacity: 0.6, marginLeft: 4 }}>({counts[f.key] ?? ''})</span>}
-          </button>
-        ))}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
+        <div className="dash-filters" style={{ marginBottom: 0 }}>
+          {filters.map(f => (
+            <button key={f.key} className={`dash-filter-btn${filter === f.key ? ' active' : ''}`} onClick={() => setFilter(f.key)}>
+              {f.label} {f.key !== 'active' && <span style={{ opacity: 0.6, marginLeft: 4 }}>({counts[f.key] ?? ''})</span>}
+            </button>
+          ))}
+        </div>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <input
+            type="date"
+            value={dateFilter}
+            onChange={e => setDateFilter(e.target.value)}
+            style={{
+              padding: '9px 12px', borderRadius: 8, fontSize: '0.85rem',
+              border: `1px solid ${dateFilter ? 'var(--red)' : 'var(--border-subtle)'}`,
+              background: 'var(--white)', color: 'var(--text)',
+              fontFamily: "'DM Sans',sans-serif", cursor: 'pointer', outline: 'none',
+              paddingRight: dateFilter ? 32 : 12,
+            }}
+          />
+          {dateFilter && (
+            <button
+              onClick={() => setDateFilter('')}
+              style={{ position: 'absolute', right: 8, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', padding: 0 }}
+              title="Clear date"
+            ><X size={14} /></button>
+          )}
+        </div>
       </div>
 
       <div className="dash-card">

@@ -53,12 +53,28 @@ export function AuthProvider({ children }) {
 
       if (authUser) {
         const cachedRole = sessionStorage.getItem('sd_role');
+
+        // Apply cached role immediately so ProtectedRoute doesn't flash the spinner
+        if (cachedRole) {
+          try {
+            applyProfile({ role: cachedRole, permissions: JSON.parse(sessionStorage.getItem('sd_perms') || '[]') });
+          } catch { /* ignore */ }
+        }
+
+        // Fetch real profile from DB — no hard timeout that forces a sign-out
         const profile = await Promise.race([
           fetchProfile(authUser),
-          new Promise(resolve => setTimeout(() => resolve(cachedRole ? { role: cachedRole, permissions: [] } : null), 6000)),
+          new Promise(resolve => setTimeout(() => resolve('timeout'), 12000)),
         ]);
 
-        if (!profile?.role) {
+        if (profile === 'timeout') {
+          // Network was slow — keep whatever cached role we have, don't sign out
+          if (!cachedRole) {
+            setUser(null);
+            applyProfile(null);
+          }
+        } else if (!profile?.role) {
+          // DB confirmed no role — this is a real invalid account, sign out
           await supabase.auth.signOut();
           setUser(null);
           applyProfile(null);

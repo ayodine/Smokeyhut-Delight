@@ -50,7 +50,7 @@ function Countdown() {
         <div className="status-left">
           <div className={`status-pill ${isOpen ? 'open' : 'closed'}`}>
             <span className="status-dot" />
-            {isOpen ? 'Kitchen is Open' : 'Kitchen is Closed'}
+            {isOpen ? 'Store is Open' : 'Store is Closed'}
           </div>
 
           <p className="status-headline">
@@ -77,7 +77,7 @@ function Countdown() {
           <p className="status-tagline">
             {isOpen
               ? <><Flame size={13} style={{ display:'inline', marginRight:5, verticalAlign:'middle' }} />Order now — hot &amp; smoky until {isSunday ? '4:00 pm' : '6:00 pm'}</>
-              : <><Truck size={13} style={{ display:'inline', marginRight:5, verticalAlign:'middle' }} />{isSunday ? 'Ordering opens at 10:00 am on Sundays' : 'Ordering opens daily at 8:00 am'}</>
+              : <><Truck size={13} style={{ display:'inline', marginRight:5, verticalAlign:'middle' }} />{isSunday ? 'Ordering opens at 10:00 am on Sundays' : 'Ordering opens daily at 11:00 am'}</>
             }
           </p>
         </div>
@@ -124,11 +124,11 @@ const testimonials = [
 
 const features = [
   { icon: Flame, title: 'Real Firewood Grill', desc: 'Every Guineafowl is grilled over authentic firewood for that irresistible smoky flavour.' },
-  { icon: Leaf, title: 'Freshly Made Daily', desc: 'We grill fresh every single day. No frozen birds — if it\'s on the menu, it was grilled today.' },
-  { icon: Truck, title: 'Same-Day Delivery', desc: 'Order before 10am and your food dispatches by 10:30am. Lagos-wide delivery.' },
+  { icon: Leaf, title: 'Freshly Made Daily', desc: "We grill fresh everyday — if it's on the menu, it's freshly grilled." },
+  { icon: Truck, title: 'Same-Day Delivery', desc: 'Order before 10am and your food dispatches by 11:00am. Lagos-wide delivery.' },
   { icon: Flame, title: 'Perfectly Spiced', desc: 'Our signature spice blend has been perfected over years — bold, smoky, and addictively good.' },
   { icon: Award, title: 'Lagos #1 Guineafowl', desc: '57,000+ followers and thousands of satisfied customers can\'t be wrong.' },
-  { icon: Store, title: 'Pickup Available', desc: 'Visit us at Yaba or Victoria Island. Walk in, pick up hot, enjoy the Smokeyhut experience.' },
+  { icon: Store, title: 'Pickup Available', desc: 'Visit us at 13 McNeil street, Sabo Yaba, Lagos State.' },
 ];
 
 export default function Home() {
@@ -166,7 +166,7 @@ export default function Home() {
             </div>
           </div>
           <div className="hero-visual" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-            <img src="/HERO.png" alt="Smokeyhut Firewood Grilled Guineafowl" className="hero-image-large" />
+            <img src="https://itpnfalqjjicesqcjzix.supabase.co/storage/v1/object/public/product-images/HERO.png" alt="Smokeyhut Firewood Grilled Guineafowl" className="hero-image-large" />
           </div>
         </div>
       </section>

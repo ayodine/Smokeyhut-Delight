@@ -15,7 +15,7 @@ export function useSEO({ title, description, path = '', image }) {
       ? `${title} | ${BASE_TITLE}`
       : `${BASE_TITLE} – Best Firewood Grilled Guineafowl in Lagos`;
 
-    const ogImage = image || `${BASE_URL}/HERO.png`;
+    const ogImage = image || 'https://itpnfalqjjicesqcjzix.supabase.co/storage/v1/object/public/product-images/HERO.png';
     const canonical = `${BASE_URL}${path}`;
 
     document.title = fullTitle;

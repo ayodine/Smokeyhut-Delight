@@ -39,7 +39,7 @@ export default function Products() {
     setLoading(true);
     try {
       const [pRes, cRes, oiRes] = await Promise.all([
-        supabase.from('products').select('id,name,description,short_desc,price,compare_price,stock,category_id,badge,image,is_active,free_shipping,created_at').order('created_at', { ascending: false }),
+        supabase.from('products').select('id,name,description,short_desc,price,compare_price,stock,category_id,badge,image,is_active,free_shipping,created_at').is('deleted_at', null).order('created_at', { ascending: false }),
         supabase.from('categories').select('*').order('created_at', { ascending: true }),
         supabase.from('order_items').select('product_id, name, qty, orders!inner(status)').neq('orders.status', 'cancelled'),
       ]);
@@ -150,12 +150,12 @@ export default function Products() {
     }
   };
 
-  const handleDelete = async (id) => { 
-    if(window.confirm('Delete this product permanently?')) {
+  const handleDelete = async (id) => {
+    if(window.confirm('Delete this product? It will be hidden from the storefront.')) {
       try {
-        const { error } = await supabase.from('products').delete().eq('id', id);
+        const { error } = await supabase.from('products').update({ deleted_at: new Date().toISOString() }).eq('id', id);
         if (error) throw error;
-        setProductList(prev => prev.filter(p => p.id !== id)); 
+        setProductList(prev => prev.filter(p => p.id !== id));
         showToast('Product deleted successfully');
       } catch (err) {
         showToast('Failed to delete product', err?.message || '', 'error');

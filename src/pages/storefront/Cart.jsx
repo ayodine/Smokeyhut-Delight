@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useCart } from '../../context/CartContext';
 import { useToast } from '../../context/ToastContext';
 import ProductCard from '../../components/ProductCard';
-import { supabase } from '../../lib/supabase';
+import { getProducts } from '../../lib/productsCache';
 import { ShoppingCart, Trash2 } from 'lucide-react';
 
 export default function Cart() {
@@ -14,11 +14,7 @@ export default function Cart() {
   const [products, setProducts] = React.useState([]);
 
   React.useEffect(() => {
-    const fetchProducts = async () => {
-      const { data } = await supabase.from('products').select('*').or('is_active.is.null,is_active.eq.true');
-      if (data) setProducts(data);
-    };
-    fetchProducts();
+    getProducts().then(({ products: p }) => setProducts(p));
   }, []);
 
   // Upsell: products not in cart

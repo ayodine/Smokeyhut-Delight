@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Search, Loader2, FileText, Plus, Trash2, X, ChevronUp, ChevronDown, Clock, Truck, CheckCircle, XCircle, RefreshCw, RotateCcw, AlertTriangle } from 'lucide-react';
 import { SkelTable, SkelLine, SkelKpiGrid } from '../../components/Skeleton';
 import Pagination from '../../components/Pagination';
@@ -202,9 +202,106 @@ export default function Orders() {
   const [savingNew, setSavingNew] = useState(false);
   const [trashView, setTrashView] = useState(false);
   const [deletedOrders, setDeletedOrders] = useState([]);
+  const [dateFilter, setDateFilter] = useState(''); // YYYY-MM-DD
+  const [newOrderAlert, setNewOrderAlert] = useState(null); // { id, name, total }
+  const [realtimeStatus, setRealtimeStatus] = useState('connecting'); // 'connecting' | 'ok' | 'error'
+  const audioCtxRef = useRef(null);
+  const mountedRef = useRef(true);
+
+  // Create (or reuse) a single AudioContext and keep it alive
+  const getAudioCtx = useCallback(() => {
+    if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+      audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    return audioCtxRef.current;
+  }, []);
+
+  // Play a two-tone chime using Web Audio API (no external file needed)
+  const playChime = useCallback(async () => {
+    try {
+      const ctx = getAudioCtx();
+      // Browsers suspend AudioContext until first user gesture — resume it
+      if (ctx.state === 'suspended') await ctx.resume();
+      const compressor = ctx.createDynamicsCompressor();
+      compressor.connect(ctx.destination);
+      // 5-second chime: ascending then descending melody [freq, startSec, durationSec]
+      [
+        [880,  0.0,  0.8],
+        [1100, 0.9,  0.8],
+        [1320, 1.8,  0.8],
+        [1100, 2.7,  0.8],
+        [880,  3.6,  1.4],
+      ].forEach(([freq, start, dur]) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(compressor);
+        osc.type = 'triangle';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, ctx.currentTime + start);
+        gain.gain.linearRampToValueAtTime(1.0, ctx.currentTime + start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur);
+        osc.start(ctx.currentTime + start);
+        osc.stop(ctx.currentTime + start + dur + 0.05);
+      });
+    } catch { /* ignore — browser may block audio without prior interaction */ }
+  }, [getAudioCtx]);
+
+  // Realtime subscription — prepend new order and play sound
+  useEffect(() => {
+    mountedRef.current = true;
+    setRealtimeStatus('connecting');
+    const storeFilter = selectedStore && selectedStore !== 'all' ? selectedStore : null;
+
+    const channel = supabase
+      .channel(`orders-realtime-${Date.now()}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, async (payload) => {
+        const order = payload.new;
+        if (!mountedRef.current) return;
+        if (storeFilter && order.store_id !== storeFilter) return;
+
+        // Fetch order_items for the new order
+        const { data: items } = await supabase.from('order_items').select('*').eq('order_id', order.id);
+        const fullOrder = { ...order, order_items: items || [] };
+
+        setOrders(prev => [fullOrder, ...prev]);
+        playChime();
+        setNewOrderAlert({ id: order.id, name: order.customer_name, total: order.total });
+
+        // Request browser notification permission and show notification
+        if (Notification.permission === 'granted') {
+          new Notification('New Order — Smokeyhut Delight', {
+            body: `${order.customer_name} • ₦${Number(order.total).toLocaleString()}`,
+            icon: '/logo.svg',
+          });
+        } else if (Notification.permission !== 'denied') {
+          Notification.requestPermission().then(perm => {
+            if (perm === 'granted') {
+              new Notification('New Order — Smokeyhut Delight', {
+                body: `${order.customer_name} • ₦${Number(order.total).toLocaleString()}`,
+                icon: '/logo.svg',
+              });
+            }
+          });
+        }
+      })
+      .subscribe((status, err) => {
+        if (!mountedRef.current) return;
+        if (status === 'SUBSCRIBED') setRealtimeStatus('ok');
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.error('[Realtime] subscription failed:', status, err);
+          setRealtimeStatus('error');
+        }
+      });
+
+    return () => {
+      mountedRef.current = false;
+      supabase.removeChannel(channel);
+    };
+  }, [selectedStore, playChime]);
 
   useEffect(() => { fetchData(); }, [selectedStore]);
-  useEffect(() => { setPage(1); }, [filter, period, debouncedSearch]);
+  useEffect(() => { setPage(1); }, [filter, period, debouncedSearch, dateFilter]);
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 250);
     return () => clearTimeout(t);
@@ -246,6 +343,31 @@ export default function Orders() {
   };
 
   const updateStatus = async (id, newStatus) => {
+    // Guard: only decrement stock once, when transitioning TO 'shipped'
+    if (newStatus === 'shipped') {
+      // Fetch current DB status to prevent double-decrement after page refresh
+      const { data: current } = await supabase.from('orders').select('status').eq('id', id).single();
+      if (current?.status !== 'shipped') {
+        const orderItems = orders.find(o => o.id === id)?.order_items || [];
+        const productIds = [...new Set(orderItems.map(i => i.product_id).filter(Boolean))];
+        if (productIds.length > 0) {
+          const { data: productStock } = await supabase.from('products').select('id, stock').in('id', productIds);
+          if (productStock?.length) {
+            const stockMap = Object.fromEntries(productStock.map(p => [String(p.id), p.stock ?? 0]));
+            const qtyMap = {};
+            orderItems.forEach(i => {
+              if (i.product_id) qtyMap[String(i.product_id)] = (qtyMap[String(i.product_id)] || 0) + (i.qty || 0);
+            });
+            await Promise.all(
+              Object.entries(qtyMap).map(([pid, qty]) =>
+                supabase.from('products').update({ stock: Math.max(0, (stockMap[pid] ?? 0) - qty) }).eq('id', pid)
+              )
+            );
+          }
+        }
+      }
+    }
+
     await supabase.from('orders').update({ status: newStatus }).eq('id', id);
     setOrders(prev => prev.map(o => o.id === id ? { ...o, status: newStatus } : o));
   };
@@ -369,9 +491,10 @@ export default function Orders() {
         String(o.customer_name || '').toLowerCase().includes(q) ||
         String(o.id).toLowerCase().includes(q);
       const matchPeriod = !startDate || new Date(o.created_at) >= startDate;
-      return matchSearch && matchPeriod;
+      const matchDate = !dateFilter || new Date(o.created_at).toLocaleDateString('en-CA') === dateFilter;
+      return matchSearch && matchPeriod && matchDate;
     });
-  }, [orders, debouncedSearch, startDate]);
+  }, [orders, debouncedSearch, startDate, dateFilter]);
 
   // Period + search + status (final set before sort)
   const baseFiltered = useMemo(() =>
@@ -425,10 +548,37 @@ export default function Orders() {
 
   return (
     <div>
+      {/* New order alert banner */}
+      {newOrderAlert && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: 'linear-gradient(90deg, #1a4a1a, #1e5c1e)',
+          border: '1px solid #2d7a2d', borderRadius: 12, padding: '12px 18px',
+          marginBottom: 16, gap: 12, animation: 'slideDown 0.3s ease',
+        }}>
+          <style>{`@keyframes slideDown { from { opacity:0; transform:translateY(-10px) } to { opacity:1; transform:translateY(0) } }`}</style>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: '1.3rem' }}>🛎️</span>
+            <div>
+              <div style={{ color: '#7fff7f', fontWeight: 700, fontSize: '0.9rem' }}>New order received!</div>
+              <div style={{ color: '#aaffaa', fontSize: '0.8rem' }}>{newOrderAlert.name} — ₦{Number(newOrderAlert.total).toLocaleString()}</div>
+            </div>
+          </div>
+          <button onClick={() => setNewOrderAlert(null)} style={{ background: 'none', border: 'none', color: '#7fff7f', cursor: 'pointer', fontSize: '1.2rem', lineHeight: 1 }}>×</button>
+        </div>
+      )}
       <div className="dash-card-header" style={{ marginBottom: 20, alignItems: 'flex-start' }}>
         <div>
-          <div className="dash-card-title" style={{ fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif", fontSize: '1.4rem' }}>
-            {trashView ? 'Trash — Deleted Orders' : 'Orders Management'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div className="dash-card-title" style={{ fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif", fontSize: '1.4rem' }}>
+              {trashView ? 'Trash — Deleted Orders' : 'Orders Management'}
+            </div>
+            {/* Realtime status dot */}
+            <span title={realtimeStatus === 'ok' ? 'Live updates active' : realtimeStatus === 'error' ? 'Live updates failed — refresh' : 'Connecting…'} style={{
+              display: 'inline-block', width: 9, height: 9, borderRadius: '50%', flexShrink: 0,
+              background: realtimeStatus === 'ok' ? '#22c55e' : realtimeStatus === 'error' ? '#ef4444' : '#f59e0b',
+              boxShadow: realtimeStatus === 'ok' ? '0 0 0 3px rgba(34,197,94,0.2)' : 'none',
+            }} />
           </div>
           {trashView && (
             <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: 4 }}>
@@ -454,11 +604,43 @@ export default function Orders() {
               >{p.label}</button>
             ))}
           </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ position: 'relative' }}>
               <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 12, top: 12 }} />
               <input className="dash-search" placeholder="Search orders..." value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 40 }} />
             </div>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <input
+                type="date"
+                value={dateFilter}
+                onChange={e => { setDateFilter(e.target.value); if (e.target.value) setPeriod('all'); }}
+                style={{
+                  padding: '9px 12px', borderRadius: 8, fontSize: '0.85rem',
+                  border: `1px solid ${dateFilter ? 'var(--red)' : 'var(--border-subtle)'}`,
+                  background: 'var(--white)', color: 'var(--text)',
+                  fontFamily: "'DM Sans',sans-serif", cursor: 'pointer',
+                  outline: 'none',
+                }}
+              />
+              {dateFilter && (
+                <button
+                  onClick={() => setDateFilter('')}
+                  style={{ position: 'absolute', right: 8, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1rem', lineHeight: 1, padding: 0 }}
+                  title="Clear date"
+                >×</button>
+              )}
+            </div>
+            {/* Test chime button — helps "unlock" AudioContext after first interaction */}
+            <button
+              onClick={() => playChime()}
+              title="Test notification sound"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px',
+                fontSize: '0.85rem', whiteSpace: 'nowrap', borderRadius: 8, cursor: 'pointer',
+                border: '1px solid var(--border-subtle)', background: 'var(--white)',
+                color: 'var(--text-muted)', fontFamily: "'DM Sans',sans-serif",
+              }}
+            >🔔</button>
             <button
               onClick={() => setTrashView(v => !v)}
               style={{

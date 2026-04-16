@@ -8,10 +8,19 @@ const corsHeaders = {
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
 const ADMIN_EMAIL    = Deno.env.get('ADMIN_EMAIL') ?? 'Smokeyhut04@gmail.com';
 const ADMIN_EMAIL_2  = 'Smokeyhutdelight01@gmail.com';
+const OPS_EMAIL      = 'Opleadsmokey@gmail.com'; // receives ALL status changes
 const FROM_EMAIL     = Deno.env.get('FROM_EMAIL') ?? 'Smokeyhut Delight <orders@smokeyhutdelight.com>';
+
+// Statuses where customer + ADMIN_EMAIL + ADMIN_EMAIL_2 are notified
+const DELIVERY_STATUSES = new Set(['shipped', 'delivered']);
 
 // Status copy for order progress emails
 const STATUS_INFO: Record<string, { subject: string; heading: string; body: string }> = {
+  pending: {
+    subject: 'Order Received',
+    heading: 'New order is pending',
+    body: 'A new order has been placed and is waiting to be processed.',
+  },
   processing: {
     subject: 'Order Processing',
     heading: 'Your order is being processed',
@@ -66,21 +75,19 @@ function buildEmail(heading: string, body: string, orderId?: string, extra?: str
 </html>`;
 }
 
-async function sendEmail(to: string, subject: string, html: string): Promise<void> {
+async function sendEmail(to: string, subject: string, html: string, cc?: string[]): Promise<void> {
   if (!RESEND_API_KEY) return;
   await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${RESEND_API_KEY}` },
-    body: JSON.stringify({ from: FROM_EMAIL, to, subject: `${subject} — Smokeyhut Delight`, html }),
+    body: JSON.stringify({
+      from: FROM_EMAIL,
+      to,
+      ...(cc?.length ? { cc } : {}),
+      subject: `${subject} — Smokeyhut Delight`,
+      html,
+    }),
   });
-}
-
-// Sends to both admin emails in parallel
-async function sendAdminEmails(subject: string, html: string): Promise<void> {
-  await Promise.all([
-    sendEmail(ADMIN_EMAIL, subject, html),
-    sendEmail(ADMIN_EMAIL_2, subject, html),
-  ]);
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -92,30 +99,36 @@ serve(async (req) => {
     const payload = await req.json();
 
     // ── 1. Database Webhook — order status changed ─────────────────
-    // Supabase sends: { type: 'UPDATE', table: 'orders', record: {...}, old_record: {...} }
     if (payload.table === 'orders' && payload.type === 'UPDATE') {
       const { record, old_record } = payload;
       if (record.status !== old_record.status) {
         const info = STATUS_INFO[record.status];
         if (info) {
-          // Notify customer
-          if (record.customer_email) {
-            await sendEmail(
+          const adminHtml = buildEmail(
+            `Order ${record.id} — ${info.subject}`,
+            `Status changed to <strong style="color:#fff">${record.status}</strong> for order by ${record.customer_name}.`,
+            record.id,
+            `<a href="https://smokeyhut-delight.web.app/admin/orders" style="display:inline-block;background:#c0201f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700">View in Dashboard &rarr;</a>`,
+          );
+
+          const promises: Promise<void>[] = [];
+
+          // OPS_EMAIL is always the main recipient; CC admins only on Shipped and Delivered
+          const adminCc = DELIVERY_STATUSES.has(record.status)
+            ? [ADMIN_EMAIL, ADMIN_EMAIL_2]
+            : undefined;
+          promises.push(sendEmail(OPS_EMAIL, `Order Status: ${info.subject}`, adminHtml, adminCc));
+
+          // Customer only gets Shipped and Delivered (separate email, no CC)
+          if (DELIVERY_STATUSES.has(record.status) && record.customer_email) {
+            promises.push(sendEmail(
               record.customer_email,
               info.subject,
               buildEmail(info.heading, info.body, record.id),
-            );
+            ));
           }
-          // Notify both admins of the status change
-          await sendAdminEmails(
-            `Order Status Update: ${info.subject}`,
-            buildEmail(
-              `Order ${record.id} — ${info.subject}`,
-              `Status changed to <strong style="color:#fff">${record.status}</strong> for order by ${record.customer_name}.`,
-              record.id,
-              `<a href="https://smokeyhut-delight.web.app/admin/orders" style="display:inline-block;background:#c0201f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700">View in Dashboard &rarr;</a>`,
-            ),
-          );
+
+          await Promise.all(promises);
         }
       }
       return new Response(JSON.stringify({ ok: true }), {
@@ -127,55 +140,37 @@ serve(async (req) => {
     const { type, order } = payload;
 
     if (type === 'order_confirmed') {
-      const firstName = order.customer_name?.split(' ')[0] ?? 'there';
-
-      // Customer
-      if (order.customer_email) {
-        await sendEmail(
-          order.customer_email,
-          'Order Confirmed',
-          buildEmail(
-            'Order Confirmed! 🎉',
-            `Hi <strong style="color:#fff">${firstName}</strong>! Your payment was successful and your order is now being prepared. We'll send you updates as it progresses.`,
-            order.id,
-          ),
-        );
-      }
-
-      // Both admins
-      await sendAdminEmails(
+      const newOrderHtml = buildEmail(
         'New Order Received',
-        buildEmail(
-          'New Order Received',
-          'A new order has been placed and payment confirmed via Paystack.',
-          order.id,
-          `<table style="color:#bbb;font-size:0.9rem;border-collapse:collapse;width:100%;margin-bottom:20px">
-            <tr><td style="padding:6px 0;color:#888;width:110px">Customer</td><td style="color:#fff">${order.customer_name}</td></tr>
-            <tr><td style="padding:6px 0;color:#888">Phone</td><td style="color:#fff">${order.customer_phone}</td></tr>
-            <tr><td style="padding:6px 0;color:#888">Total</td><td style="color:#fff;font-weight:700">&#x20A6;${Number(order.total).toLocaleString()}</td></tr>
-            <tr><td style="padding:6px 0;color:#888">Delivery</td><td style="color:#fff">${order.delivery_address}</td></tr>
-          </table>
-          <a href="https://smokeyhut-delight.web.app/admin/orders" style="display:inline-block;background:#c0201f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700">View in Dashboard &rarr;</a>`,
-        ),
+        'A new order has been placed and payment confirmed via Paystack.',
+        order.id,
+        `<table style="color:#bbb;font-size:0.9rem;border-collapse:collapse;width:100%;margin-bottom:20px">
+          <tr><td style="padding:6px 0;color:#888;width:110px">Customer</td><td style="color:#fff">${order.customer_name}</td></tr>
+          <tr><td style="padding:6px 0;color:#888">Phone</td><td style="color:#fff">${order.customer_phone}</td></tr>
+          <tr><td style="padding:6px 0;color:#888">Total</td><td style="color:#fff;font-weight:700">&#x20A6;${Number(order.total).toLocaleString()}</td></tr>
+          <tr><td style="padding:6px 0;color:#888">Delivery</td><td style="color:#fff">${order.delivery_address}</td></tr>
+        </table>
+        <a href="https://smokeyhut-delight.web.app/admin/orders" style="display:inline-block;background:#c0201f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700">View in Dashboard &rarr;</a>`,
       );
+
+      await sendEmail(OPS_EMAIL, 'New Order Received', newOrderHtml);
     }
 
     // ── 3. Frontend call — bank transfer made ──────────────────────
     if (type === 'transfer_made') {
-      await sendAdminEmails(
+      const transferHtml = buildEmail(
         'Bank Transfer Alert',
-        buildEmail(
-          'Bank Transfer Alert',
-          'A customer has clicked <strong style="color:#fff">"I Have Made the Transfer"</strong>. Please verify the payment in your dashboard and confirm the order.',
-          order.id,
-          `<table style="color:#bbb;font-size:0.9rem;border-collapse:collapse;width:100%;margin-bottom:20px">
-            <tr><td style="padding:6px 0;color:#888;width:110px">Customer</td><td style="color:#fff">${order.customer_name}</td></tr>
-            <tr><td style="padding:6px 0;color:#888">Phone</td><td style="color:#fff">${order.customer_phone}</td></tr>
-            <tr><td style="padding:6px 0;color:#888">Amount</td><td style="color:#fff;font-weight:700;font-size:1.05rem">&#x20A6;${Number(order.total).toLocaleString()}</td></tr>
-          </table>
-          <a href="https://smokeyhut-delight.web.app/admin/orders" style="display:inline-block;background:#c0201f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700">Check Dashboard &rarr;</a>`,
-        ),
+        'A customer has clicked <strong style="color:#fff">"I Have Made the Transfer"</strong>. Please verify the payment in your dashboard and confirm the order.',
+        order.id,
+        `<table style="color:#bbb;font-size:0.9rem;border-collapse:collapse;width:100%;margin-bottom:20px">
+          <tr><td style="padding:6px 0;color:#888;width:110px">Customer</td><td style="color:#fff">${order.customer_name}</td></tr>
+          <tr><td style="padding:6px 0;color:#888">Phone</td><td style="color:#fff">${order.customer_phone}</td></tr>
+          <tr><td style="padding:6px 0;color:#888">Amount</td><td style="color:#fff;font-weight:700;font-size:1.05rem">&#x20A6;${Number(order.total).toLocaleString()}</td></tr>
+        </table>
+        <a href="https://smokeyhut-delight.web.app/admin/orders" style="display:inline-block;background:#c0201f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700">Check Dashboard &rarr;</a>`,
       );
+
+      await sendEmail(OPS_EMAIL, 'Bank Transfer Alert', transferHtml);
     }
 
     return new Response(JSON.stringify({ ok: true }), {

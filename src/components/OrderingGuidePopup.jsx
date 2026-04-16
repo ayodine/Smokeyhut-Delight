@@ -85,7 +85,7 @@ export default function OrderingGuidePopup() {
             </h4>
             <ul style={{ margin: 0, paddingLeft: 20, fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
               <li>First batch orders are processed until 10:00am</li>
-              <li>Dispatch begins from 10:30am</li>
+              <li>Dispatch begins from 11:00am</li>
               <li>Delivery time: 3–4 hours depending on your location</li>
             </ul>
           </div>
