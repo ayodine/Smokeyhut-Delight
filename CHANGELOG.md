@@ -4,6 +4,96 @@ A running log of all features built, bugs fixed, and changes deployed.
 
 ---
 
+## [2026-04-16] — Realtime Fix, Stock-on-Ship, 5s Chime, Shipping Date Filter
+
+### Realtime Order Notification — Fixed
+
+**File:** `src/pages/dashboard/Orders.jsx`
+
+**Problem:** The live order alert (visual banner + chime sound) stopped working silently. Two root causes:
+
+1. **Stale channel conflict** — the Supabase channel was registered with the hardcoded name `'orders-realtime'`. On hot-reload or re-mount, a second subscription would conflict with the existing one, causing both to fail silently.
+2. **AudioContext suspended** — browsers block audio until the user interacts with the page. `AudioContext` was created fresh on every `playChime()` call, starting in `'suspended'` state, so `OscillatorNode.start()` produced no sound.
+
+**Fixes:**
+
+- Channel name is now unique per mount: `orders-realtime-${Date.now()}`, preventing stale conflicts.
+- Added a `.subscribe((status, err) => { ... })` callback that sets `realtimeStatus` state (`'ok'` or `'error'`).
+- Added a coloured dot indicator in the Orders header:
+  - Green dot = subscription active.
+  - Red dot = subscription failed (tells the admin to refresh).
+- Added a `getAudioCtx()` helper that reuses a single `AudioContext` instance across calls instead of creating a new one each time.
+- `playChime()` now calls `ctx.resume()` before scheduling oscillators to lift the browser's autoplay suspension.
+- Added a "Test Sound" (🔔) button in the Orders toolbar so the chime can be manually triggered to warm up the `AudioContext` after page load.
+
+---
+
+### Chime Duration Extended to 5 Seconds
+
+**File:** `src/pages/dashboard/Orders.jsx` — `playChime()`
+
+Previous chime was a single short note (~0.5 s). Replaced with a 5-note ascending/descending melody over 5 seconds:
+
+| Note | Freq (Hz) | Start (s) | Duration (s) |
+|------|-----------|-----------|--------------|
+| 1    | 880       | 0.0       | 0.8          |
+| 2    | 1100      | 0.9       | 0.8          |
+| 3    | 1320      | 1.8       | 0.8          |
+| 4    | 1100      | 2.7       | 0.8          |
+| 5    | 880       | 3.6       | 1.4          |
+
+Uses `triangle` oscillator type and a `DynamicsCompressorNode` to prevent clipping.
+
+---
+
+### Stock Decrement Moved to "Shipped" Status
+
+**Previous behaviour:** Stock was decremented at checkout when the order was placed — even for abandoned, cancelled, or returned orders.
+
+**New behaviour:** Stock decrements only when an admin manually marks an order as **Shipped** in the dashboard.
+
+**Files changed:**
+
+- `src/pages/storefront/Checkout.jsx` — removed `decrementStock()` function and all 3 call sites (Paystack, WhatsApp, bank transfer flows).
+- `src/pages/dashboard/Orders.jsx` — `updateStatus()` now decrements stock when `newStatus === 'shipped'`, with an idempotency guard:
+  1. Fetches the order's current status from the DB before decrementing.
+  2. Only decrements if current DB status is not already `'shipped'` — prevents double-decrement if the admin refreshes and re-triggers the transition.
+  3. Reads per-product quantities from `order_items`, fetches current stock, and writes `MAX(0, stock - qty)` per product.
+
+**Reconciliation SQL** (run once to fix historical stock counts — non-destructive, only updates `products.stock`):
+
+```sql
+-- Add back qty from orders that were NOT shipped/delivered
+-- (these were incorrectly decremented at checkout under the old system)
+WITH bad_orders AS (
+  SELECT oi.product_id, SUM(oi.qty) AS qty_to_restore
+  FROM order_items oi
+  JOIN orders o ON o.id = oi.order_id
+  WHERE o.status IN ('pending', 'processing', 'cancelled')
+    AND o.deleted_at IS NULL
+  GROUP BY oi.product_id
+)
+UPDATE products p
+SET stock = p.stock + bo.qty_to_restore
+FROM bad_orders bo
+WHERE p.id = bo.product_id;
+```
+
+---
+
+### Date Filter Added to Shipping Page
+
+**File:** `src/pages/dashboard/Shipping.jsx`
+
+Mirrors the date filter already present on the Orders page.
+
+- Added a date `<input>` to the right of the status filter buttons (Pending / Processing / Dispatched / Delivered / Active).
+- When a date is selected, the table shows only orders placed on that date.
+- A × clear button appears inside the input when a date is active, resetting the filter.
+- The date filter stacks with the status filter — both conditions must match for a row to show.
+
+---
+
 ## [2026-04-07] — Manual Order Price Fix
 
 **File:** `src/pages/dashboard/Orders.jsx`
