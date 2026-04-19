@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext(null);
@@ -27,6 +27,9 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Resolver set by signIn() so the main auth listener can unblock it once role is confirmed
+  const signInResolveRef = useRef(null);
+
   const applyProfile = (profile) => {
     const role = profile?.role || null;
     const perms = profile?.permissions || [];
@@ -37,9 +40,7 @@ export function AuthProvider({ children }) {
   };
 
   useEffect(() => {
-    // onAuthStateChange fires INITIAL_SESSION on mount — no need for separate getSession()
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      // Password recovery link clicked — redirect to reset page, do NOT establish a dashboard session
       if (event === 'PASSWORD_RECOVERY') {
         if (window.location.pathname !== '/admin/reset-password') {
           window.location.replace('/admin/reset-password');
@@ -54,35 +55,42 @@ export function AuthProvider({ children }) {
       if (authUser) {
         const cachedRole = sessionStorage.getItem('sd_role');
 
-        // Apply cached role immediately so ProtectedRoute doesn't flash the spinner
         if (cachedRole) {
           try {
             applyProfile({ role: cachedRole, permissions: JSON.parse(sessionStorage.getItem('sd_perms') || '[]') });
           } catch { /* ignore */ }
         }
 
-        // Fetch real profile from DB — no hard timeout that forces a sign-out
         const profile = await Promise.race([
           fetchProfile(authUser),
           new Promise(resolve => setTimeout(() => resolve('timeout'), 12000)),
         ]);
 
         if (profile === 'timeout') {
-          // Network was slow — keep whatever cached role we have, don't sign out
           if (!cachedRole) {
             setUser(null);
             applyProfile(null);
           }
+          // Unblock signIn — treat as valid if we have a cached role
+          signInResolveRef.current?.({ error: cachedRole ? null : { message: 'Unable to verify account. Check your connection.' } });
+          signInResolveRef.current = null;
         } else if (!profile?.role) {
-          // DB confirmed no role — this is a real invalid account, sign out
+          // No profile in DB — sign out and surface a clear error to the login form
           await supabase.auth.signOut();
           setUser(null);
           applyProfile(null);
+          signInResolveRef.current?.({ error: { message: 'Account not authorised. Contact your administrator.' } });
+          signInResolveRef.current = null;
         } else {
           applyProfile(profile);
+          signInResolveRef.current?.({ error: null });
+          signInResolveRef.current = null;
         }
       } else {
         applyProfile(null);
+        // If signIn is waiting and we got a SIGNED_OUT, something went wrong
+        signInResolveRef.current?.({ error: { message: 'Sign in failed. Please try again.' } });
+        signInResolveRef.current = null;
       }
 
       setLoading(false);
@@ -93,7 +101,7 @@ export function AuthProvider({ children }) {
 
   const signIn = async (email, password) => {
     setError(null);
-    setLoading(true); // keep ProtectedRoute in spinner until onAuthStateChange completes
+    setLoading(true);
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
@@ -101,8 +109,25 @@ export function AuthProvider({ children }) {
         setError(error.message);
         return { error };
       }
-      return { error: null };
-      // loading is cleared by onAuthStateChange after role is confirmed
+
+      // Block until onAuthStateChange confirms the role, so Login only navigates
+      // to the dashboard once we know the account is authorised.
+      const result = await new Promise((resolve) => {
+        signInResolveRef.current = resolve;
+        // Safety timeout — unblock after 15s regardless
+        setTimeout(() => {
+          if (signInResolveRef.current === resolve) {
+            signInResolveRef.current = null;
+            resolve({ error: null });
+          }
+        }, 15000);
+      });
+
+      if (result.error) {
+        setLoading(false);
+        setError(result.error.message);
+      }
+      return result;
     } catch (err) {
       setLoading(false);
       const msg = err?.message || 'Unable to connect. Check your internet connection.';

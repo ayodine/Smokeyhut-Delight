@@ -57,9 +57,11 @@ export default function Checkout() {
 
   // Order form state
   const [form, setForm] = useState({ firstName: '', lastName: '', phone: '', email: '', address: '', city: 'Lagos', notes: '' });
+  const [touched, setTouched] = useState({ firstName: false, lastName: false, phone: false, email: false, address: false, city: false });
   const [processing, setProcessing] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [transferProcessing, setTransferProcessing] = useState(false);
+  const [transferConfirmed, setTransferConfirmed] = useState(false);
   const [waProcessing, setWaProcessing] = useState(false);
   const [successRef, setSuccessRef] = useState(null);
   const [successMethod, setSuccessMethod] = useState('paystack');
@@ -188,12 +190,18 @@ export default function Checkout() {
   };
 
   const validateForm = () => {
-    if (!form.firstName.trim() || !form.phone.trim()) {
-      showToast('Required fields missing', 'Please enter your name and phone number', 'error');
+    // Mark all fields touched so inline errors appear
+    setTouched({ firstName: true, lastName: true, phone: true, email: true, address: true, city: true });
+    if (!form.firstName.trim() || !form.lastName.trim() || !form.phone.trim() || !form.email.trim()) {
+      showToast('Required fields missing', 'Please fill in all required fields', 'error');
       return false;
     }
-    if (!isPickup && !form.address.trim()) {
-      showToast('Address required', 'Please enter your delivery address', 'error');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      showToast('Invalid email', 'Please enter a valid email address', 'error');
+      return false;
+    }
+    if (!isPickup && (!form.address.trim() || !form.city.trim())) {
+      showToast('Address required', 'Please enter your delivery address and city', 'error');
       return false;
     }
     if (!isPickup && !selectedMatch) {
@@ -366,7 +374,7 @@ export default function Checkout() {
         id: orderId,
         customer_name: `${form.firstName} ${form.lastName}`.trim(),
         customer_phone: form.phone,
-        total: grandTotal,
+total: grandTotal,
       });
       clearCart();
       await incrementCouponUse();
@@ -609,15 +617,103 @@ export default function Checkout() {
 
               <h3 style={{ marginTop: 8 }}>Customer Info</h3>
               <div className="form-row">
-                <div className="form-group"><label>First Name *</label><input value={form.firstName} onChange={set('firstName')} placeholder="First name" /></div>
-                <div className="form-group"><label>Last Name</label><input value={form.lastName} onChange={set('lastName')} placeholder="Last name" /></div>
+                <div className="form-group">
+                  <label>First Name *</label>
+                  <input
+                    required
+                    value={form.firstName}
+                    onChange={set('firstName')}
+                    onBlur={() => setTouched(t => ({ ...t, firstName: true }))}
+                    placeholder="First name"
+                    style={touched.firstName && !form.firstName.trim() ? { borderColor: '#e53e3e' } : {}}
+                  />
+                  {touched.firstName && !form.firstName.trim() && (
+                    <span style={{ fontSize: '0.78rem', color: '#e53e3e', marginTop: 4, display: 'block' }}>First name is required</span>
+                  )}
+                </div>
+                <div className="form-group">
+                  <label>Last Name *</label>
+                  <input
+                    required
+                    value={form.lastName}
+                    onChange={set('lastName')}
+                    onBlur={() => setTouched(t => ({ ...t, lastName: true }))}
+                    placeholder="Last name"
+                    style={touched.lastName && !form.lastName.trim() ? { borderColor: '#e53e3e' } : {}}
+                  />
+                  {touched.lastName && !form.lastName.trim() && (
+                    <span style={{ fontSize: '0.78rem', color: '#e53e3e', marginTop: 4, display: 'block' }}>Last name is required</span>
+                  )}
+                </div>
               </div>
-              <div className="form-group"><label>Phone *</label><input value={form.phone} onChange={set('phone')} placeholder="+234 000 0000 000" /></div>
-              <div className="form-group"><label>Email <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '0.82rem' }}>(used for payment receipt)</span></label><input type="email" value={form.email} onChange={set('email')} placeholder="your@email.com" /></div>
+              <div className="form-group">
+                <label>Phone *</label>
+                <input
+                  required
+                  value={form.phone}
+                  onChange={set('phone')}
+                  onBlur={() => setTouched(t => ({ ...t, phone: true }))}
+                  placeholder="+234 000 0000 000"
+                  style={touched.phone && !form.phone.trim() ? { borderColor: '#e53e3e' } : {}}
+                />
+                {touched.phone && !form.phone.trim() && (
+                  <span style={{ fontSize: '0.78rem', color: '#e53e3e', marginTop: 4, display: 'block' }}>
+                    Phone number is required to complete your order
+                  </span>
+                )}
+              </div>
+              <div className="form-group">
+                <label>Email *</label>
+                <input
+                  required
+                  type="email"
+                  value={form.email}
+                  onChange={set('email')}
+                  onBlur={() => setTouched(t => ({ ...t, email: true }))}
+                  placeholder="your@email.com"
+                  style={touched.email && (!form.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) ? { borderColor: '#e53e3e' } : {}}
+                />
+                {touched.email && !form.email.trim() && (
+                  <span style={{ fontSize: '0.78rem', color: '#e53e3e', marginTop: 4, display: 'block' }}>
+                    Email is required to complete your order
+                  </span>
+                )}
+                {touched.email && form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) && (
+                  <span style={{ fontSize: '0.78rem', color: '#e53e3e', marginTop: 4, display: 'block' }}>
+                    Please enter a valid email address
+                  </span>
+                )}
+              </div>
               {!isPickup && (
                 <>
-                  <div className="form-group"><label>Delivery Address *</label><input value={form.address} onChange={set('address')} placeholder="Street address" /></div>
-                  <div className="form-group"><label>City</label><input value={form.city} onChange={set('city')} placeholder="Lagos" /></div>
+                  <div className="form-group">
+                    <label>Delivery Address *</label>
+                    <input
+                      required
+                      value={form.address}
+                      onChange={set('address')}
+                      onBlur={() => setTouched(t => ({ ...t, address: true }))}
+                      placeholder="Street address"
+                      style={touched.address && !form.address.trim() ? { borderColor: '#e53e3e' } : {}}
+                    />
+                    {touched.address && !form.address.trim() && (
+                      <span style={{ fontSize: '0.78rem', color: '#e53e3e', marginTop: 4, display: 'block' }}>Delivery address is required</span>
+                    )}
+                  </div>
+                  <div className="form-group">
+                    <label>City *</label>
+                    <input
+                      required
+                      value={form.city}
+                      onChange={set('city')}
+                      onBlur={() => setTouched(t => ({ ...t, city: true }))}
+                      placeholder="Lagos"
+                      style={touched.city && !form.city.trim() ? { borderColor: '#e53e3e' } : {}}
+                    />
+                    {touched.city && !form.city.trim() && (
+                      <span style={{ fontSize: '0.78rem', color: '#e53e3e', marginTop: 4, display: 'block' }}>City is required</span>
+                    )}
+                  </div>
                 </>
               )}
               <div className="form-group"><label>Order Notes</label><textarea value={form.notes} onChange={set('notes')} placeholder="Any special requests..." /></div>
@@ -720,11 +816,35 @@ export default function Checkout() {
                 <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: 4 }}>Smokeyhut Delight</div>
                 <h3 style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--text)', margin: '0 0 4px' }}>5655718527</h3>
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 14 }}>Moniepoint</div>
+
+                <label style={{
+                  display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
+                  padding: '11px 14px', borderRadius: 8, marginBottom: 10,
+                  border: `1.5px solid ${transferConfirmed ? 'var(--red)' : 'var(--border-subtle)'}`,
+                  background: transferConfirmed ? 'rgba(192,32,31,0.06)' : 'transparent',
+                  transition: 'border-color 0.15s, background 0.15s',
+                  userSelect: 'none',
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={transferConfirmed}
+                    onChange={e => setTransferConfirmed(e.target.checked)}
+                    style={{ width: 16, height: 16, accentColor: 'var(--red)', cursor: 'pointer', flexShrink: 0 }}
+                  />
+                  <span style={{ fontSize: '0.87rem', fontWeight: 500, color: 'var(--text)' }}>I confirm that I have made payment</span>
+                </label>
+
                 <button
-                  className="btn-secondary"
-                  style={{ width: '100%', justifyContent: 'center', padding: '12px', display: 'flex', alignItems: 'center', gap: 8 }}
+                  style={{
+                    width: '100%', justifyContent: 'center', padding: '12px',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    background: 'var(--red)', color: '#fff', border: 'none',
+                    borderRadius: 8, fontWeight: 700, fontSize: '0.92rem',
+                    cursor: 'pointer', transition: 'opacity 0.15s',
+                    opacity: (transferConfirmed && form.phone.trim() && form.email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) ? 1 : 0.45,
+                    pointerEvents: (transferConfirmed && form.phone.trim() && form.email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) ? 'auto' : 'none',
+                  }}
                   onClick={handleTransfer}
-                  disabled={transferProcessing}
                 >
                   {transferProcessing
                     ? <><Loader2 size={16} className="spin" /> Processing...</>

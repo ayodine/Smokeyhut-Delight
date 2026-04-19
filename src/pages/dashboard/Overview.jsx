@@ -27,47 +27,149 @@ function getStartDate(period) {
   }
 }
 
+const EMPTY_KPIS = { revenue: 0, order_count: 0, pending_shipments: 0 };
+
 export default function Overview() {
   const { selectedStore } = useOutletContext() || {};
-  const [orders, setOrders] = useState([]);
+  const [kpis, setKpis] = useState(EMPTY_KPIS);
+  const [chartData, setChartData] = useState([0, 0, 0, 0, 0, 0, 0]);
+  const [recentOrders, setRecentOrders] = useState([]);
   const [stores, setStores] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [kpiLoading, setKpiLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [period, setPeriod] = useState('all');
   const [sortKey, setSortKey] = useState('created_at');
   const [sortDir, setSortDir] = useState('desc');
 
-  useEffect(() => {
-    fetchData();
-  }, [selectedStore]);
+  // Full load on store change (fetches chart + stores + KPIs + recent)
+  useEffect(() => { fetchAll(period); }, [selectedStore]);
 
-  const fetchData = async () => {
+  // Lightweight re-fetch of KPIs + recent orders when period changes
+  useEffect(() => {
+    if (!loading) fetchPeriodData(period);
+  }, [period]);
+
+  const storeParam = () =>
+    selectedStore && selectedStore !== 'all' ? Number(selectedStore) : null;
+
+  // Helper: build a minimal unlimited query for fallback KPI computation
+  const buildKpiFallback = (sp, startDate) => {
+    let q = supabase.from('orders').select('status, total, created_at');
+    if (sp !== null) q = q.eq('store_id', sp);
+    if (startDate) q = q.gte('created_at', startDate.toISOString());
+    return q;
+  };
+
+  // Helper: compute weekly chart from an array of order rows
+  const computeWeeklyChart = (rows) => {
+    const now = new Date();
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+    monday.setHours(0, 0, 0, 0);
+    return [0, 1, 2, 3, 4, 5, 6].map(i => {
+      const dayStart = new Date(monday); dayStart.setDate(monday.getDate() + i);
+      const dayEnd = new Date(dayStart); dayEnd.setHours(23, 59, 59, 999);
+      return rows
+        .filter(o => o.status !== 'cancelled')
+        .filter(o => { const d = new Date(o.created_at); return d >= dayStart && d <= dayEnd; })
+        .reduce((s, o) => s + Number(o.total || 0), 0);
+    });
+  };
+
+  const fetchAll = async (p) => {
     setLoading(true);
-    let ordersQuery = supabase.from('orders').select('id,customer_name,total,status,created_at,store_id').order('created_at', { ascending: false });
-    if (selectedStore && selectedStore !== 'all') {
-      ordersQuery = ordersQuery.eq('store_id', selectedStore);
-    }
-    const [ordersRes, storesRes] = await Promise.all([
-      ordersQuery,
-      supabase.from('stores').select('id', { count: 'exact' })
+    const sp = storeParam();
+    const startDate = getStartDate(p);
+
+    // Week bounds for chart fallback
+    const now = new Date();
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+    weekStart.setHours(0, 0, 0, 0);
+
+    let recentQuery = supabase
+      .from('orders')
+      .select('id,customer_name,total,status,created_at,store_id')
+      .order('created_at', { ascending: false })
+      .limit(10);
+    if (sp !== null) recentQuery = recentQuery.eq('store_id', sp);
+    if (startDate) recentQuery = recentQuery.gte('created_at', startDate.toISOString());
+
+    let chartFallbackQuery = supabase
+      .from('orders')
+      .select('status, total, created_at')
+      .neq('status', 'cancelled')
+      .gte('created_at', weekStart.toISOString());
+    if (sp !== null) chartFallbackQuery = chartFallbackQuery.eq('store_id', sp);
+
+    const [kpisRes, chartRes, recentRes, storesRes, kpiFallbackRes, chartFallbackRes] = await Promise.all([
+      supabase.rpc('get_overview_kpis', { p_store_id: sp, p_start: startDate?.toISOString() ?? null }),
+      supabase.rpc('get_weekly_revenue_chart', { p_store_id: sp }),
+      recentQuery,
+      supabase.from('stores').select('id', { count: 'exact' }),
+      buildKpiFallback(sp, startDate),
+      chartFallbackQuery,
     ]);
 
-    if (ordersRes.data) setOrders(ordersRes.data);
+    setRecentOrders(recentRes.data || []);
     if (storesRes.data) setStores(storesRes.data.length);
+
+    if (kpisRes.data) {
+      setKpis(kpisRes.data);
+    } else {
+      const rows = kpiFallbackRes.data || [];
+      setKpis({
+        revenue:           rows.filter(o => o.status !== 'cancelled').reduce((s, o) => s + Number(o.total || 0), 0),
+        order_count:       rows.length,
+        pending_shipments: rows.filter(o => ['pending', 'processing'].includes(o.status)).length,
+      });
+    }
+
+    if (chartRes.data) {
+      setChartData(chartRes.data);
+    } else {
+      setChartData(computeWeeklyChart(chartFallbackRes.data || []));
+    }
 
     setLoading(false);
   };
 
-  // Period filter
-  const startDate = getStartDate(period);
-  const periodOrders = startDate
-    ? orders.filter(o => new Date(o.created_at) >= startDate)
-    : orders;
+  const fetchPeriodData = async (p) => {
+    setKpiLoading(true);
+    const sp = storeParam();
+    const startDate = getStartDate(p);
 
-  const totalRevenue = periodOrders.reduce((s, o) => s + (o.status !== 'cancelled' ? Number(o.total) : 0), 0);
-  const orderCount = periodOrders.length;
-  const pendingShipments = periodOrders.filter(o => ['pending', 'processing'].includes(o.status)).length;
+    let recentQuery = supabase
+      .from('orders')
+      .select('id,customer_name,total,status,created_at,store_id')
+      .order('created_at', { ascending: false })
+      .limit(10);
+    if (sp !== null) recentQuery = recentQuery.eq('store_id', sp);
+    if (startDate) recentQuery = recentQuery.gte('created_at', startDate.toISOString());
 
-  // Column sort for recent orders
+    const [kpisRes, recentRes, kpiFallbackRes] = await Promise.all([
+      supabase.rpc('get_overview_kpis', { p_store_id: sp, p_start: startDate?.toISOString() ?? null }),
+      recentQuery,
+      buildKpiFallback(sp, startDate),
+    ]);
+
+    setRecentOrders(recentRes.data || []);
+
+    if (kpisRes.data) {
+      setKpis(kpisRes.data);
+    } else {
+      const rows = kpiFallbackRes.data || [];
+      setKpis({
+        revenue:           rows.filter(o => o.status !== 'cancelled').reduce((s, o) => s + Number(o.total || 0), 0),
+        order_count:       rows.length,
+        pending_shipments: rows.filter(o => ['pending', 'processing'].includes(o.status)).length,
+      });
+    }
+    setKpiLoading(false);
+  };
+
+  // Column sort (applied to the loaded 10 rows)
   const handleSort = (key) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortKey(key); setSortDir('asc'); }
@@ -85,7 +187,7 @@ export default function Overview() {
     background: sortKey === col ? 'var(--black2)' : undefined,
   });
 
-  const sortedOrders = [...periodOrders].sort((a, b) => {
+  const sortedOrders = [...recentOrders].sort((a, b) => {
     let av = a[sortKey], bv = b[sortKey];
     if (sortKey === 'total') { av = Number(av || 0); bv = Number(bv || 0); }
     else if (sortKey === 'created_at') { av = new Date(av); bv = new Date(bv); }
@@ -95,60 +197,57 @@ export default function Overview() {
     return 0;
   });
 
-  const recentOrders = sortedOrders.slice(0, 10);
+  // Export fetches its own full dataset for the selected period
+  const exportToExcel = async () => {
+    setExporting(true);
+    try {
+      const sp = storeParam();
+      const startDate = getStartDate(period);
+      const periodLabel = PERIODS.find(p => p.value === period)?.label || period;
 
-  const exportToExcel = () => {
-    const wb = XLSX.utils.book_new();
-    const periodLabel = PERIODS.find(p => p.value === period)?.label || period;
+      let exportQuery = supabase
+        .from('orders')
+        .select('id,customer_name,total,status,created_at')
+        .order('created_at', { ascending: false });
+      if (sp !== null) exportQuery = exportQuery.eq('store_id', sp);
+      if (startDate) exportQuery = exportQuery.gte('created_at', startDate.toISOString());
 
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-      ['Period', periodLabel],
-      [],
-      ['Metric', 'Value'],
-      ['Total Revenue (₦)', totalRevenue],
-      ['Orders in Period', orderCount],
-      ['Pending Shipments', pendingShipments],
-      ['Active Stores', stores],
-    ]), 'Summary');
+      const { data: exportOrders } = await exportQuery;
 
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-      ['Day', 'Revenue (₦)'],
-      ...days.map((d, i) => [d, chartData[i]]),
-    ]), 'Weekly Revenue');
+      const wb = XLSX.utils.book_new();
 
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-      ['Order ID', 'Customer', 'Total (₦)', 'Status', 'Date'],
-      ...periodOrders.map(o => [
-        o.id,
-        o.customer_name,
-        Number(o.total || 0),
-        o.status,
-        new Date(o.created_at).toLocaleDateString(),
-      ]),
-    ]), 'Orders');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+        ['Period', periodLabel],
+        [],
+        ['Metric', 'Value'],
+        ['Total Revenue (₦)', kpis.revenue],
+        ['Orders in Period', kpis.order_count],
+        ['Pending Shipments', kpis.pending_shipments],
+        ['Active Stores', stores],
+      ]), 'Summary');
 
-    XLSX.writeFile(wb, `smokeyhut-overview-${period}-${new Date().toISOString().split('T')[0]}.xlsx`);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+        ['Day', 'Revenue (₦)'],
+        ...days.map((d, i) => [d, chartData[i]]),
+      ]), 'Weekly Revenue');
+
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+        ['Order ID', 'Customer', 'Total (₦)', 'Status', 'Date'],
+        ...(exportOrders || []).map(o => [
+          o.id,
+          o.customer_name,
+          Number(o.total || 0),
+          o.status,
+          new Date(o.created_at).toLocaleDateString(),
+        ]),
+      ]), 'Orders');
+
+      XLSX.writeFile(wb, `smokeyhut-overview-${period}-${new Date().toISOString().split('T')[0]}.xlsx`);
+    } finally {
+      setExporting(false);
+    }
   };
 
-  // Weekly revenue: Mon–Sun of the current week (always current week)
-  const chartData = (() => {
-    const now = new Date();
-    const dayOfWeek = now.getDay();
-    const monday = new Date(now);
-    monday.setDate(now.getDate() - ((dayOfWeek + 6) % 7));
-    monday.setHours(0, 0, 0, 0);
-
-    return days.map((_, i) => {
-      const dayStart = new Date(monday);
-      dayStart.setDate(monday.getDate() + i);
-      const dayEnd = new Date(dayStart);
-      dayEnd.setHours(23, 59, 59, 999);
-      return orders
-        .filter(o => o.status !== 'cancelled')
-        .filter(o => { const d = new Date(o.created_at); return d >= dayStart && d <= dayEnd; })
-        .reduce((s, o) => s + Number(o.total || 0), 0);
-    });
-  })();
   const maxChart = Math.max(...chartData, 1);
 
   if (loading) return (
@@ -177,16 +276,16 @@ export default function Overview() {
         </div>
         <button
           onClick={exportToExcel}
-          disabled={loading}
+          disabled={exporting}
           style={{
             display: 'flex', alignItems: 'center', gap: 8,
             padding: '9px 18px', borderRadius: 8, border: '1px solid var(--border-subtle)',
             background: '#16a34a', color: '#fff',
             fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer',
-            fontFamily: "'DM Sans',sans-serif", opacity: loading ? 0.5 : 1,
+            fontFamily: "'DM Sans',sans-serif", opacity: exporting ? 0.5 : 1,
           }}
         >
-          <Download size={15} /> Export to Excel
+          <Download size={15} /> {exporting ? 'Exporting…' : 'Export to Excel'}
         </button>
       </div>
 
@@ -209,22 +308,22 @@ export default function Overview() {
       </div>
 
       {/* KPIs */}
-      <div className="kpi-grid">
+      <div className="kpi-grid" style={{ opacity: kpiLoading ? 0.6 : 1, transition: 'opacity 0.15s' }}>
         <div className="kpi-card red">
           <div className="kpi-icon"><DollarSign size={24} /></div>
-          <div className="kpi-value">{fmt(totalRevenue)}</div>
+          <div className="kpi-value">{fmt(kpis.revenue)}</div>
           <div className="kpi-label">Total Revenue</div>
           <div className="kpi-change up">{PERIODS.find(p => p.value === period)?.label}</div>
         </div>
         <div className="kpi-card blue">
           <div className="kpi-icon"><Package size={24} /></div>
-          <div className="kpi-value">{orderCount}</div>
+          <div className="kpi-value">{kpis.order_count}</div>
           <div className="kpi-label">Orders</div>
           <div className="kpi-change up">{PERIODS.find(p => p.value === period)?.label}</div>
         </div>
         <div className="kpi-card yellow">
           <div className="kpi-icon"><Truck size={24} /></div>
-          <div className="kpi-value">{pendingShipments}</div>
+          <div className="kpi-value">{kpis.pending_shipments}</div>
           <div className="kpi-label">Pending Shipments</div>
           <div className="kpi-change down">Needs attention</div>
         </div>
@@ -257,7 +356,7 @@ export default function Overview() {
           <div className="dash-card-title">
             Recent Orders
             <span style={{ fontSize: '0.78rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: 8 }}>
-              {periodOrders.length} order{periodOrders.length !== 1 ? 's' : ''} · showing top 10
+              {kpis.order_count} total · showing latest 10
             </span>
           </div>
         </div>
@@ -273,7 +372,7 @@ export default function Overview() {
               </tr>
             </thead>
             <tbody>
-              {recentOrders.map(order => (
+              {sortedOrders.map(order => (
                 <tr key={order.id}>
                   <td style={{ fontWeight: 700, color: 'var(--red)' }}>{order.id}</td>
                   <td>{order.customer_name}</td>
@@ -285,7 +384,7 @@ export default function Overview() {
                   </td>
                 </tr>
               ))}
-              {recentOrders.length === 0 && (
+              {sortedOrders.length === 0 && (
                 <tr><td colSpan="5" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>No orders in this period.</td></tr>
               )}
             </tbody>

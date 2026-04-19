@@ -170,11 +170,20 @@ function generateInvoice(order) {
   if (w) { w.addEventListener('load', () => URL.revokeObjectURL(url)); }
 }
 
+function todayDate() {
+  return new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+}
+function currentTime() {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+}
+
 const emptyNewOrder = {
   name: '', phone: '', email: '', address: '', store: '',
   channel: 'WhatsApp', payment: 'cash', notes: '',
   items: [{ product: '', name: '', qty: 1, price: '' }],
   zoneId: '', deliveryFee: 0,
+  orderDate: todayDate(), orderTime: currentTime(),
 };
 
 export default function Orders() {
@@ -348,15 +357,19 @@ export default function Orders() {
       // Fetch current DB status to prevent double-decrement after page refresh
       const { data: current } = await supabase.from('orders').select('status').eq('id', id).single();
       if (current?.status !== 'shipped') {
-        const orderItems = orders.find(o => o.id === id)?.order_items || [];
-        const productIds = [...new Set(orderItems.map(i => i.product_id).filter(Boolean))];
-        if (productIds.length > 0) {
+        // Always fetch order_items fresh from DB — do NOT read from React state,
+        // because the realtime handler can overwrite state with empty items before
+        // order_items are inserted (race condition on manual orders).
+        const { data: orderItems } = await supabase.from('order_items').select('product_id, qty').eq('order_id', id);
+        const validItems = (orderItems || []).filter(i => i.product_id);
+        if (validItems.length > 0) {
+          const productIds = [...new Set(validItems.map(i => String(i.product_id)))];
           const { data: productStock } = await supabase.from('products').select('id, stock').in('id', productIds);
           if (productStock?.length) {
             const stockMap = Object.fromEntries(productStock.map(p => [String(p.id), p.stock ?? 0]));
             const qtyMap = {};
-            orderItems.forEach(i => {
-              if (i.product_id) qtyMap[String(i.product_id)] = (qtyMap[String(i.product_id)] || 0) + (i.qty || 0);
+            validItems.forEach(i => {
+              qtyMap[String(i.product_id)] = (qtyMap[String(i.product_id)] || 0) + (i.qty || 0);
             });
             await Promise.all(
               Object.entries(qtyMap).map(([pid, qty]) =>
@@ -446,6 +459,10 @@ export default function Orders() {
     try {
       const orderId = 'SHD-' + Date.now().toString(36).toUpperCase();
       const notesStr = `[via ${newOrder.channel}]${newOrder.notes ? '\n' + newOrder.notes : ''}`;
+      const orderTimestamp = newOrder.orderDate
+        ? new Date(`${newOrder.orderDate}T${newOrder.orderTime || '00:00'}:00`).toISOString()
+        : new Date().toISOString();
+
       const { error } = await supabase.from('orders').insert([{
         id: orderId,
         customer_name: newOrder.name.trim(),
@@ -458,6 +475,7 @@ export default function Orders() {
         delivery_fee: Number(newOrder.deliveryFee || 0),
         status: 'pending',
         notes: notesStr,
+        created_at: orderTimestamp,
       }]);
       if (error) throw error;
       await supabase.from('order_items').insert(
@@ -666,7 +684,7 @@ export default function Orders() {
               <button
                 className="btn-primary"
                 style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', fontSize: '0.85rem', whiteSpace: 'nowrap' }}
-                onClick={() => setShowNewOrder(true)}
+                onClick={() => { setNewOrder({ ...emptyNewOrder, orderDate: todayDate(), orderTime: currentTime() }); setShowNewOrder(true); }}
               >
                 <Plus size={16} /> New Order
               </button>
@@ -951,6 +969,18 @@ export default function Orders() {
                 </select>
               </div>
             )}
+
+            {/* Order Date & Time */}
+            <div className="form-row">
+              <div className="form-group">
+                <label>Order Date</label>
+                <input type="date" value={newOrder.orderDate} onChange={setField('orderDate')} max={todayDate()} />
+              </div>
+              <div className="form-group">
+                <label>Order Time</label>
+                <input type="time" value={newOrder.orderTime} onChange={setField('orderTime')} />
+              </div>
+            </div>
 
             {/* Customer Info */}
             <div className="form-row">

@@ -1,47 +1,68 @@
 import React, { useState, useEffect } from 'react';
-import { DollarSign, CreditCard, Landmark, Banknote, Loader2 } from 'lucide-react';
+import { DollarSign, CreditCard, Landmark, Banknote } from 'lucide-react';
 import { SkelKpiGrid, SkelTable } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import { useOutletContext } from 'react-router-dom';
 
 const fmt = (n) => '₦' + n.toLocaleString();
 
+const EMPTY_KPIS = { total: 0, paystack: 0, bank_transfer: 0, cash: 0 };
+
 export default function Payments() {
   const { selectedStore } = useOutletContext() || {};
   const [payments, setPayments] = useState([]);
+  const [kpis, setKpis] = useState(EMPTY_KPIS);
   const [loading, setLoading] = useState(true);
-
   const [filter, setFilter] = useState('all');
   const methods = ['all', 'paystack', 'bank_transfer', 'cash'];
 
-  useEffect(() => {
-    fetchData();
-  }, [selectedStore]);
+  useEffect(() => { fetchData(); }, [selectedStore]);
 
   const fetchData = async () => {
     setLoading(true);
-    let query = supabase
+    const storeParam = selectedStore && selectedStore !== 'all' ? Number(selectedStore) : null;
+
+    let tableQuery = supabase
       .from('orders')
       .select('id, customer_name, customer_email, total, payment_method, status, created_at, store_id')
       .not('payment_method', 'is', null)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(200);
     if (selectedStore && selectedStore !== 'all') {
-      query = query.eq('store_id', selectedStore);
+      tableQuery = tableQuery.eq('store_id', selectedStore);
     }
-    const { data } = await query;
-    if (data) setPayments(data);
+
+    // Fallback query — only status, total, payment_method, no row limit
+    let kpiFallbackQuery = supabase
+      .from('orders')
+      .select('status, total, payment_method')
+      .not('payment_method', 'is', null)
+      .in('status', ['processing', 'shipped', 'delivered']);
+    if (selectedStore && selectedStore !== 'all') kpiFallbackQuery = kpiFallbackQuery.eq('store_id', selectedStore);
+
+    const [kpisRes, ordersRes, kpiFallbackRes] = await Promise.all([
+      supabase.rpc('get_payment_kpis', { p_store_id: storeParam }),
+      tableQuery,
+      kpiFallbackQuery,
+    ]);
+
+    setPayments(ordersRes.data || []);
+
+    if (kpisRes.data) {
+      setKpis(kpisRes.data);
+    } else {
+      const confirmed = kpiFallbackRes.data || [];
+      setKpis({
+        total:         confirmed.reduce((s, p) => s + Number(p.total), 0),
+        paystack:      confirmed.filter(p => p.payment_method === 'paystack').reduce((s, p) => s + Number(p.total), 0),
+        bank_transfer: confirmed.filter(p => p.payment_method === 'bank_transfer').reduce((s, p) => s + Number(p.total), 0),
+        cash:          confirmed.filter(p => p.payment_method === 'cash').reduce((s, p) => s + Number(p.total), 0),
+      });
+    }
     setLoading(false);
   };
 
   const filtered = payments.filter(p => filter === 'all' || p.payment_method === filter);
-  // Count revenue for confirmed orders (processing → delivered means payment was collected)
-  const confirmedStatuses = ['processing', 'shipped', 'delivered'];
-  const confirmed = payments.filter(p => confirmedStatuses.includes(p.status));
-  const totalRevenue = confirmed.reduce((s, p) => s + Number(p.total), 0);
-  const byMethod = { paystack: 0, bank_transfer: 0, cash: 0 };
-  confirmed.forEach(p => {
-    byMethod[p.payment_method] = (byMethod[p.payment_method] || 0) + Number(p.total);
-  });
 
   if (loading) return (
     <div>
@@ -59,22 +80,22 @@ export default function Payments() {
       <div className="kpi-grid" style={{ marginBottom: 24 }}>
         <div className="kpi-card green">
           <div className="kpi-icon"><DollarSign size={24} /></div>
-          <div className="kpi-value">{fmt(totalRevenue)}</div>
+          <div className="kpi-value">{fmt(kpis.total)}</div>
           <div className="kpi-label">Total Revenue</div>
         </div>
         <div className="kpi-card blue">
           <div className="kpi-icon"><CreditCard size={24} /></div>
-          <div className="kpi-value">{fmt(byMethod.paystack)}</div>
+          <div className="kpi-value">{fmt(kpis.paystack)}</div>
           <div className="kpi-label">Via Paystack</div>
         </div>
         <div className="kpi-card yellow">
           <div className="kpi-icon"><Landmark size={24} /></div>
-          <div className="kpi-value">{fmt(byMethod.bank_transfer)}</div>
+          <div className="kpi-value">{fmt(kpis.bank_transfer)}</div>
           <div className="kpi-label">Bank Transfer</div>
         </div>
         <div className="kpi-card red">
           <div className="kpi-icon"><Banknote size={24} /></div>
-          <div className="kpi-value">{fmt(byMethod.cash)}</div>
+          <div className="kpi-value">{fmt(kpis.cash)}</div>
           <div className="kpi-label">Cash</div>
         </div>
       </div>
