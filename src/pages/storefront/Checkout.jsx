@@ -4,7 +4,7 @@ import { useCart } from '../../context/CartContext';
 import { useToast } from '../../context/ToastContext';
 import { supabase, publicSupabase } from '../../lib/supabase';
 import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher';
-import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Home, ShoppingBag, CreditCard, Search, MapPin, MessageCircle, Tag, X } from 'lucide-react';
+import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Home, ShoppingBag, Search, MapPin, MessageCircle, Tag, X } from 'lucide-react';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -60,9 +60,8 @@ export default function Checkout() {
   const [touched, setTouched] = useState({ firstName: false, lastName: false, phone: false, email: false, address: false, city: false });
   const [processing, setProcessing] = useState(false);
   const [verifying, setVerifying] = useState(false);
-  const [transferProcessing, setTransferProcessing] = useState(false);
-  const [transferConfirmed, setTransferConfirmed] = useState(false);
   const [waProcessing, setWaProcessing] = useState(false);
+  const paystackLaunching = useRef(false);
   const [successRef, setSuccessRef] = useState(null);
   const [successMethod, setSuccessMethod] = useState('paystack');
 
@@ -217,12 +216,14 @@ export default function Checkout() {
   };
 
   const handlePaystack = async () => {
+    if (paystackLaunching.current) return;
     if (!validateForm()) return;
     if (!window.PaystackPop) {
       showToast('Payment unavailable', 'Payment service failed to load. Please refresh and try again.', 'error');
       return;
     }
 
+    paystackLaunching.current = true;
     setProcessing(true);
     try {
       const orderId = 'SHD-' + Date.now().toString(36).toUpperCase();
@@ -252,40 +253,43 @@ export default function Checkout() {
           delivery_address: isPickup ? 'Store Pickup' : `${form.address}, ${form.city}`,
           cancel_action: window.location.href,
         },
-        callback: async (response) => {
+        callback: function(response) {
           paymentSucceeded = true;
           setProcessing(false);
           setVerifying(true);
-          try {
-            // Server-side verification with secret key — never trust the callback alone
-            await verifyPaystackPayment(response.reference);
-            clearCart();
-            await incrementCouponUse();
-            setSuccessMethod('paystack');
-            setSuccessRef(response.reference);
-            notify('order_confirmed', {
-              id: orderId,
-              customer_name: `${form.firstName} ${form.lastName}`.trim(),
-              customer_email: form.email || null,
-              customer_phone: form.phone,
-              delivery_address: isPickup ? 'Store Pickup' : `${form.address}, ${form.city}`,
-              total: grandTotal,
-            });
-          } catch (err) {
-            // Payment went through on Paystack side but verification call had an issue.
-            // Still show success — the order exists in DB and will be reviewed manually.
-            console.error('Verification error (payment may still be valid):', err.message);
-            clearCart();
-            setSuccessMethod('paystack');
-            setSuccessRef(response.reference);
-          } finally {
-            setVerifying(false);
-          }
+          (async () => {
+            try {
+              // Server-side verification with secret key — never trust the callback alone
+              await verifyPaystackPayment(response.reference);
+              clearCart();
+              await incrementCouponUse();
+              setSuccessMethod('paystack');
+              setSuccessRef(response.reference);
+              notify('order_confirmed', {
+                id: orderId,
+                customer_name: `${form.firstName} ${form.lastName}`.trim(),
+                customer_email: form.email || null,
+                customer_phone: form.phone,
+                delivery_address: isPickup ? 'Store Pickup' : `${form.address}, ${form.city}`,
+                total: grandTotal,
+              });
+            } catch (err) {
+              // Payment went through on Paystack side but verification call had an issue.
+              // Still show success — the order exists in DB and will be reviewed manually.
+              console.error('Verification error (payment may still be valid):', err.message);
+              clearCart();
+              setSuccessMethod('paystack');
+              setSuccessRef(response.reference);
+            } finally {
+              setVerifying(false);
+            }
+          })();
         },
-        onClose: () => {
+        onClose: function() {
           if (!paymentSucceeded) {
             showToast('Payment cancelled', 'You closed the payment window', 'info');
             setProcessing(false);
+            paystackLaunching.current = false;
           }
         },
       });
@@ -295,6 +299,7 @@ export default function Checkout() {
       console.error('Checkout error:', error);
       showToast('Payment Error', error.message || 'An unexpected error occurred.', 'error');
       setProcessing(false);
+      paystackLaunching.current = false;
     }
   };
 
@@ -360,31 +365,6 @@ export default function Checkout() {
     setWaProcessing(false);
   };
 
-  const handleTransfer = async () => {
-    if (!validateForm()) return;
-    setTransferProcessing(true);
-    try {
-      const orderId = 'SHD-' + Date.now().toString(36).toUpperCase();
-      const { error } = await publicSupabase.from('orders').insert([buildOrderPayload(orderId, 'bank_transfer')]);
-      if (error) throw error;
-      await publicSupabase.from('order_items').insert(
-        items.map(i => ({ order_id: orderId, product_id: i.id || null, name: i.name, price: i.price, qty: i.qty }))
-      );
-      notify('transfer_made', {
-        id: orderId,
-        customer_name: `${form.firstName} ${form.lastName}`.trim(),
-        customer_phone: form.phone,
-total: grandTotal,
-      });
-      clearCart();
-      await incrementCouponUse();
-      setSuccessMethod('transfer');
-      setSuccessRef(orderId);
-    } catch (err) {
-      showToast('Error', err.message, 'error');
-    }
-    setTransferProcessing(false);
-  };
 
   if (successRef) {
     return (
@@ -394,14 +374,10 @@ total: grandTotal,
             <CheckCircle size={56} color="var(--red)" />
           </div>
           <h2 style={{ fontSize: '2rem', fontWeight: 900, marginBottom: 12 }}>
-            {successMethod === 'transfer'  ? <>Transfer <span className="accent">Noted!</span></> :
-             successMethod === 'whatsapp' ? <>Order <span className="accent">Sent!</span></> :
-             <>Order <span className="accent">Confirmed!</span></>}
+            {successMethod === 'whatsapp' ? <>Order <span className="accent">Sent!</span></> : <>Order <span className="accent">Confirmed!</span></>}
           </h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '1rem', lineHeight: 1.7, marginBottom: 20 }}>
-            {successMethod === 'transfer'
-              ? <>Thank you! We have received your transfer notification and will confirm your payment shortly. Your order reference is below.</>
-              : successMethod === 'whatsapp'
+            {successMethod === 'whatsapp'
               ? <>Your order has been saved and WhatsApp has opened with your order details. <strong>Please send the message</strong> to complete your order — we'll confirm it shortly.</>
               : <>Thank you for choosing <strong>Smokeyhut Delight</strong>! Your payment was successful and your order is being prepared.</>
             }
@@ -718,24 +694,27 @@ total: grandTotal,
               )}
               <div className="form-group"><label>Order Notes</label><textarea value={form.notes} onChange={set('notes')} placeholder="Any special requests..." /></div>
 
-              {/* Paystack button — hidden until production keys are ready
               <button
                 className="btn-primary"
-                style={{ width: '100%', justifyContent: 'center', padding: '16px 28px', fontSize: '1rem', marginTop: 8 }}
+                style={{
+                  width: '100%', justifyContent: 'center', padding: '16px 28px',
+                  fontSize: '1rem', marginTop: 8, display: 'flex', alignItems: 'center', gap: 8,
+                  opacity: (processing || verifying) ? 0.7 : 1,
+                  pointerEvents: (processing || verifying) ? 'none' : 'auto',
+                }}
                 onClick={handlePaystack}
-                disabled={processing || verifying}
               >
                 {verifying
-                  ? <><Loader2 size={18} className="spin" style={{ marginRight: 8 }} /> Confirming payment...</>
+                  ? <><Loader2 size={18} className="spin" /> Confirming payment...</>
                   : processing
-                  ? <><Loader2 size={18} className="spin" style={{ marginRight: 8 }} /> Processing...</>
-                  : `💳 Pay ${fmt(grandTotal)} with Paystack`
+                  ? <><Loader2 size={18} className="spin" /> Processing...</>
+                  : <><img src="https://upload.wikimedia.org/wikipedia/commons/0/0b/Paystack_Logo.png" alt="Paystack" style={{ height: 18, filter: 'brightness(0) invert(1)', objectFit: 'contain' }} /> Pay {fmt(grandTotal)}</>
+
                 }
               </button>
               <p style={{ textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 12 }}>
                 🔒 Secured by Paystack · Card, Bank Transfer, USSD & more
               </p>
-              */}
             </div>
 
             <div className="order-summary">
@@ -811,47 +790,6 @@ total: grandTotal,
                 <span className="order-total">{fmt(grandTotal)}</span>
               </div>
 
-              <div style={{ marginTop: 20, padding: '18px 16px', background: 'var(--black2)', borderRadius: 10, textAlign: 'center' }}>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Transfer To</div>
-                <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: 4 }}>Smokeyhut Delight</div>
-                <h3 style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--text)', margin: '0 0 4px' }}>5655718527</h3>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 14 }}>Moniepoint</div>
-
-                <label style={{
-                  display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
-                  padding: '11px 14px', borderRadius: 8, marginBottom: 10,
-                  border: `1.5px solid ${transferConfirmed ? 'var(--red)' : 'var(--border-subtle)'}`,
-                  background: transferConfirmed ? 'rgba(192,32,31,0.06)' : 'transparent',
-                  transition: 'border-color 0.15s, background 0.15s',
-                  userSelect: 'none',
-                }}>
-                  <input
-                    type="checkbox"
-                    checked={transferConfirmed}
-                    onChange={e => setTransferConfirmed(e.target.checked)}
-                    style={{ width: 16, height: 16, accentColor: 'var(--red)', cursor: 'pointer', flexShrink: 0 }}
-                  />
-                  <span style={{ fontSize: '0.87rem', fontWeight: 500, color: 'var(--text)' }}>I confirm that I have made payment</span>
-                </label>
-
-                <button
-                  style={{
-                    width: '100%', justifyContent: 'center', padding: '12px',
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    background: 'var(--red)', color: '#fff', border: 'none',
-                    borderRadius: 8, fontWeight: 700, fontSize: '0.92rem',
-                    cursor: 'pointer', transition: 'opacity 0.15s',
-                    opacity: (transferConfirmed && form.phone.trim() && form.email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) ? 1 : 0.45,
-                    pointerEvents: (transferConfirmed && form.phone.trim() && form.email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) ? 'auto' : 'none',
-                  }}
-                  onClick={handleTransfer}
-                >
-                  {transferProcessing
-                    ? <><Loader2 size={16} className="spin" /> Processing...</>
-                    : <><CreditCard size={16} /> I Have Made the Transfer</>
-                  }
-                </button>
-              </div>
 
               {/* WhatsApp order option — hidden */}
               {false && (
