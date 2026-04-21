@@ -287,6 +287,7 @@ export default function Checkout() {
         },
         onClose: function() {
           if (!paymentSucceeded) {
+            publicSupabase.from('orders').update({ status: 'cancelled' }).eq('id', orderId);
             showToast('Payment cancelled', 'You closed the payment window', 'info');
             setProcessing(false);
             paystackLaunching.current = false;
