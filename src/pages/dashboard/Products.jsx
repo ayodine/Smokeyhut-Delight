@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { Package, Trash2, Edit2, Image as ImageIcon, X, FolderKanban, Loader2, AlertTriangle, TrendingUp, DollarSign, BarChart2, Layers } from 'lucide-react';
 import { SkelList, SkelKpiGrid } from '../../components/Skeleton';
 import Pagination from '../../components/Pagination';
@@ -235,6 +236,13 @@ export default function Products() {
           <button className="btn-secondary" onClick={() => setShowCatModal(true)} style={{ padding: '10px 16px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6 }}>
             <FolderKanban size={16} /> Categories
           </button>
+          <Link
+            to="/admin/products/stats"
+            className="btn-secondary"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', padding: '10px 16px', fontSize: '0.85rem' }}
+          >
+            <BarChart2 size={16} /> View Stats
+          </Link>
           <button className="btn-primary" onClick={openAdd} style={{ padding: '10px 20px', fontSize: '0.85rem' }}>+ Add Product</button>
         </div>
       </div>
