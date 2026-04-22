@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import { ArrowLeft, DollarSign, ShoppingBag, TrendingUp, Users } from 'lucide-react';
-import { SkelKpiGrid, SkelTable } from '../../components/Skeleton';
+import { SkelKpiGrid, SkelTable, SkelFilterPills } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 
 const fmt    = (n) => '₦' + Number(n).toLocaleString();
@@ -91,25 +91,29 @@ export default function ProductStats() {
   const [listErr,setListErr]  = useState(false);
   const [loading,setLoading]  = useState(true);
 
-  useEffect(() => { fetchAll(); }, [selectedStore, period]);
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      setLoading(true);
+      setKpiErr(false);
+      setListErr(false);
 
-  const fetchAll = async () => {
-    setLoading(true);
-    setKpiErr(false);
-    setListErr(false);
+      const storeParam = selectedStore && selectedStore !== 'all' ? Number(selectedStore) : null;
+      const startParam = periodStart(period);
 
-    const storeParam = selectedStore && selectedStore !== 'all' ? Number(selectedStore) : null;
-    const startParam = periodStart(period);
+      const [kpisRes, listsRes] = await Promise.all([
+        supabase.rpc('get_product_stats_kpis',  { p_store_id: storeParam, p_start: startParam }),
+        supabase.rpc('get_product_stats_lists', { p_store_id: storeParam, p_start: startParam }),
+      ]);
 
-    const [kpisRes, listsRes] = await Promise.all([
-      supabase.rpc('get_product_stats_kpis',  { p_store_id: storeParam, p_start: startParam }),
-      supabase.rpc('get_product_stats_lists', { p_store_id: storeParam, p_start: startParam }),
-    ]);
-
-    if (kpisRes.error)  setKpiErr(true);  else setKpis(kpisRes.data);
-    if (listsRes.error) setListErr(true); else setLists(listsRes.data);
-    setLoading(false);
-  };
+      if (cancelled) return;
+      if (kpisRes.error)  setKpiErr(true);  else setKpis(kpisRes.data);
+      if (listsRes.error) setListErr(true); else setLists(listsRes.data);
+      setLoading(false);
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [selectedStore, period]);
 
   const avgOrder = kpis && kpis.order_count > 0
     ? kpis.revenue / kpis.order_count
@@ -141,6 +145,7 @@ export default function ProductStats() {
 
       {loading ? (
         <>
+          <SkelFilterPills count={4} />
           <SkelKpiGrid count={4} />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16, marginTop: 8 }}>
             {Array.from({ length: 6 }).map((_, i) => <SkelTable key={i} rows={5} cols={2} />)}
