@@ -48,6 +48,7 @@ const Coupons       = lazy(() => import('./pages/dashboard/Coupons'));
 const SalesReport   = lazy(() => import('./pages/dashboard/finance/SalesReport'));
 const Expenses      = lazy(() => import('./pages/dashboard/finance/Expenses'));
 const Inventory     = lazy(() => import('./pages/dashboard/finance/Inventory'));
+const ProductStats  = lazy(() => import('./pages/dashboard/ProductStats'));
 
 function AdminLoader() {
   return (
@@ -124,6 +125,7 @@ export default function App() {
                   <Route path="payments" element={<Suspense fallback={null}><Payments /></Suspense>} />
                   <Route path="stores" element={<Suspense fallback={null}><Stores /></Suspense>} />
                   <Route path="products" element={<Suspense fallback={null}><Products /></Suspense>} />
+                  <Route path="products/stats" element={<Suspense fallback={null}><ProductStats /></Suspense>} />
                   <Route path="customers" element={<Suspense fallback={null}><Customers /></Suspense>} />
                   <Route path="staff" element={<Suspense fallback={null}><Staff /></Suspense>} />
                   <Route path="zones" element={<Suspense fallback={null}><DeliveryZones /></Suspense>} />
