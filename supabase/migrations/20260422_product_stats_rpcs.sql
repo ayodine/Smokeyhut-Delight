@@ -13,24 +13,17 @@ RETURNS json
 LANGUAGE sql STABLE SECURITY DEFINER
 AS $$
   SELECT json_build_object(
-    'revenue',          COALESCE(SUM(total),                           0),
-    'units_sold',       COALESCE((
-                          SELECT SUM(oi.qty)
-                          FROM order_items oi
-                          JOIN orders o2 ON o2.id = oi.order_id
-                          WHERE o2.deleted_at IS NULL
-                            AND o2.status IN ('processing','shipped','delivered')
-                            AND (p_store_id IS NULL OR o2.store_id = p_store_id)
-                            AND (p_start   IS NULL OR o2.created_at >= p_start)
-                        ), 0),
-    'order_count',      COUNT(*),
-    'unique_customers', COUNT(DISTINCT customer_phone)
+    'revenue',          COALESCE(SUM(o.total),                 0),
+    'units_sold',       COALESCE(SUM(oi.qty),                  0),
+    'order_count',      COUNT(DISTINCT o.id),
+    'unique_customers', COUNT(DISTINCT o.customer_phone)
   )
-  FROM orders
-  WHERE deleted_at IS NULL
-    AND status IN ('processing','shipped','delivered')
-    AND (p_store_id IS NULL OR store_id = p_store_id)
-    AND (p_start   IS NULL OR created_at >= p_start);
+  FROM orders o
+  LEFT JOIN order_items oi ON oi.order_id = o.id
+  WHERE o.deleted_at IS NULL
+    AND o.status IN ('processing','shipped','delivered')
+    AND (p_store_id IS NULL OR o.store_id = p_store_id)
+    AND (p_start   IS NULL OR o.created_at >= p_start);
 $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -72,7 +65,7 @@ AS $$
   ),
   by_location AS (
     SELECT
-      SPLIT_PART(delivery_address, ',', -1) AS name,
+      NULLIF(TRIM(SPLIT_PART(delivery_address, ',', -1)), '') AS name,
       COUNT(*)::numeric AS value
     FROM confirmed_orders
     GROUP BY 1
@@ -95,13 +88,13 @@ AS $$
   ),
   by_category AS (
     SELECT
-      COALESCE(c.name, 'Uncategorised') AS name,
-      SUM(oi.qty * oi.price)            AS value
+      COALESCE(c.label, 'Uncategorised') AS name,
+      SUM(oi.qty * oi.price)             AS value
     FROM order_items oi
     JOIN confirmed_orders co ON co.id = oi.order_id
     JOIN products p          ON p.id  = oi.product_id
     LEFT JOIN categories c   ON c.id  = p.category_id
-    GROUP BY c.name
+    GROUP BY COALESCE(c.label, 'Uncategorised')
     ORDER BY value DESC
     LIMIT 5
   )
