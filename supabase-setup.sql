@@ -113,6 +113,9 @@ create table if not exists public.orders (
   total            numeric default 0,
   status           text default 'pending',
   notes            text,
+  paid_at          timestamptz,
+  payment_channel  text,
+  paystack_ref     text,
   created_at       timestamptz default now()
 );
 alter table public.orders enable row level security;

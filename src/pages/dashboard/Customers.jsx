@@ -73,7 +73,8 @@ export default function Customers() {
 
   const filtered = customers.filter(c =>
     String(c.name || '').toLowerCase().includes(search.toLowerCase()) ||
-    String(c.email || '').toLowerCase().includes(search.toLowerCase())
+    String(c.email || '').toLowerCase().includes(search.toLowerCase()) ||
+    String(c.phone || '').toLowerCase().includes(search.toLowerCase())
   );
   const pagedCustomers = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 

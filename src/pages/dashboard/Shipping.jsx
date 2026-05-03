@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Package, Truck, CheckCircle, Loader2, MapPin, Banknote, X } from 'lucide-react';
-import { SkelKpiGrid, SkelTable, SkelLine } from '../../components/Skeleton';
+import { SkelKpiGrid, SkelTable, SkelDashHeader, SkelFilterPills, SkelChart } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../context/ToastContext';
 import { useOutletContext } from 'react-router-dom';
@@ -161,15 +161,10 @@ export default function Shipping() {
 
   if (loading) return (
     <div>
-      <SkelKpiGrid count={3} />
-      <div style={{ marginBottom: 24 }}>
-        <SkelLine lg style={{ width: 200, marginBottom: 16 }} />
-        <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-subtle)', borderRadius: 16, padding: 24, display: 'flex', alignItems: 'flex-end', gap: 8, height: 160 }}>
-          {Array.from({ length: 7 }).map((_, i) => (
-            <div key={i} className="skel" style={{ flex: 1, height: `${20 + Math.random() * 70}%`, borderRadius: 6 }} />
-          ))}
-        </div>
-      </div>
+      <SkelDashHeader />
+      <SkelKpiGrid count={6} />
+      <SkelChart height={160} />
+      <SkelFilterPills count={6} />
       <SkelTable rows={6} cols={5} />
     </div>
   );

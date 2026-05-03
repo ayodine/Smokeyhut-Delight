@@ -2,29 +2,13 @@ import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useCart } from '../../context/CartContext';
 import { useToast } from '../../context/ToastContext';
-import { supabase, publicSupabase } from '../../lib/supabase';
+import { useSettings } from '../../context/SettingsContext';
+import { publicSupabase } from '../../lib/supabase';
 import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher';
-import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Home, ShoppingBag, Search, MapPin, MessageCircle, Tag, X } from 'lucide-react';
+import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Home, ShoppingBag, Search, MapPin, Tag, X, Copy, MessageCircle } from 'lucide-react';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-// Call verify-payment edge function with the secret key (server-side)
-async function verifyPaystackPayment(reference) {
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/verify-payment`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      'apikey': SUPABASE_ANON_KEY,
-    },
-    body: JSON.stringify({ reference }),
-  });
-  const data = await res.json();
-  if (!res.ok || !data.success) throw new Error(data.error || 'Payment verification failed');
-  return data;
-}
-
 
 // Fire-and-forget — notifications are non-critical, never block the UI
 async function notify(type, order) {
@@ -44,6 +28,7 @@ async function notify(type, order) {
 export default function Checkout() {
   const { items, total, clearCart } = useCart();
   const { showToast } = useToast();
+  const { settings } = useSettings();
   const fmt = (n) => '₦' + Number(n).toLocaleString();
 
   // Delivery state
@@ -59,11 +44,10 @@ export default function Checkout() {
   const [form, setForm] = useState({ firstName: '', lastName: '', phone: '', email: '', address: '', city: 'Lagos', notes: '' });
   const [touched, setTouched] = useState({ firstName: false, lastName: false, phone: false, email: false, address: false, city: false });
   const [processing, setProcessing] = useState(false);
-  const [verifying, setVerifying] = useState(false);
   const [waProcessing, setWaProcessing] = useState(false);
-  const paystackLaunching = useRef(false);
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [successRef, setSuccessRef] = useState(null);
-  const [successMethod, setSuccessMethod] = useState('paystack');
+  const [successMethod, setSuccessMethod] = useState('bank_transfer');
 
   const [stores, setStores] = useState([]);
   const [selectedStoreId, setSelectedStoreId] = useState(null);
@@ -101,11 +85,12 @@ export default function Checkout() {
     }
   }, [locationQuery, zones]);
 
+  const VAT = 100;
   const isPickup = deliveryType === 'pickup';
   const allFreeShipping = items.length > 0 && items.every(i => i.free_shipping === true);
   const deliveryFee = isPickup ? 0 : (allFreeShipping ? 0 : (selectedMatch?.zone.price ?? 0));
   const couponDiscount = appliedCoupon?.discount ?? 0;
-  const grandTotal = Math.max(0, total + deliveryFee - couponDiscount);
+  const grandTotal = Math.max(0, total + deliveryFee - couponDiscount) + VAT;
 
   const applyCoupon = async () => {
     const code = couponCode.trim().toUpperCase();
@@ -157,26 +142,25 @@ export default function Checkout() {
     if (type === 'pickup') {
       setSelectedMatch(null);
       setLocationQuery('');
-      // Reset to first store when switching to pickup
       if (stores.length > 0) setSelectedStoreId(stores[0].id);
     }
   };
 
   // Save pending order to Supabase before redirecting to Paystack
-  const buildOrderPayload = (orderId, method) => {
+  const buildOrderPayload = (method) => {
     const customerName = `${form.firstName} ${form.lastName}`.trim();
     const pickupStore = stores.find(s => s.id === selectedStoreId);
     const deliveryAddress = isPickup
       ? `Store Pickup — ${pickupStore?.name || 'Store'}`
       : `${form.address}, ${selectedMatch?.area?.name || selectedMatch?.zone?.name || form.city}`;
-    const deliveryZoneName = isPickup ? 'Store Pickup' : (selectedMatch?.zone?.name || '');
+    const deliveryZoneName = isPickup ? 'Store Pickup' : (selectedMatch?.area?.name || selectedMatch?.zone?.name || '');
 
     return {
-      id: orderId,
       customer_name: customerName,
       customer_email: form.email || null,
       customer_phone: form.phone,
       delivery_address: deliveryAddress,
+      delivery_zone: deliveryZoneName || null,
       store_id: selectedStoreId,
       payment_method: method,
       total: grandTotal,
@@ -204,7 +188,7 @@ export default function Checkout() {
       return false;
     }
     if (!isPickup && !selectedMatch) {
-      showToast('Location required', 'Please type and select your delivery area', 'error');
+      showToast('Location required', 'Please select your delivery area', 'error');
       inputRef.current?.focus();
       return false;
     }
@@ -215,19 +199,11 @@ export default function Checkout() {
     return true;
   };
 
-  const handlePaystack = async () => {
-    if (paystackLaunching.current) return;
+  const handlePlaceOrder = async () => {
     if (!validateForm()) return;
-    if (!window.PaystackPop) {
-      showToast('Payment unavailable', 'Payment service failed to load. Please refresh and try again.', 'error');
-      return;
-    }
-
-    paystackLaunching.current = true;
     setProcessing(true);
     try {
-      const orderId = 'SHD-' + Date.now().toString(36).toUpperCase();
-      const { error: orderError } = await publicSupabase.from('orders').insert([buildOrderPayload(orderId, 'paystack')]);
+      const { data: orderId, error: orderError } = await publicSupabase.rpc('create_storefront_order', { p: buildOrderPayload('bank_transfer') });
       if (orderError) throw orderError;
 
       const { error: itemsError } = await publicSupabase.from('order_items').insert(
@@ -235,72 +211,23 @@ export default function Checkout() {
       );
       if (itemsError) throw itemsError;
 
-      const customerEmail = form.email?.trim() || `${form.phone.replace(/\D/g, '')}@smokeyhut.com`;
-      let paymentSucceeded = false;
-
-      const handler = window.PaystackPop.setup({
-        key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
-        email: customerEmail,
-        amount: Math.round(grandTotal * 100),
-        ref: orderId,
-        currency: 'NGN',
-        // Enable all available payment channels
-        channels: ['card', 'bank', 'ussd', 'qr', 'mobile_money', 'bank_transfer'],
-        metadata: {
-          order_id: orderId,
-          customer_name: `${form.firstName} ${form.lastName}`.trim(),
-          phone: form.phone,
-          delivery_address: isPickup ? 'Store Pickup' : `${form.address}, ${form.city}`,
-          cancel_action: window.location.href,
-        },
-        callback: function(response) {
-          paymentSucceeded = true;
-          setProcessing(false);
-          setVerifying(true);
-          (async () => {
-            try {
-              // Server-side verification with secret key — never trust the callback alone
-              await verifyPaystackPayment(response.reference);
-              clearCart();
-              await incrementCouponUse();
-              setSuccessMethod('paystack');
-              setSuccessRef(response.reference);
-              notify('order_confirmed', {
-                id: orderId,
-                customer_name: `${form.firstName} ${form.lastName}`.trim(),
-                customer_email: form.email || null,
-                customer_phone: form.phone,
-                delivery_address: isPickup ? 'Store Pickup' : `${form.address}, ${form.city}`,
-                total: grandTotal,
-              });
-            } catch (err) {
-              // Payment went through on Paystack side but verification call had an issue.
-              // Still show success — the order exists in DB and will be reviewed manually.
-              console.error('Verification error (payment may still be valid):', err.message);
-              clearCart();
-              setSuccessMethod('paystack');
-              setSuccessRef(response.reference);
-            } finally {
-              setVerifying(false);
-            }
-          })();
-        },
-        onClose: function() {
-          if (!paymentSucceeded) {
-            publicSupabase.from('orders').update({ status: 'cancelled' }).eq('id', orderId);
-            showToast('Payment cancelled', 'You closed the payment window', 'info');
-            setProcessing(false);
-            paystackLaunching.current = false;
-          }
-        },
+      clearCart();
+      await incrementCouponUse();
+      setSuccessMethod('bank_transfer');
+      setSuccessRef(orderId);
+      notify('order_confirmed', {
+        id: orderId,
+        customer_name: `${form.firstName} ${form.lastName}`.trim(),
+        customer_email: form.email || null,
+        customer_phone: form.phone,
+        delivery_address: isPickup ? 'Store Pickup' : `${form.address}, ${form.city}`,
+        total: grandTotal,
       });
-
-      handler.openIframe();
     } catch (error) {
       console.error('Checkout error:', error);
-      showToast('Payment Error', error.message || 'An unexpected error occurred.', 'error');
+      showToast('Order Error', error.message || 'An unexpected error occurred.', 'error');
+    } finally {
       setProcessing(false);
-      paystackLaunching.current = false;
     }
   };
 
@@ -312,8 +239,7 @@ export default function Checkout() {
     const waWindow = window.open('', '_blank');
 
     try {
-      const orderId = 'SHD-' + Date.now().toString(36).toUpperCase();
-      const { error } = await publicSupabase.from('orders').insert([buildOrderPayload(orderId, 'whatsapp')]);
+      const { data: orderId, error } = await publicSupabase.rpc('create_storefront_order', { p: buildOrderPayload('whatsapp') });
       if (error) throw error;
       await publicSupabase.from('order_items').insert(
         items.map(i => ({ order_id: orderId, product_id: i.id || null, name: i.name, price: i.price, qty: i.qty }))
@@ -368,25 +294,57 @@ export default function Checkout() {
 
 
   if (successRef) {
+    const { bankName, accountName, accountNumber } = settings;
+    const hasBankDetails = bankName && accountName && accountNumber;
     return (
       <div style={{ minHeight: '70vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-        <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-subtle)', borderRadius: 24, maxWidth: 460, width: '100%', padding: '48px 36px', textAlign: 'center', boxShadow: 'var(--shadow-lg)' }}>
+        <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-subtle)', borderRadius: 24, maxWidth: 480, width: '100%', padding: '48px 36px', textAlign: 'center', boxShadow: 'var(--shadow-lg)' }}>
           <div style={{ background: 'rgba(192,32,31,0.1)', width: 100, height: 100, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
             <CheckCircle size={56} color="var(--red)" />
           </div>
           <h2 style={{ fontSize: '2rem', fontWeight: 900, marginBottom: 12 }}>
-            {successMethod === 'whatsapp' ? <>Order <span className="accent">Sent!</span></> : <>Order <span className="accent">Confirmed!</span></>}
+            {successMethod === 'whatsapp' ? <>Order <span className="accent">Sent!</span></> : <>Order <span className="accent">Placed!</span></>}
           </h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '1rem', lineHeight: 1.7, marginBottom: 20 }}>
             {successMethod === 'whatsapp'
               ? <>Your order has been saved and WhatsApp has opened with your order details. <strong>Please send the message</strong> to complete your order — we'll confirm it shortly.</>
-              : <>Thank you for choosing <strong>Smokeyhut Delight</strong>! Your payment was successful and your order is being prepared.</>
+              : <>Your order has been received. Please complete payment via bank transfer using the details below, then we'll confirm and process your order.</>
             }
           </p>
-          <div style={{ padding: '12px 16px', background: 'var(--black2)', borderRadius: 10, fontSize: '0.85rem', marginBottom: 28 }}>
-            <span style={{ color: 'var(--text-muted)' }}>Reference: </span>
-            <code style={{ color: 'var(--text)', fontWeight: 700 }}>{successRef}</code>
+
+          <div style={{ padding: '12px 16px', background: 'var(--black2)', borderRadius: 10, fontSize: '0.85rem', marginBottom: 16, textAlign: 'left' }}>
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginBottom: 4 }}>Order Reference</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <code style={{ color: 'var(--text)', fontWeight: 700, fontSize: '1rem' }}>{successRef}</code>
+              <button
+                onClick={() => { navigator.clipboard.writeText(successRef); showToast('Copied!', 'Order reference copied', 'success'); }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, display: 'flex' }}
+                title="Copy reference"
+              ><Copy size={15} /></button>
+            </div>
           </div>
+
+          {successMethod === 'bank_transfer' && hasBankDetails && (
+            <div style={{ background: 'rgba(192,32,31,0.06)', border: '1px solid rgba(192,32,31,0.25)', borderRadius: 12, padding: '18px 20px', marginBottom: 24, textAlign: 'left' }}>
+              <div style={{ fontWeight: 800, fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--red)', marginBottom: 12 }}>Bank Transfer Details</div>
+              {[['Bank', bankName], ['Account Name', accountName], ['Account Number', accountNumber]].map(([label, value]) => (
+                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid rgba(192,32,31,0.1)' }}>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{label}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>{value}</span>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(value); showToast('Copied!', `${label} copied`, 'success'); }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, display: 'flex' }}
+                    ><Copy size={13} /></button>
+                  </div>
+                </div>
+              ))}
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 10, marginBottom: 0 }}>
+                Use your order reference <strong>{successRef}</strong> as the transfer description.
+              </p>
+            </div>
+          )}
+
           <div style={{ display: 'flex', gap: 12 }}>
             <Link to="/" className="btn-secondary" style={{ flex: 1, justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 8 }}>
               <Home size={18} /> Home
@@ -694,30 +652,9 @@ export default function Checkout() {
                 </>
               )}
               <div className="form-group"><label>Order Notes</label><textarea value={form.notes} onChange={set('notes')} placeholder="Any special requests..." /></div>
-
-              <button
-                className="btn-primary"
-                style={{
-                  width: '100%', justifyContent: 'center', padding: '16px 28px',
-                  fontSize: '1rem', marginTop: 8, display: 'flex', alignItems: 'center', gap: 8,
-                  opacity: (processing || verifying) ? 0.7 : 1,
-                  pointerEvents: (processing || verifying) ? 'none' : 'auto',
-                }}
-                onClick={handlePaystack}
-              >
-                {verifying
-                  ? <><Loader2 size={18} className="spin" /> Confirming payment...</>
-                  : processing
-                  ? <><Loader2 size={18} className="spin" /> Processing...</>
-                  : <><img src="https://upload.wikimedia.org/wikipedia/commons/0/0b/Paystack_Logo.png" alt="Paystack" style={{ height: 18, filter: 'brightness(0) invert(1)', objectFit: 'contain' }} /> Pay {fmt(grandTotal)}</>
-
-                }
-              </button>
-              <p style={{ textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 12 }}>
-                🔒 Secured by Paystack · Card, Bank Transfer, USSD & more
-              </p>
             </div>
 
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <div className="order-summary">
               <h3>Order Summary</h3>
               {items.map(item => (
@@ -743,6 +680,10 @@ export default function Checkout() {
                   {allFreeShipping && !isPickup && <span style={{ marginLeft: 6, fontSize: '0.7rem', background: '#dcfce7', color: '#166534', padding: '1px 7px', borderRadius: 20, fontWeight: 800 }}>FREE SHIP</span>}
                 </span>
                 <span>{deliveryFee === 0 ? 'Free' : fmt(deliveryFee)}</span>
+              </div>
+              <div className="order-line">
+                <span style={{ color: 'var(--text-muted)' }}>VAT</span>
+                <span style={{ color: 'var(--text-muted)' }}>₦100</span>
               </div>
 
               {/* Coupon input */}
@@ -790,6 +731,57 @@ export default function Checkout() {
                 <span style={{ fontWeight: 900, fontSize: '1.1rem' }}>Total</span>
                 <span className="order-total">{fmt(grandTotal)}</span>
               </div>
+            </div>
+
+            <div className="order-summary">
+              {/* Payment info */}
+              <div style={{ padding: '16px 18px', background: 'rgba(192,32,31,0.06)', border: '1px solid rgba(192,32,31,0.25)', borderRadius: 12 }}>
+                <div style={{ fontWeight: 800, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--red)', marginBottom: 12 }}>Payment Details</div>
+                {[['Bank', 'Moniepoint'], ['Account Name', 'Smokeyhut Delight'], ['Account Number', '5655718527']].map(([label, value]) => (
+                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid rgba(192,32,31,0.1)' }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{label}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.88rem' }}>{value}</span>
+                      {label === 'Account Number' && (
+                        <button
+                          onClick={() => { navigator.clipboard.writeText(value); showToast('Copied!', `${label} copied`, 'success'); }}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, display: 'flex' }}
+                          title={`Copy ${label}`}
+                        ><Copy size={13} /></button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 10, marginBottom: 0, lineHeight: 1.5 }}>
+                  Transfer <strong>{fmt(grandTotal)}</strong> and use your order reference as the payment description.
+                </p>
+              </div>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14, padding: '12px 14px', background: paymentConfirmed ? 'rgba(192,32,31,0.06)' : 'var(--black2)', border: `1.5px solid ${paymentConfirmed ? 'var(--red)' : 'var(--border-subtle)'}`, borderRadius: 10, cursor: 'pointer', transition: 'all 0.2s' }}>
+                <input
+                  type="checkbox"
+                  checked={paymentConfirmed}
+                  onChange={e => setPaymentConfirmed(e.target.checked)}
+                  style={{ width: 17, height: 17, accentColor: 'var(--red)', flexShrink: 0 }}
+                />
+                <span style={{ fontSize: '0.86rem', fontWeight: 600 }}>I confirm that I have made payment</span>
+              </label>
+
+              <button
+                className="btn-primary"
+                style={{
+                  width: '100%', justifyContent: 'center', padding: '16px 28px',
+                  fontSize: '1rem', marginTop: 10, display: 'flex', alignItems: 'center', gap: 8,
+                  opacity: (processing || !paymentConfirmed) ? 0.5 : 1,
+                  pointerEvents: (processing || !paymentConfirmed) ? 'none' : 'auto',
+                }}
+                onClick={handlePlaceOrder}
+              >
+                {processing
+                  ? <><Loader2 size={18} className="spin" /> Placing order...</>
+                  : <>Place Order — {fmt(grandTotal)}</>
+                }
+              </button>
 
 
               {/* WhatsApp order option — hidden */}
@@ -821,6 +813,7 @@ export default function Checkout() {
                   </p>
                 </>
               )}
+            </div>
             </div>
           </div>
         </div>

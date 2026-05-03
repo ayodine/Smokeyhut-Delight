@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { DollarSign, CreditCard, Landmark, Banknote } from 'lucide-react';
-import { SkelKpiGrid, SkelTable } from '../../components/Skeleton';
+import { DollarSign, Landmark, Banknote, CreditCard } from 'lucide-react';
+import { SkelKpiGrid, SkelTable, SkelDashHeader, SkelFilterPills } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import { useOutletContext } from 'react-router-dom';
 
 const fmt = (n) => '₦' + n.toLocaleString();
 
-const EMPTY_KPIS = { total: 0, paystack: 0, bank_transfer: 0, cash: 0 };
+const EMPTY_KPIS = { total: 0, bank_transfer: 0, cash: 0, pos: 0 };
 
 export default function Payments() {
   const { selectedStore } = useOutletContext() || {};
@@ -14,7 +14,7 @@ export default function Payments() {
   const [kpis, setKpis] = useState(EMPTY_KPIS);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
-  const methods = ['all', 'paystack', 'bank_transfer', 'cash'];
+  const methods = ['all', 'bank_transfer', 'cash', 'pos'];
 
   useEffect(() => { fetchData(); }, [selectedStore]);
 
@@ -52,11 +52,12 @@ export default function Payments() {
       setKpis(kpisRes.data);
     } else {
       const confirmed = kpiFallbackRes.data || [];
+      const sum = (method) => confirmed.filter(p => p.payment_method === method).reduce((s, p) => s + Number(p.total), 0);
       setKpis({
         total:         confirmed.reduce((s, p) => s + Number(p.total), 0),
-        paystack:      confirmed.filter(p => p.payment_method === 'paystack').reduce((s, p) => s + Number(p.total), 0),
-        bank_transfer: confirmed.filter(p => p.payment_method === 'bank_transfer').reduce((s, p) => s + Number(p.total), 0),
-        cash:          confirmed.filter(p => p.payment_method === 'cash').reduce((s, p) => s + Number(p.total), 0),
+        bank_transfer: sum('bank_transfer'),
+        cash:          sum('cash'),
+        pos:           sum('pos'),
       });
     }
     setLoading(false);
@@ -66,7 +67,9 @@ export default function Payments() {
 
   if (loading) return (
     <div>
-      <SkelKpiGrid count={3} />
+      <SkelDashHeader />
+      <SkelKpiGrid count={4} />
+      <SkelFilterPills count={4} />
       <SkelTable rows={8} cols={5} />
     </div>
   );
@@ -85,8 +88,8 @@ export default function Payments() {
         </div>
         <div className="kpi-card blue">
           <div className="kpi-icon"><CreditCard size={24} /></div>
-          <div className="kpi-value">{fmt(kpis.paystack)}</div>
-          <div className="kpi-label">Via Paystack</div>
+          <div className="kpi-value">{fmt(kpis.pos || 0)}</div>
+          <div className="kpi-label">POS</div>
         </div>
         <div className="kpi-card yellow">
           <div className="kpi-icon"><Landmark size={24} /></div>

@@ -12,6 +12,29 @@ export async function fetchDeliveryZones(supabaseClient) {
 }
 
 /**
+ * Fetch a flat sorted list of all delivery areas with their zone price attached.
+ * Used by the Orders form and DeliveryZones admin page.
+ */
+export async function fetchFlatAreas(supabaseClient) {
+  const zones = await fetchDeliveryZones(supabaseClient);
+  const areas = [];
+  for (const zone of zones) {
+    if (zone.slug === 'store-pickup' || zone.name.toLowerCase().includes('pickup')) continue;
+    for (const area of (zone.delivery_areas || [])) {
+      areas.push({
+        id: area.id,
+        name: area.name,
+        aliases: area.aliases || [],
+        price: zone.price,
+        zone_id: zone.id,
+        zone_name: zone.name,
+      });
+    }
+  }
+  return areas.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
  * Find matching zones given a query string.
  * Returns array of { zone, area, matchedOn } sorted by relevance, max 8 results.
  */

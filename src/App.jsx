@@ -28,7 +28,6 @@ import Contact from './pages/storefront/Contact';
 import StoreRules from './pages/storefront/StoreRules';
 import Privacy from './pages/storefront/Privacy';
 import Refund from './pages/storefront/Refund';
-import PaymentSuccess from './pages/storefront/PaymentSuccess';
 
 // Dashboard Pages (lazy — only loaded when admin navigates to /admin)
 const Login         = lazy(() => import('./pages/dashboard/Login'));
@@ -81,7 +80,6 @@ function StorefrontLayout() {
         <Route path="store-rules" element={<StoreRules />} />
         <Route path="privacy" element={<Privacy />} />
         <Route path="refund" element={<Refund />} />
-        <Route path="payment/success" element={<PaymentSuccess />} />
       </Routes>
       <Footer />
       <a
@@ -125,7 +123,7 @@ export default function App() {
                   <Route path="payments" element={<Suspense fallback={null}><Payments /></Suspense>} />
                   <Route path="stores" element={<Suspense fallback={null}><Stores /></Suspense>} />
                   <Route path="products" element={<Suspense fallback={null}><Products /></Suspense>} />
-                  <Route path="products/stats" element={<Suspense fallback={null}><ProductStats /></Suspense>} />
+                  <Route path="stats" element={<Suspense fallback={null}><ProductStats /></Suspense>} />
                   <Route path="customers" element={<Suspense fallback={null}><Customers /></Suspense>} />
                   <Route path="staff" element={<Suspense fallback={null}><Staff /></Suspense>} />
                   <Route path="zones" element={<Suspense fallback={null}><DeliveryZones /></Suspense>} />

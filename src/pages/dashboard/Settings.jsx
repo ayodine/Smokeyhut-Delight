@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useToast } from '../../context/ToastContext';
 import { useSettings } from '../../context/SettingsContext';
-import { Settings as SettingsIcon, Store, Bell, Save, Radio, Trash2, Plus, Pencil, Check, X } from 'lucide-react';
+import { Settings as SettingsIcon, Store, Bell, Save, Radio, Trash2, Plus, Pencil, Check, X, Landmark } from 'lucide-react';
 
 export default function Settings() {
   const { showToast } = useToast();
@@ -133,6 +133,18 @@ export default function Settings() {
               <Plus size={16} /> Add
             </button>
           </div>
+        </div>
+
+        <div className="dash-card">
+          <h3 style={{ fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif", fontSize: '1.1rem', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Landmark size={18} /> Bank Transfer Details
+          </h3>
+          <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 16 }}>
+            Shown to customers after they place an order so they know where to send payment.
+          </p>
+          <div className="form-group"><label>Bank Name</label><input value={localSettings.bankName || ''} onChange={set('bankName')} placeholder="e.g. GTBank" /></div>
+          <div className="form-group"><label>Account Name</label><input value={localSettings.accountName || ''} onChange={set('accountName')} placeholder="e.g. Smokeyhut Delight" /></div>
+          <div className="form-group"><label>Account Number</label><input value={localSettings.accountNumber || ''} onChange={set('accountNumber')} placeholder="e.g. 0123456789" /></div>
         </div>
 
         <button className="btn-primary" onClick={save} style={{ justifyContent: 'center', padding: '14px 28px', display: 'flex', gap: 8, alignItems: 'center' }}>

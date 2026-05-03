@@ -11,13 +11,62 @@ export function SkelLine({ sm, xs, lg, style = {} }) {
   return <div className={`skel skel-line ${cls}`} style={style} />;
 }
 
-// KPI card skeleton — matches .kpi-card height
+// Page header skeleton — title block + optional action button on the right
+export function SkelDashHeader({ hasButton = false }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <Skel style={{ width: 180, height: 22, borderRadius: 6 }} />
+        <Skel style={{ width: 120, height: 13, borderRadius: 4 }} />
+      </div>
+      {hasButton && <Skel style={{ width: 140, height: 36, borderRadius: 8 }} />}
+    </div>
+  );
+}
+
+// Period / filter pill row skeleton
+export function SkelFilterPills({ count = 5 }) {
+  const widths = [52, 72, 80, 70, 60];
+  return (
+    <div style={{ display: 'flex', gap: 6, marginBottom: 24, flexWrap: 'wrap' }}>
+      {Array.from({ length: count }).map((_, i) => (
+        <Skel key={i} style={{ width: widths[i % widths.length], height: 30, borderRadius: 20 }} />
+      ))}
+    </div>
+  );
+}
+
+// KPI card skeleton — matches .kpi-card layout (icon, value, label, change row)
 export function SkelKpi() {
   return (
-    <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-subtle)', borderRadius: 16, padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <Skel style={{ width: 40, height: 40, borderRadius: 10 }} />
-      <Skel className="skel-line lg" style={{ width: '60%' }} />
-      <Skel className="skel-line sm" style={{ width: '40%' }} />
+    <div style={{
+      background: 'var(--card-bg)', border: '1px solid var(--border-subtle)',
+      borderRadius: 14, padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: 10,
+      position: 'relative', overflow: 'hidden',
+    }}>
+      {/* top accent bar */}
+      <Skel style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, borderRadius: 0 }} />
+      <Skel style={{ width: 36, height: 36, borderRadius: 8 }} />
+      <Skel style={{ width: '65%', height: 28, borderRadius: 5 }} />
+      <Skel style={{ width: '42%', height: 11, borderRadius: 4 }} />
+      <Skel style={{ width: '35%', height: 10, borderRadius: 4 }} />
+    </div>
+  );
+}
+
+// Chart skeleton — wrapped in a dash-card with a header line
+export function SkelChart({ height = 170 }) {
+  return (
+    <div style={{
+      background: 'var(--card-bg)', border: '1px solid var(--border-subtle)',
+      borderRadius: 14, padding: 24, marginBottom: 24,
+    }}>
+      <Skel style={{ width: 160, height: 14, borderRadius: 4, marginBottom: 20 }} />
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height }}>
+        {[55, 80, 40, 90, 65, 75, 50].map((h, i) => (
+          <div key={i} className="skel" style={{ flex: 1, height: `${h}%`, borderRadius: '4px 4px 0 0' }} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -41,10 +90,10 @@ export function SkelCard({ height = 120 }) {
   return <Skel className="skel-card" style={{ height, width: '100%' }} />;
 }
 
-// Full KPI grid + table — used by Overview, Payments, etc.
+// Full KPI grid — used standalone when you just need cards
 export function SkelKpiGrid({ count = 4 }) {
   return (
-    <div className="kpi-grid">
+    <div className="kpi-grid" style={{ marginBottom: 24 }}>
       {Array.from({ length: count }).map((_, i) => <SkelKpi key={i} />)}
     </div>
   );

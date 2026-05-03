@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Search, Loader2, FileText, Plus, Trash2, X, ChevronUp, ChevronDown, Clock, Truck, CheckCircle, XCircle, RefreshCw, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Search, Loader2, FileText, Plus, Trash2, X, ChevronUp, ChevronDown, Clock, Truck, CheckCircle, XCircle, RefreshCw, RotateCcw, AlertTriangle, Layers } from 'lucide-react';
 import { SkelTable, SkelLine, SkelKpiGrid } from '../../components/Skeleton';
 import Pagination from '../../components/Pagination';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { useOutletContext } from 'react-router-dom';
-import { fetchDeliveryZones } from '../../lib/deliveryMatcher';
+import { fetchFlatAreas } from '../../lib/deliveryMatcher';
 
 const fmt = (n) => '₦' + Number(n).toLocaleString();
 const statuses = ['all', 'pending', 'processing', 'shipped', 'delivered', 'cancelled'];
@@ -30,7 +30,7 @@ function getStartDate(period) {
   }
 }
 const CHANNELS = ['WhatsApp', 'Instagram', 'Facebook', 'Offline', 'Walk-in', 'Phone', 'Website'];
-const PAYMENT_METHODS = ['cash', 'bank_transfer', 'paystack', 'pos', 'other'];
+const PAYMENT_METHODS = ['cash', 'bank_transfer', 'pos', 'other'];
 
 const getChannel = (notes) => {
   if (!notes) return null;
@@ -195,7 +195,7 @@ export default function Orders() {
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
   const [storeList, setStoreList] = useState([]);
-  const [zones, setZones] = useState([]);
+  const [areas, setAreas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [period, setPeriod] = useState('all');
@@ -209,9 +209,14 @@ export default function Orders() {
   const [showNewOrder, setShowNewOrder] = useState(false);
   const [newOrder, setNewOrder] = useState(emptyNewOrder);
   const [savingNew, setSavingNew] = useState(false);
+
+  const [showBulkOrder, setShowBulkOrder] = useState(false);
+  const [bulkOrders, setBulkOrders] = useState([{ ...emptyNewOrder }]);
+  const [savingBulk, setSavingBulk] = useState(false);
   const [trashView, setTrashView] = useState(false);
   const [deletedOrders, setDeletedOrders] = useState([]);
   const [dateFilter, setDateFilter] = useState(''); // YYYY-MM-DD
+  const [sourceFilter, setSourceFilter] = useState('all'); // 'all' | 'storefront' | 'whatsapp'
   const [newOrderAlert, setNewOrderAlert] = useState(null); // { id, name, total }
   const [realtimeStatus, setRealtimeStatus] = useState('connecting'); // 'connecting' | 'ok' | 'error'
   const audioCtxRef = useRef(null);
@@ -267,7 +272,7 @@ export default function Orders() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, async (payload) => {
         const order = payload.new;
         if (!mountedRef.current) return;
-        if (storeFilter && order.store_id !== storeFilter) return;
+        if (storeFilter && String(order.store_id) !== String(storeFilter)) return;
 
         // Fetch order_items for the new order
         const { data: items } = await supabase.from('order_items').select('*').eq('order_id', order.id);
@@ -338,7 +343,7 @@ export default function Orders() {
       buildDeletedBase().not('deleted_at', 'is', null).order('deleted_at', { ascending: false }),
       supabase.from('products').select('id, name, price').order('name'),
       supabase.from('stores').select('id, name').eq('is_active', true).order('id'),
-      fetchDeliveryZones(supabase),
+      fetchFlatAreas(supabase),
     ]);
     if (ordersRes.data) setOrders(ordersRes.data);
     if (deletedRes.data) setDeletedOrders(deletedRes.data);
@@ -347,7 +352,7 @@ export default function Orders() {
       setStoreList(storesRes.data);
       if (storesRes.data.length > 0) setNewOrder(f => ({ ...f, store: String(storesRes.data[0].id) }));
     }
-    setZones(zonesRes);
+    setAreas(zonesRes);
     setLoading(false);
   };
 
@@ -434,9 +439,9 @@ export default function Orders() {
     return { ...f, items };
   });
 
-  const pickZone = (zoneId) => {
-    const zone = zones.find(z => String(z.id) === String(zoneId));
-    setNewOrder(f => ({ ...f, zoneId, deliveryFee: zone ? zone.price : 0 }));
+  const pickZone = (areaId) => {
+    const area = areas.find(a => String(a.id) === String(areaId));
+    setNewOrder(f => ({ ...f, zoneId: areaId, deliveryFee: area ? area.price : 0 }));
   };
 
   const pickProduct = (i, productId) => {
@@ -457,14 +462,12 @@ export default function Orders() {
     if (validItems.length === 0) return;
     setSavingNew(true);
     try {
-      const orderId = 'SHD-' + Date.now().toString(36).toUpperCase();
       const notesStr = `[via ${newOrder.channel}]${newOrder.notes ? '\n' + newOrder.notes : ''}`;
       const orderTimestamp = newOrder.orderDate
         ? new Date(`${newOrder.orderDate}T${newOrder.orderTime || '00:00'}:00`).toISOString()
         : new Date().toISOString();
 
-      const { error } = await supabase.from('orders').insert([{
-        id: orderId,
+      const { data: inserted, error } = await supabase.from('orders').insert([{
         customer_name: newOrder.name.trim(),
         customer_email: newOrder.email || null,
         customer_phone: newOrder.phone.trim(),
@@ -476,11 +479,11 @@ export default function Orders() {
         status: 'pending',
         notes: notesStr,
         created_at: orderTimestamp,
-      }]);
+      }]).select('id').single();
       if (error) throw error;
       await supabase.from('order_items').insert(
         validItems.map(i => ({
-          order_id: orderId,
+          order_id: inserted.id,
           product_id: i.product || null,
           name: i.name.trim(),
           price: Number(i.price),
@@ -498,6 +501,85 @@ export default function Orders() {
     }
   };
 
+  const updateBulkOrder = (index, field, value) => setBulkOrders(prev => { const c = [...prev]; c[index] = { ...c[index], [field]: value }; return c; });
+  const updateBulkItemField = (oIdx, iIdx, field, value) => setBulkOrders(prev => {
+    const c = [...prev]; const it = [...c[oIdx].items]; it[iIdx] = { ...it[iIdx], [field]: value };
+    c[oIdx] = { ...c[oIdx], items: it }; return c;
+  });
+  const addBulkItemRow = (oIdx) => setBulkOrders(prev => { const c = [...prev]; c[oIdx].items = [...c[oIdx].items, { product: '', name: '', qty: 1, price: '' }]; return c; });
+  const removeBulkItemRow = (oIdx, iIdx) => setBulkOrders(prev => { const c = [...prev]; c[oIdx].items = c[oIdx].items.filter((_, i) => i !== iIdx); return c; });
+  const pickBulkProduct = (oIdx, iIdx, productId) => {
+    const p = products.find(pr => String(pr.id) === String(productId));
+    setBulkOrders(prev => {
+      const c = [...prev]; const it = [...c[oIdx].items];
+      it[iIdx] = { ...it[iIdx], product: productId, name: p ? p.name : '', price: p ? String(p.price) : '' };
+      c[oIdx] = { ...c[oIdx], items: it }; return c;
+    });
+  };
+  const pickBulkZone = (oIdx, areaId) => {
+    const area = areas.find(a => String(a.id) === String(areaId));
+    setBulkOrders(prev => { const c = [...prev]; c[oIdx] = { ...c[oIdx], zoneId: areaId, deliveryFee: area ? area.price : 0 }; return c; });
+  };
+  const addBulkOrder = () => setBulkOrders(prev => [...prev, { ...emptyNewOrder, orderDate: todayDate(), orderTime: currentTime() }]);
+  const removeBulkOrder = (index) => setBulkOrders(prev => prev.filter((_, i) => i !== index));
+
+  const handleSaveBulkOrders = async () => {
+    const validOrders = bulkOrders.filter(o => o.name.trim() && o.phone.trim() && o.items.some(i => i.name.trim() && Number(i.price) > 0));
+    if (validOrders.length === 0) return;
+    
+    setSavingBulk(true);
+    try {
+      for (const orderData of validOrders) {
+        const notesStr = `[via ${orderData.channel}]${orderData.notes ? '\n' + orderData.notes : ''}`;
+        const orderTimestamp = orderData.orderDate
+          ? new Date(`${orderData.orderDate}T${orderData.orderTime || '00:00'}:00`).toISOString()
+          : new Date().toISOString();
+
+        const validItems = orderData.items.filter(i => i.name.trim() && Number(i.price) > 0);
+        const itemsSubtotal = validItems.reduce((s, i) => s + (Number(i.qty) * Number(i.price) || 0), 0);
+        const total = itemsSubtotal + Number(orderData.deliveryFee || 0);
+
+        const { data: inserted, error: orderError } = await supabase.from('orders').insert({
+          customer_name: orderData.name.trim(),
+          customer_email: orderData.email || null,
+          customer_phone: orderData.phone.trim(),
+          delivery_address: orderData.address.trim() || 'Manual / Offline',
+          payment_method: orderData.payment,
+          store_id: orderData.store ? Number(orderData.store) : null,
+          total,
+          delivery_fee: Number(orderData.deliveryFee || 0),
+          status: 'pending',
+          notes: notesStr,
+          created_at: orderTimestamp,
+        }).select('id').single();
+        if (orderError) throw orderError;
+
+        if (validItems.length > 0) {
+          const { error: itemsError } = await supabase.from('order_items').insert(
+            validItems.map(i => ({
+              order_id: inserted.id,
+              product_id: i.product || null,
+              name: i.name.trim(),
+              price: Number(i.price),
+              qty: Number(i.qty),
+            }))
+          );
+          if (itemsError) throw itemsError;
+        }
+      }
+      
+      setShowBulkOrder(false);
+      setBulkOrders([{ ...emptyNewOrder, orderDate: todayDate(), orderTime: currentTime() }]);
+      await fetchData();
+      showToast('Success', `${orderInsertData.length} manual order(s) added successfully`, 'success');
+    } catch (err) {
+      console.error('Bulk order error:', err);
+      showToast('Save failed', err.message || 'Could not save bulk orders', 'error');
+    } finally {
+      setSavingBulk(false);
+    }
+  };
+
   // ── Filter + Sort ────────────────────────────────────────
   const startDate = useMemo(() => getStartDate(period), [period]);
 
@@ -507,17 +589,22 @@ export default function Orders() {
     return orders.filter(o => {
       const matchSearch = !q ||
         String(o.customer_name || '').toLowerCase().includes(q) ||
-        String(o.id).toLowerCase().includes(q);
+        String(o.id).toLowerCase().includes(q) ||
+        String(o.customer_phone || '').toLowerCase().includes(q);
       const matchPeriod = !startDate || new Date(o.created_at) >= startDate;
       const matchDate = !dateFilter || new Date(o.created_at).toLocaleDateString('en-CA') === dateFilter;
       return matchSearch && matchPeriod && matchDate;
     });
   }, [orders, debouncedSearch, startDate, dateFilter]);
 
-  // Period + search + status (final set before sort)
+  // Period + search + status + source (final set before sort)
   const baseFiltered = useMemo(() =>
-    periodSearchFiltered.filter(o => filter === 'all' || o.status === filter),
-    [periodSearchFiltered, filter]
+    periodSearchFiltered.filter(o => {
+      if (filter !== 'all' && o.status !== filter) return false;
+      if (sourceFilter !== 'all' && (o.channel || 'storefront') !== sourceFilter) return false;
+      return true;
+    }),
+    [periodSearchFiltered, filter, sourceFilter]
   );
 
   const filtered = useMemo(() => [...baseFiltered].sort((a, b) => {
@@ -681,13 +768,22 @@ export default function Orders() {
               )}
             </button>
             {canCreateOrder && !trashView && (
-              <button
-                className="btn-primary"
-                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', fontSize: '0.85rem', whiteSpace: 'nowrap' }}
-                onClick={() => { setNewOrder({ ...emptyNewOrder, orderDate: todayDate(), orderTime: currentTime() }); setShowNewOrder(true); }}
-              >
-                <Plus size={16} /> New Order
-              </button>
+              <>
+                <button
+                  className="btn-secondary"
+                  onClick={() => { if(bulkOrders.length === 1 && !bulkOrders[0].name) { setBulkOrders([{ ...emptyNewOrder, orderDate: todayDate(), orderTime: currentTime() }]); } setShowBulkOrder(true); }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', fontSize: '0.85rem', whiteSpace: 'nowrap', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--white)', color: 'var(--text)', cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", fontWeight: 700 }}
+                >
+                  <Layers size={16} /> Bulk Orders
+                </button>
+                <button
+                  className="btn-primary"
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', fontSize: '0.85rem', whiteSpace: 'nowrap' }}
+                  onClick={() => { setNewOrder({ ...emptyNewOrder, orderDate: todayDate(), orderTime: currentTime() }); setShowNewOrder(true); }}
+                >
+                  <Plus size={16} /> New Order
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -803,6 +899,13 @@ export default function Orders() {
         {statuses.map(s => (
           <button key={s} className={`dash-filter-btn${filter === s ? ' active' : ''}`} onClick={() => setFilter(s)}>
             {s === 'all' ? `All (${periodSearchFiltered.length})` : `${s.charAt(0).toUpperCase() + s.slice(1)} (${periodSearchFiltered.filter(o => o.status === s).length})`}
+          </button>
+        ))}
+      </div>
+      <div className="dash-filters" style={{ marginTop: 8 }}>
+        {[['all', 'All Sources'], ['storefront', 'Website'], ['whatsapp', 'WhatsApp']].map(([val, label]) => (
+          <button key={val} className={`dash-filter-btn${sourceFilter === val ? ' active' : ''}`} onClick={() => setSourceFilter(val)}>
+            {label}{val !== 'all' ? ` (${periodSearchFiltered.filter(o => (o.channel || 'storefront') === val).length})` : ''}
           </button>
         ))}
       </div>
@@ -991,19 +1094,19 @@ export default function Orders() {
               <div className="form-group"><label>Email</label><input type="email" value={newOrder.email} onChange={setField('email')} placeholder="customer@email.com" /></div>
               <div className="form-group"><label>Delivery Address</label><input value={newOrder.address} onChange={setField('address')} placeholder="Street / Pickup / Offline" /></div>
             </div>
-            {zones.length > 0 && (
+            {areas.length > 0 && (
               <div className="form-row">
                 <div className="form-group">
-                  <label>Delivery Zone</label>
+                  <label>Delivery Location</label>
                   <select
                     value={newOrder.zoneId}
                     onChange={e => pickZone(e.target.value)}
                     style={{ width: '100%', padding: '12px 36px 12px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.9rem', fontFamily: "'DM Sans', sans-serif", outline: 'none', WebkitAppearance: 'none', appearance: 'none', cursor: 'pointer', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235C5247' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}
                   >
                     <option value="">— No delivery fee (pickup / free) —</option>
-                    {zones.map(z => (
-                      <option key={z.id} value={z.id}>
-                        {z.name} — {fmt(z.price)}
+                    {areas.map(a => (
+                      <option key={a.id} value={a.id}>
+                        {a.name} — {fmt(a.price)}
                       </option>
                     ))}
                   </select>
@@ -1090,6 +1193,105 @@ export default function Orders() {
             >
               {savingNew ? <Loader2 size={16} className="spin" /> : <><Plus size={16} /> Save Order ({fmt(newOrderTotal)})</>}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── New Bulk Orders Modal ── */}
+      {showBulkOrder && (
+        <div className="product-form-modal" style={{ padding: '0 20px', alignItems: 'flex-start' }} onClick={() => setShowBulkOrder(false)}>
+          <div className="product-form-card" onClick={e => e.stopPropagation()} style={{ position: 'relative', maxWidth: 900, width: '100%', marginTop: '5vh', maxHeight: '90vh', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+            <button onClick={() => setShowBulkOrder(false)} style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+              <X size={22} />
+            </button>
+            <h3 style={{ marginTop: 0, marginBottom: 6, fontFamily: "'Mona Sans','Mona-Sans','Helvetica Neue',sans-serif" }}>Bulk Add Orders</h3>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 20 }}>Speedily record multiple different offline orders. Only valid orders with items will be saved.</p>
+
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 20, marginBottom: 20 }}>
+              {bulkOrders.map((bo, oIdx) => {
+                const subtotal = bo.items.reduce((s, i) => s + (Number(i.qty) * Number(i.price) || 0), 0);
+                const total = subtotal + Number(bo.deliveryFee || 0);
+                return (
+                  <div key={oIdx} style={{ background: 'var(--black2)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 20, position: 'relative' }}>
+                    {bulkOrders.length > 1 && (
+                      <button onClick={() => removeBulkOrder(oIdx)} style={{ position: 'absolute', top: 12, right: 12, background: '#fee2e2', border: 'none', color: '#991b1b', width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                    <h4 style={{ margin: '0 0 16px 0', fontSize: '0.95rem' }}>Order #{oIdx + 1}</h4>
+                    
+                    <div className="form-row">
+                      <div className="form-group"><input value={bo.name} onChange={e => updateBulkOrder(oIdx, 'name', e.target.value)} placeholder="Customer Name *" style={{ padding: '10px 14px' }} /></div>
+                      <div className="form-group"><input value={bo.phone} onChange={e => updateBulkOrder(oIdx, 'phone', e.target.value)} placeholder="Phone *" style={{ padding: '10px 14px' }} /></div>
+                      <div className="form-group">
+                        <select value={bo.channel} onChange={e => updateBulkOrder(oIdx, 'channel', e.target.value)} style={{ width: '100%', padding: '10px 36px 10px 14px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.85rem' }}>
+                          {CHANNELS.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <select value={bo.payment} onChange={e => updateBulkOrder(oIdx, 'payment', e.target.value)} style={{ width: '100%', padding: '10px 36px 10px 14px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.85rem' }}>
+                          {PAYMENT_METHODS.map(p => <option key={p} value={p}>{p.replace(/_/g, ' ')}</option>)}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="form-row">
+                      <div className="form-group"><input value={bo.address} onChange={e => updateBulkOrder(oIdx, 'address', e.target.value)} placeholder="Delivery Address / Pickup" style={{ padding: '10px 14px' }} /></div>
+                      {areas.length > 0 && (
+                        <div className="form-group">
+                          <select value={bo.zoneId} onChange={e => pickBulkZone(oIdx, e.target.value)} style={{ width: '100%', padding: '10px 36px 10px 14px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.85rem' }}>
+                            <option value="">— No fee —</option>
+                            {areas.map(a => <option key={a.id} value={a.id}>{a.name} — {fmt(a.price)}</option>)}
+                          </select>
+                        </div>
+                      )}
+                      <div className="form-group"><input type="email" value={bo.email} onChange={e => updateBulkOrder(oIdx, 'email', e.target.value)} placeholder="Email (optional)" style={{ padding: '10px 14px' }} /></div>
+                    </div>
+
+                    <div style={{ background: 'var(--black)', padding: '12px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)', marginBottom: 12 }}>
+                      <label style={{ display: 'block', fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 8 }}>Items</label>
+                      {bo.items.map((item, iIdx) => (
+                        <div key={iIdx} style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 1.5fr) 1fr 60px 80px auto', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                          {products.length > 0 ? (
+                            <select value={item.product} onChange={e => e.target.value ? pickBulkProduct(oIdx, iIdx, e.target.value) : updateBulkItemField(oIdx, iIdx, 'product', '')} style={{ padding: '8px 10px', fontSize: '0.8rem', borderRadius: 6 }}>
+                              <option value="">— Custom —</option>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                          ) : <div />}
+                          <input value={item.name} onChange={e => updateBulkItemField(oIdx, iIdx, 'name', e.target.value)} placeholder="Name" style={{ padding: '8px 10px', fontSize: '0.8rem', borderRadius: 6 }} />
+                          <input type="number" min="1" value={item.qty} onChange={e => updateBulkItemField(oIdx, iIdx, 'qty', e.target.value)} placeholder="Qty" style={{ padding: '8px 10px', fontSize: '0.8rem', borderRadius: 6 }} />
+                          <input type="number" value={item.price} onChange={e => updateBulkItemField(oIdx, iIdx, 'price', e.target.value)} placeholder="Price" style={{ padding: '8px 10px', fontSize: '0.8rem', borderRadius: 6 }} />
+                          <button type="button" onClick={() => removeBulkItemRow(oIdx, iIdx)} style={{ background: 'none', border: 'none', color: '#991b1b', cursor: 'pointer', padding: 4 }}><Trash2 size={14}/></button>
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                        <button type="button" onClick={() => addBulkItemRow(oIdx)} style={{ background: 'var(--black2)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '4px 10px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>+ Add Item Row</button>
+                        <div style={{ fontWeight: 800, color: 'var(--red)', fontSize: '0.9rem' }}>Total: {fmt(total)}</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ display: 'flex', gap: 12, borderTop: '1px solid var(--border-subtle)', paddingTop: 20, position: 'sticky', bottom: 0, background: 'var(--card-bg)' }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={addBulkOrder}
+                style={{ flex: 1, padding: '13px', display: 'flex', justifyContent: 'center', gap: 6, alignItems: 'center' }}
+              >
+                <Plus size={16} /> Add Another Order
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleSaveBulkOrders}
+                disabled={savingBulk || !bulkOrders.some(bo => bo.name.trim() && bo.phone.trim() && bo.items.some(i => i.name.trim() && Number(i.price) > 0))}
+                style={{ flex: 1, padding: '13px', display: 'flex', justifyContent: 'center', gap: 6, alignItems: 'center' }}
+              >
+                {savingBulk ? <Loader2 size={16} className="spin" /> : <><CheckCircle size={16} /> Save All Orders ({bulkOrders.filter(bo => bo.name.trim() && bo.phone.trim() && bo.items.some(i => i.name.trim() && Number(i.price) > 0)).length} valid)</>}
+              </button>
+            </div>
           </div>
         </div>
       )}

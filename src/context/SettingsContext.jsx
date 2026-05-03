@@ -26,6 +26,9 @@ const defaultSettings = {
     '🚚 SAME-DAY DELIVERY | Order before 10am for first-batch dispatch!',
     '🌿 FRESH DAILY: Guineafowl • Rice • Palm Wine • Zobo',
   ],
+  bankName: '',
+  accountName: '',
+  accountNumber: '',
 };
 
 export function SettingsProvider({ children }) {
@@ -54,7 +57,8 @@ export function SettingsProvider({ children }) {
     Promise.all([
       publicSupabase.from('app_settings').select('value').eq('key', 'delivery_options').single(),
       publicSupabase.from('app_settings').select('value').eq('key', 'ticker_items').single(),
-    ]).then(([deliveryRes, tickerRes]) => {
+      publicSupabase.from('app_settings').select('value').eq('key', 'bank_details').single(),
+    ]).then(([deliveryRes, tickerRes, bankRes]) => {
       localStorage.setItem('smokey_settings_fetched_at', String(Date.now()));
       setSettingsState(prev => ({
         ...prev,
@@ -62,6 +66,7 @@ export function SettingsProvider({ children }) {
           ? { deliveryOptions: deliveryRes.data.value } : {}),
         ...(Array.isArray(tickerRes.data?.value) && tickerRes.data.value.length > 0
           ? { tickerItems: tickerRes.data.value } : {}),
+        ...(bankRes.data?.value ? bankRes.data.value : {}),
       }));
     });
 
@@ -94,6 +99,10 @@ export function SettingsProvider({ children }) {
     }
     if (newSettings.tickerItems) {
       upserts.push(supabase.from('app_settings').upsert({ key: 'ticker_items', value: newSettings.tickerItems, updated_at: new Date().toISOString() }));
+    }
+    if (newSettings.bankName !== undefined || newSettings.accountName !== undefined || newSettings.accountNumber !== undefined) {
+      const bankDetails = { bankName: newSettings.bankName, accountName: newSettings.accountName, accountNumber: newSettings.accountNumber };
+      upserts.push(supabase.from('app_settings').upsert({ key: 'bank_details', value: bankDetails, updated_at: new Date().toISOString() }));
     }
     if (upserts.length > 0) {
       const results = await Promise.all(upserts);
