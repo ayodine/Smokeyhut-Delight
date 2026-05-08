@@ -48,6 +48,7 @@ const SalesReport   = lazy(() => import('./pages/dashboard/finance/SalesReport')
 const Expenses      = lazy(() => import('./pages/dashboard/finance/Expenses'));
 const Inventory     = lazy(() => import('./pages/dashboard/finance/Inventory'));
 const ProductStats  = lazy(() => import('./pages/dashboard/ProductStats'));
+const MenuPage      = lazy(() => import('./pages/storefront/MenuPage'));
 
 function AdminLoader() {
   return (
@@ -133,6 +134,13 @@ export default function App() {
                   <Route path="finance/inventory" element={<Suspense fallback={null}><Inventory /></Suspense>} />
                   <Route path="settings" element={<Suspense fallback={null}><Settings /></Suspense>} />
                 </Route>
+
+                {/* Menu — standalone, no StorefrontLayout wrapper */}
+                <Route path="/menu" element={
+                  <Suspense fallback={<AdminLoader />}>
+                    <MenuPage />
+                  </Suspense>
+                } />
 
                 {/* Storefront */}
                 <Route path="/*" element={<StorefrontLayout />} />
