@@ -143,6 +143,73 @@ export default function MenuPage() {
       </a>
 
       <Footer />
+
+      {/* Checkout drawer overlay */}
+      {checkoutOpen && (
+        <div className="cart-overlay open" onClick={() => setCheckoutOpen(false)} />
+      )}
+
+      {/* Checkout drawer panel */}
+      <div
+        className="dash-drawer"
+        style={{
+          transform: checkoutOpen ? 'translateX(0)' : 'translateX(100%)',
+          width: 'min(480px, 100vw)',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        {/* Header */}
+        <div className="dash-drawer-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <ShoppingCart size={18} color="var(--red)" />
+            <span style={{ fontWeight: 800, fontSize: '1rem' }}>Your Order ({itemCount})</span>
+          </div>
+          <button className="dash-drawer-close" onClick={() => setCheckoutOpen(false)}><X size={16} /></button>
+        </div>
+
+        {/* Scrollable content */}
+        <div className="dash-drawer-content" style={{ flex: 1, overflowY: 'auto', padding: '20px 28px' }}>
+
+          {/* ── Cart items ── */}
+          {items.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>
+              <ShoppingCart size={48} style={{ marginBottom: 12, opacity: 0.4 }} />
+              <p style={{ fontWeight: 600 }}>Your cart is empty</p>
+              <p style={{ fontSize: '0.82rem', marginTop: 4 }}>Add items from the menu above</p>
+            </div>
+          ) : (
+            <div style={{ marginBottom: 20 }}>
+              {items.map(item => (
+                <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                  {/* Thumbnail */}
+                  <div style={{ width: 52, height: 52, borderRadius: 10, overflow: 'hidden', flexShrink: 0, background: 'var(--black2)' }}>
+                    {item.image
+                      ? <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : <div style={{ width: '100%', height: '100%' }} />
+                    }
+                  </div>
+                  {/* Info */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.88rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
+                    <div style={{ color: 'var(--red)', fontWeight: 700, fontSize: '0.85rem', marginTop: 2 }}>{fmt(item.price * item.qty)}</div>
+                    {/* Qty controls */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                      <button onClick={() => updateQty(item.id, item.qty - 1)} style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid var(--border-subtle)', background: 'var(--black2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Minus size={12} /></button>
+                      <span style={{ fontWeight: 700, fontSize: '0.88rem', minWidth: 18, textAlign: 'center' }}>{item.qty}</span>
+                      <button onClick={() => updateQty(item.id, item.qty + 1)} style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid var(--border-subtle)', background: 'var(--black2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Plus size={12} /></button>
+                    </div>
+                  </div>
+                  <button onClick={() => removeItem(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, flexShrink: 0 }}><Trash2 size={16} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* form sections added in Task 4 */}
+
+        </div>
+      </div>
     </>
   );
 }
