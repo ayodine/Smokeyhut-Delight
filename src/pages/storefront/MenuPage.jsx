@@ -51,6 +51,65 @@ export default function MenuPage() {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [successData, setSuccessData]   = useState(null); // { orderId, method }
 
+  // Delivery
+  const [deliveryType, setDeliveryType] = useState('delivery');
+  const [zones, setZones]               = useState([]);
+  const [locationQuery, setLocationQuery] = useState('');
+  const [suggestions, setSuggestions]   = useState([]);
+  const [selectedMatch, setSelectedMatch] = useState(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [stores, setStores]             = useState([]);
+  const [selectedStoreId, setSelectedStoreId] = useState(null);
+  const locationInputRef                = useRef(null);
+
+  // Customer form
+  const [form, setForm] = useState({ firstName: '', lastName: '', phone: '', email: '', address: '', city: 'Lagos', notes: '' });
+  const [touched, setTouched] = useState({ firstName: false, lastName: false, phone: false, email: false, address: false, city: false });
+  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  // Coupon
+  const [couponCode, setCouponCode]       = useState('');
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [couponError, setCouponError]     = useState('');
+
+  // Submission
+  const [processing, setProcessing]       = useState(false);
+  const [waProcessing, setWaProcessing]   = useState(false);
+
+  const applyCoupon = async () => {
+    const code = couponCode.trim().toUpperCase();
+    if (!code) return;
+    setCouponError('');
+    setCouponLoading(true);
+    const { data, error } = await publicSupabase
+      .from('coupons')
+      .select('id,code,type,value,expires_at,max_uses,uses,min_order_amount')
+      .eq('code', code)
+      .eq('is_active', true)
+      .maybeSingle();
+    setCouponLoading(false);
+    if (error || !data) { setCouponError('Invalid or expired coupon code'); return; }
+    if (data.expires_at && new Date(data.expires_at) < new Date()) { setCouponError('This coupon has expired'); return; }
+    if (data.max_uses !== null && data.uses >= data.max_uses) { setCouponError('This coupon has reached its usage limit'); return; }
+    if (data.min_order_amount && total < data.min_order_amount) {
+      setCouponError(`Minimum order of ${fmt(data.min_order_amount)} required`); return;
+    }
+    const isPickup = deliveryType === 'pickup';
+    const deliveryFeeAtApply = isPickup ? 0 : (selectedMatch?.zone?.price ?? 0);
+    const discount = data.type === 'percent'
+      ? Math.round((total + deliveryFeeAtApply) * (data.value / 100))
+      : data.value;
+    setAppliedCoupon({ id: data.id, code: data.code, type: data.type, value: data.value, discount: Math.min(discount, total + deliveryFeeAtApply) });
+  };
+
+  const removeCoupon = () => { setAppliedCoupon(null); setCouponCode(''); setCouponError(''); };
+
+  const incrementCouponUse = async () => {
+    if (!appliedCoupon?.id) return;
+    await publicSupabase.rpc('increment_coupon_uses', { coupon_id: appliedCoupon.id });
+  };
+
   useEffect(() => {
     getProducts().then(({ products: p, categories: c }) => {
       setProducts(p);
@@ -63,6 +122,28 @@ export default function MenuPage() {
     const t = setTimeout(() => setDebouncedSearch(search), 200);
     return () => clearTimeout(t);
   }, [search]);
+
+  useEffect(() => {
+    fetchDeliveryZones(publicSupabase).then(setZones);
+    publicSupabase
+      .from('stores')
+      .select('id, name, address')
+      .eq('is_active', true)
+      .order('id')
+      .then(({ data }) => {
+        if (data?.length) { setStores(data); setSelectedStoreId(data[0].id); }
+      });
+  }, []);
+
+  useEffect(() => {
+    if (locationQuery.trim().length >= 2) {
+      setSuggestions(matchDeliveryZone(locationQuery, zones));
+      setShowSuggestions(true);
+    } else {
+      setSuggestions([]);
+      setShowSuggestions(false);
+    }
+  }, [locationQuery, zones]);
 
   const filtered = useMemo(() => {
     const q = debouncedSearch.toLowerCase();
@@ -206,7 +287,138 @@ export default function MenuPage() {
             </div>
           )}
 
-          {/* form sections added in Task 4 */}
+          {items.length > 0 && (
+            <>
+              {/* ── Delivery method ── */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontWeight: 800, fontSize: '0.82rem', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Delivery Method</div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  {[['delivery', 'Delivery', Truck], ['pickup', 'Store Pickup', StoreIcon]].map(([val, label, Icon]) => (
+                    <button
+                      key={val}
+                      onClick={() => {
+                        setDeliveryType(val);
+                        if (val === 'pickup') { setSelectedMatch(null); setLocationQuery(''); }
+                      }}
+                      style={{
+                        flex: 1, padding: '10px 12px', borderRadius: 10,
+                        border: `2px solid ${deliveryType === val ? 'var(--red)' : 'var(--border-subtle)'}`,
+                        background: deliveryType === val ? 'rgba(192,32,31,0.08)' : 'var(--black2)',
+                        color: deliveryType === val ? 'var(--red)' : 'var(--text-muted)',
+                        fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                      }}
+                    >
+                      <Icon size={15} /> {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── Location / store selector ── */}
+              {deliveryType === 'delivery' ? (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontWeight: 800, fontSize: '0.82rem', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Delivery Location</div>
+                  <div style={{ position: 'relative' }}>
+                    <MapPin size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                    <input
+                      ref={locationInputRef}
+                      value={locationQuery}
+                      onChange={e => { setLocationQuery(e.target.value); setSelectedMatch(null); }}
+                      onFocus={() => locationQuery.trim().length >= 2 && setShowSuggestions(true)}
+                      onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                      placeholder="Type your area (e.g. Ikeja)"
+                      style={{ width: '100%', padding: '10px 12px 10px 34px', borderRadius: 8, border: `1px solid ${selectedMatch ? 'var(--red)' : 'var(--border-subtle)'}`, background: 'var(--black2)', fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                    {showSuggestions && suggestions.length > 0 && (
+                      <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, background: 'var(--white)', border: '1px solid var(--border-subtle)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.1)', zIndex: 100, maxHeight: 220, overflowY: 'auto' }}>
+                        {suggestions.map((m, i) => (
+                          <div
+                            key={i}
+                            onMouseDown={() => { setSelectedMatch(m); setLocationQuery(m.area ? m.area.name : m.zone.name); setShowSuggestions(false); }}
+                            style={{ padding: '10px 14px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid var(--border-subtle)' }}
+                          >
+                            <span style={{ fontWeight: 700 }}>{m.area ? m.area.name : m.zone.name}</span>
+                            {m.zone && <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>— {fmt(m.zone.price)}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="form-group" style={{ marginTop: 10 }}>
+                    <input value={form.address} onChange={set('address')} placeholder="Street address" style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black2)', fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box' }} />
+                  </div>
+                  <div className="form-group" style={{ marginTop: 8 }}>
+                    <input value={form.city} onChange={set('city')} placeholder="City" style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black2)', fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+              ) : (
+                stores.length > 0 && (
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontWeight: 800, fontSize: '0.82rem', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Pickup Store</div>
+                    {stores.map(s => (
+                      <button
+                        key={s.id}
+                        onClick={() => setSelectedStoreId(s.id)}
+                        style={{
+                          width: '100%', textAlign: 'left', padding: '12px 14px', borderRadius: 10, marginBottom: 8,
+                          border: `2px solid ${selectedStoreId === s.id ? 'var(--red)' : 'var(--border-subtle)'}`,
+                          background: selectedStoreId === s.id ? 'rgba(192,32,31,0.06)' : 'var(--black2)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>{s.name}</div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>{s.address}</div>
+                      </button>
+                    ))}
+                  </div>
+                )
+              )}
+
+              {/* ── Customer details ── */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontWeight: 800, fontSize: '0.82rem', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Your Details</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                  <input value={form.firstName} onChange={set('firstName')} onBlur={() => setTouched(t => ({ ...t, firstName: true }))} placeholder="First name *" style={{ padding: '10px 12px', borderRadius: 8, border: `1px solid ${touched.firstName && !form.firstName.trim() ? '#ef4444' : 'var(--border-subtle)'}`, background: 'var(--black2)', fontSize: '0.85rem', outline: 'none' }} />
+                  <input value={form.lastName} onChange={set('lastName')} onBlur={() => setTouched(t => ({ ...t, lastName: true }))} placeholder="Last name *" style={{ padding: '10px 12px', borderRadius: 8, border: `1px solid ${touched.lastName && !form.lastName.trim() ? '#ef4444' : 'var(--border-subtle)'}`, background: 'var(--black2)', fontSize: '0.85rem', outline: 'none' }} />
+                </div>
+                <input value={form.phone} onChange={set('phone')} onBlur={() => setTouched(t => ({ ...t, phone: true }))} placeholder="Phone number *" style={{ width: '100%', padding: '10px 12px', marginBottom: 8, borderRadius: 8, border: `1px solid ${touched.phone && !form.phone.trim() ? '#ef4444' : 'var(--border-subtle)'}`, background: 'var(--black2)', fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box' }} />
+                <input type="email" value={form.email} onChange={set('email')} onBlur={() => setTouched(t => ({ ...t, email: true }))} placeholder="Email address *" style={{ width: '100%', padding: '10px 12px', marginBottom: 8, borderRadius: 8, border: `1px solid ${touched.email && !form.email.trim() ? '#ef4444' : 'var(--border-subtle)'}`, background: 'var(--black2)', fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box' }} />
+                <textarea value={form.notes} onChange={set('notes')} placeholder="Notes (optional)" rows={2} style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black2)', fontSize: '0.85rem', outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+              </div>
+
+              {/* ── Coupon code ── */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontWeight: 800, fontSize: '0.82rem', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Coupon Code</div>
+                {appliedCoupon ? (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Tag size={14} color="#22c55e" />
+                      <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#22c55e' }}>{appliedCoupon.code}</span>
+                      <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>−{fmt(appliedCoupon.discount)}</span>
+                    </div>
+                    <button onClick={removeCoupon} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, display: 'flex' }}><X size={14} /></button>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <input
+                        value={couponCode}
+                        onChange={e => { setCouponCode(e.target.value.toUpperCase()); setCouponError(''); }}
+                        onKeyDown={e => e.key === 'Enter' && applyCoupon()}
+                        placeholder="Enter coupon code"
+                        style={{ flex: 1, padding: '10px 12px', borderRadius: 8, border: `1px solid ${couponError ? '#ef4444' : 'var(--border-subtle)'}`, background: 'var(--black2)', fontSize: '0.85rem', outline: 'none' }}
+                      />
+                      <button onClick={applyCoupon} disabled={couponLoading || !couponCode.trim()} style={{ padding: '10px 16px', borderRadius: 8, background: 'var(--red)', color: '#fff', border: 'none', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', flexShrink: 0, opacity: couponLoading || !couponCode.trim() ? 0.6 : 1 }}>
+                        {couponLoading ? <Loader2 size={14} className="spin" /> : 'Apply'}
+                      </button>
+                    </div>
+                    {couponError && <div style={{ color: '#ef4444', fontSize: '0.78rem', marginTop: 4 }}>{couponError}</div>}
+                  </>
+                )}
+              </div>
+            </>
+          )}
 
         </div>
       </div>
