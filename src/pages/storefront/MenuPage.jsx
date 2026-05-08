@@ -145,6 +145,127 @@ export default function MenuPage() {
     }
   }, [locationQuery, zones]);
 
+  const isPickup        = deliveryType === 'pickup';
+  const allFreeShipping = items.length > 0 && items.every(i => i.free_shipping === true);
+  const deliveryFee     = isPickup ? 0 : (allFreeShipping ? 0 : (selectedMatch?.zone?.price ?? 0));
+  const couponDiscount  = appliedCoupon?.discount ?? 0;
+  const amountToPayNow  = Math.max(0, total - couponDiscount) + VAT;
+  const grandTotal      = Math.max(0, total + deliveryFee - couponDiscount) + VAT;
+
+  const buildOrderPayload = (method) => {
+    const customerName  = `${form.firstName} ${form.lastName}`.trim();
+    const pickupStore   = stores.find(s => s.id === selectedStoreId);
+    const deliveryAddress = isPickup
+      ? `Store Pickup — ${pickupStore?.name || 'Store'}`
+      : `${form.address}, ${selectedMatch?.area?.name || selectedMatch?.zone?.name || form.city}`;
+    const deliveryZoneName = isPickup ? 'Store Pickup' : (selectedMatch?.area?.name || selectedMatch?.zone?.name || '');
+    return {
+      customer_name:    customerName,
+      customer_email:   form.email || null,
+      customer_phone:   form.phone,
+      delivery_address: deliveryAddress,
+      delivery_zone:    deliveryZoneName || null,
+      store_id:         selectedStoreId,
+      payment_method:   method,
+      total:            amountToPayNow,
+      delivery_fee:     deliveryFee,
+      coupon_code:      appliedCoupon?.code || null,
+      coupon_discount:  couponDiscount,
+      status:           'pending',
+      notes:            form.notes || null,
+    };
+  };
+
+  const validateForm = () => {
+    setTouched({ firstName: true, lastName: true, phone: true, email: true, address: true, city: true });
+    if (!form.firstName.trim() || !form.lastName.trim() || !form.phone.trim() || !form.email.trim()) {
+      showToast('Required fields missing', 'Please fill in all required fields', 'error'); return false;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      showToast('Invalid email', 'Please enter a valid email address', 'error'); return false;
+    }
+    if (!isPickup && (!form.address.trim() || !form.city.trim())) {
+      showToast('Address required', 'Please enter your delivery address and city', 'error'); return false;
+    }
+    if (!isPickup && !selectedMatch) {
+      showToast('Location required', 'Please select your delivery area from the suggestions', 'error');
+      locationInputRef.current?.focus(); return false;
+    }
+    if (items.length === 0) {
+      showToast('Cart is empty', 'Add items to your cart first', 'error'); return false;
+    }
+    return true;
+  };
+
+  const handleWhatsApp = async () => {
+    if (!validateForm()) return;
+    setWaProcessing(true);
+    const waWindow = window.open('', '_blank');
+    try {
+      const { data: orderId, error } = await publicSupabase.rpc('create_storefront_order', { p: buildOrderPayload('whatsapp') });
+      if (error) throw error;
+      await publicSupabase.from('order_items').insert(
+        items.map(i => ({ order_id: orderId, product_id: i.id || null, name: i.name, price: i.price, qty: i.qty }))
+      );
+      const customerName = `${form.firstName} ${form.lastName}`.trim();
+      const pickupStore  = stores.find(s => s.id === selectedStoreId);
+      const deliveryLine = isPickup
+        ? `🏪 Pickup: ${pickupStore?.name || 'Store'}`
+        : `📍 Delivery: ${form.address}, ${selectedMatch?.area?.name || selectedMatch?.zone?.name || form.city}\n🚚 Zone: ${selectedMatch?.zone?.name || 'TBD'} — ${deliveryFee === 0 ? 'Free' : fmt(deliveryFee)}`;
+      const itemLines = items.map(i => `  • ${i.name} × ${i.qty} = ${fmt(i.price * i.qty)}`).join('\n');
+      const message = [
+        `🛍️ *New Order — ${orderId}*`, ``,
+        `👤 Name: ${customerName}`,
+        `📞 Phone: ${form.phone}`,
+        form.email ? `✉️ Email: ${form.email}` : null,
+        ``, `📦 Items:`, itemLines, ``,
+        deliveryLine, ``,
+        `💰 *Amount to Pay Now: ${fmt(amountToPayNow)}*`,
+        `🚚 *Pay on Delivery: ${deliveryFee === 0 ? 'Free' : fmt(deliveryFee)}*`,
+        `📉 *Grand Total: ${fmt(grandTotal)}*`,
+        form.notes ? `📝 Notes: ${form.notes}` : null,
+        ``, `_Please confirm my order 🙏_`,
+      ].filter(l => l !== null).join('\n');
+      const waUrl = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(message)}`;
+      if (waWindow) waWindow.location.href = waUrl; else window.location.href = waUrl;
+      clearCart();
+      await incrementCouponUse();
+      setCheckoutOpen(false);
+      setSuccessData({ orderId, method: 'whatsapp' });
+    } catch (err) {
+      if (waWindow) waWindow.close();
+      showToast('Error', err.message, 'error');
+    }
+    setWaProcessing(false);
+  };
+
+  const handleBankTransfer = async () => {
+    if (!validateForm()) return;
+    setProcessing(true);
+    try {
+      const { data: orderId, error } = await publicSupabase.rpc('create_storefront_order', { p: buildOrderPayload('bank_transfer') });
+      if (error) throw error;
+      await publicSupabase.from('order_items').insert(
+        items.map(i => ({ order_id: orderId, product_id: i.id || null, name: i.name, price: i.price, qty: i.qty }))
+      );
+      clearCart();
+      await incrementCouponUse();
+      notify('order_confirmed', {
+        id: orderId,
+        customer_name: `${form.firstName} ${form.lastName}`.trim(),
+        customer_email: form.email || null,
+        customer_phone: form.phone,
+        delivery_address: isPickup ? 'Store Pickup' : `${form.address}, ${form.city}`,
+        total: amountToPayNow,
+      });
+      setCheckoutOpen(false);
+      setSuccessData({ orderId, method: 'bank_transfer' });
+    } catch (err) {
+      showToast('Error', err.message, 'error');
+    }
+    setProcessing(false);
+  };
+
   const filtered = useMemo(() => {
     const q = debouncedSearch.toLowerCase();
     return products.filter(p => {
@@ -420,6 +541,138 @@ export default function MenuPage() {
             </>
           )}
 
+        </div>
+
+        {/* Sticky footer: order summary + payment buttons */}
+        {items.length > 0 && (
+          <div className="dash-drawer-footer" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 0 }}>
+            <div style={{ marginBottom: 14 }}>
+              {[
+                ['Subtotal', fmt(total)],
+                deliveryFee > 0 ? ['Delivery Fee', fmt(deliveryFee)] : null,
+                allFreeShipping ? ['Delivery', 'Free'] : null,
+                isPickup ? ['Delivery', 'Pickup'] : null,
+                couponDiscount > 0 ? [`Coupon (${appliedCoupon?.code})`, `−${fmt(couponDiscount)}`] : null,
+                ['VAT', fmt(VAT)],
+              ].filter(Boolean).map(([label, value]) => (
+                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: 4 }}>
+                  <span style={{ color: 'var(--text-muted)' }}>{label}</span>
+                  <span style={{ fontWeight: 600 }}>{value}</span>
+                </div>
+              ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '1rem', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border-subtle)' }}>
+                <span>Grand Total</span>
+                <span style={{ color: 'var(--red)' }}>{fmt(grandTotal)}</span>
+              </div>
+            </div>
+
+            <button
+              onClick={handleWhatsApp}
+              disabled={waProcessing || processing}
+              style={{ width: '100%', padding: '13px', borderRadius: 10, background: '#25D366', color: '#fff', border: 'none', fontWeight: 800, fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8, opacity: waProcessing || processing ? 0.7 : 1 }}
+            >
+              {waProcessing ? <Loader2 size={16} className="spin" /> : <MessageCircle size={16} />}
+              Send via WhatsApp
+            </button>
+
+            <button
+              onClick={handleBankTransfer}
+              disabled={waProcessing || processing}
+              style={{ width: '100%', padding: '13px', borderRadius: 10, background: 'transparent', color: 'var(--red)', border: '2px solid var(--red)', fontWeight: 800, fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: waProcessing || processing ? 0.7 : 1 }}
+            >
+              {processing ? <Loader2 size={16} className="spin" /> : <Banknote size={16} />}
+              Bank Transfer
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ── Success drawer ── */}
+      {successData && (
+        <div className="cart-overlay open" onClick={() => setSuccessData(null)} />
+      )}
+      <div
+        className="dash-drawer"
+        style={{
+          transform: successData ? 'translateX(0)' : 'translateX(100%)',
+          width: 'min(480px, 100vw)',
+          display: 'flex',
+          flexDirection: 'column',
+          zIndex: 1100,
+        }}
+      >
+        <div className="dash-drawer-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <CheckCircle size={18} color="var(--red)" />
+            <span style={{ fontWeight: 800, fontSize: '1rem' }}>
+              {successData?.method === 'whatsapp' ? 'Order Sent!' : 'Order Placed!'}
+            </span>
+          </div>
+          <button className="dash-drawer-close" onClick={() => setSuccessData(null)}><X size={16} /></button>
+        </div>
+
+        <div className="dash-drawer-content" style={{ flex: 1, overflowY: 'auto', padding: '28px' }}>
+          {successData && (() => {
+            const { bankName, accountName, accountNumber } = settings;
+            const hasBankDetails = bankName && accountName && accountNumber;
+            return (
+              <>
+                <div style={{ textAlign: 'center', marginBottom: 28 }}>
+                  <div style={{ width: 64, height: 64, borderRadius: 20, background: 'rgba(192,32,31,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                    {successData.method === 'whatsapp'
+                      ? <MessageCircle size={30} color="var(--red)" />
+                      : <Banknote size={30} color="var(--red)" />
+                    }
+                  </div>
+                  <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                    {successData.method === 'whatsapp'
+                      ? <>Your order has been saved and WhatsApp has opened with your order details. <strong>Please send the message</strong> to complete your order — we'll confirm it shortly.</>
+                      : <>Your order has been received. Please complete payment via bank transfer using the details below, then we'll confirm and process your order.</>
+                    }
+                  </p>
+                </div>
+
+                <div style={{ padding: '12px 16px', background: 'var(--black2)', borderRadius: 10, marginBottom: 20 }}>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginBottom: 4 }}>Order Reference</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <code style={{ color: 'var(--text)', fontWeight: 800, fontSize: '1rem' }}>{successData.orderId}</code>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(successData.orderId); showToast('Copied!', 'Order reference copied', 'success'); }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, display: 'flex' }}
+                    ><Copy size={15} /></button>
+                  </div>
+                </div>
+
+                {successData.method === 'bank_transfer' && hasBankDetails && (
+                  <div style={{ background: 'rgba(192,32,31,0.06)', border: '1px solid rgba(192,32,31,0.25)', borderRadius: 12, padding: '18px 20px', marginBottom: 24 }}>
+                    <div style={{ fontWeight: 800, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--red)', marginBottom: 12 }}>Bank Transfer Details</div>
+                    {[['Bank', bankName], ['Account Name', accountName], ['Account Number', accountNumber]].map(([label, value]) => (
+                      <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(192,32,31,0.1)' }}>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{label}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>{value}</span>
+                          <button onClick={() => { navigator.clipboard.writeText(value); showToast('Copied!', `${label} copied`, 'success'); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, display: 'flex' }}><Copy size={13} /></button>
+                        </div>
+                      </div>
+                    ))}
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 10, marginBottom: 0 }}>
+                      Use <strong>{successData.orderId}</strong> as the transfer description.
+                    </p>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </div>
+
+        <div className="dash-drawer-footer">
+          <button
+            onClick={() => { setSuccessData(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+            className="btn-primary"
+            style={{ flex: 1, justifyContent: 'center', padding: '12px' }}
+          >
+            Continue Shopping
+          </button>
         </div>
       </div>
     </>
