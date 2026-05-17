@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { DollarSign, ShoppingBag, TrendingUp, Users, ChevronRight, ArrowLeft, Search, X } from 'lucide-react';
-import { SkelKpiGrid, SkelTable, SkelFilterPills } from '../../components/Skeleton';
+import { SkelKpiGrid, SkelTopListCard, SkelFilterPills, SkelTable } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
+import DashCalendar from '../../components/DashCalendar';
 
 const fmt    = (n) => '₦' + Number(n).toLocaleString();
 const fmtNum = (n) => Number(n).toLocaleString();
@@ -14,31 +15,36 @@ const PERIODS = [
   { key: 'all',    label: 'All Time' },
 ];
 
-function periodStart(key) {
+function getPeriodParams(key, customDateStr) {
   const now = new Date();
   if (key === 'today') {
-    const d = new Date(now); d.setHours(0, 0, 0, 0); return d.toISOString();
+    const d = new Date(now); d.setHours(0, 0, 0, 0); return { start: d.toISOString(), end: null };
   }
   if (key === 'week') {
     const d = new Date(now);
     d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
     d.setHours(0, 0, 0, 0);
-    return d.toISOString();
+    return { start: d.toISOString(), end: null };
   }
   if (key === 'month') {
-    return new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    return { start: new Date(now.getFullYear(), now.getMonth(), 1).toISOString(), end: null };
   }
-  return null;
+  if (key === 'custom' && customDateStr) {
+    const s = new Date(customDateStr); s.setHours(0, 0, 0, 0);
+    const e = new Date(customDateStr); e.setHours(23, 59, 59, 999);
+    return { start: s.toISOString(), end: e.toISOString() };
+  }
+  return { start: null, end: null };
 }
 
 const RANK_STYLE = {
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-  width: 22, height: 22, borderRadius: '50%', fontSize: '0.72rem',
-  fontWeight: 700, background: 'var(--border-subtle)', color: 'var(--text-muted)',
+  width: 28, height: 28, borderRadius: 8, fontSize: '0.8rem',
+  fontWeight: 800, background: 'var(--black2)', color: 'var(--text-muted)',
   flexShrink: 0,
 };
 
-const RANK1_STYLE = { ...RANK_STYLE, background: 'var(--red)', color: '#fff' };
+const RANK1_STYLE = { ...RANK_STYLE, background: 'var(--red)', color: '#fff', boxShadow: '0 4px 10px rgba(192,32,31,0.2)' };
 
 // ─── TopList panel ───────────────────────────────────────────────────────────
 function TopList({ title, rows, error, valueLabel, isCurrency, onExpand, onRowClick }) {
@@ -72,17 +78,18 @@ function TopList({ title, rows, error, valueLabel, isCurrency, onExpand, onRowCl
               key={i}
               onClick={() => onRowClick && onRowClick(row)}
               style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '6px 8px', borderRadius: 8,
-                background: i === 0 ? 'rgba(192,32,31,0.06)' : 'transparent',
+                display: 'flex', alignItems: 'center', gap: 14,
+                padding: '12px 14px', borderRadius: 12,
+                background: i === 0 ? 'rgba(192,32,31,0.03)' : 'transparent',
+                border: i === 0 ? '1px solid rgba(192,32,31,0.08)' : '1px solid transparent',
                 cursor: onRowClick ? 'pointer' : 'default',
-                transition: onRowClick ? 'background 0.12s' : undefined,
+                transition: 'all 0.2s ease',
               }}
-              onMouseEnter={e => { if (onRowClick) e.currentTarget.style.background = 'var(--black2)'; }}
-              onMouseLeave={e => { if (onRowClick) e.currentTarget.style.background = i === 0 ? 'rgba(192,32,31,0.06)' : 'transparent'; }}
+              onMouseEnter={e => { if (onRowClick) { e.currentTarget.style.background = 'var(--black2)'; e.currentTarget.style.transform = 'translateY(-1px)'; } }}
+              onMouseLeave={e => { if (onRowClick) { e.currentTarget.style.background = i === 0 ? 'rgba(192,32,31,0.03)' : 'transparent'; e.currentTarget.style.transform = 'translateY(0)'; } }}
             >
-              <span style={i === 0 ? RANK1_STYLE : RANK_STYLE}>#{i + 1}</span>
-              <span style={{ flex: 1, fontWeight: i === 0 ? 600 : 400, fontSize: '0.88rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={i === 0 ? RANK1_STYLE : RANK_STYLE}>{i + 1}</span>
+              <span style={{ flex: 1, fontWeight: i === 0 ? 700 : 500, fontSize: '0.92rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {row.name || '—'}
               </span>
               <span style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--red)', flexShrink: 0 }}>
@@ -135,58 +142,51 @@ function DrillDownTable({ type, title, rows, loading, search, onSearchChange, on
   );
 
   return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-        <button
-          onClick={onBack}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6, background: 'none',
-            border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '7px 14px',
-            cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)',
-            fontFamily: "'DM Sans',sans-serif",
-          }}
-        >
-          <ArrowLeft size={14} /> Back
-        </button>
-        <h3 style={{ fontFamily: "'Mona Sans','Mona-Sans',sans-serif", fontSize: '1.1rem', fontWeight: 800, margin: 0 }}>
-          {title}
+    <div className="product-form-modal" onClick={onBack}>
+      <div className="product-form-card" onClick={e => e.stopPropagation()} style={{ maxWidth: 700 }}>
+        <h3 style={{ marginTop: 0, marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {title}
+          </div>
+          <button onClick={onBack} className="dash-drawer-close">
+            <X size={16} />
+          </button>
         </h3>
-        <div style={{ marginLeft: 'auto', position: 'relative' }}>
-          <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+        
+        <div style={{ position: 'relative', marginBottom: 20 }}>
+          <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
           <input
             value={search}
             onChange={e => onSearchChange(e.target.value)}
             placeholder="Search…"
             style={{
-              paddingLeft: 32, paddingRight: search ? 32 : 12, paddingTop: 8, paddingBottom: 8,
+              width: '100%', paddingLeft: 36, paddingRight: search ? 36 : 12, paddingTop: 10, paddingBottom: 10,
               borderRadius: 8, border: '1px solid var(--border-subtle)',
               background: 'var(--white)', color: 'var(--text)',
-              fontSize: '0.85rem', fontFamily: "'DM Sans',sans-serif", outline: 'none', width: 220,
+              fontSize: '0.9rem', fontFamily: "'DM Sans',sans-serif", outline: 'none',
             }}
           />
           {search && (
             <button
               onClick={() => onSearchChange('')}
-              style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 0 }}
+              style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 0 }}
             >
-              <X size={13} />
+              <X size={14} />
             </button>
           )}
         </div>
-      </div>
 
-      <div className="dash-card">
         {loading ? (
           <SkelTable rows={8} cols={cols.length} />
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <div style={{ overflowX: 'auto', background: 'var(--white)', borderRadius: 12, border: '1px solid var(--border-subtle)' }}>
             <table className="dash-table">
               <thead>
                 <tr>
-                  <th style={{ width: 40 }}>#</th>
+                  <th style={{ width: 40 }}></th>
                   {cols.map(c => <th key={c.key}>{c.label}</th>)}
                   {onRowClick && <th />}
-                </tr>
+                 </tr>
               </thead>
               <tbody>
                 {filtered.map((row, i) => (
@@ -213,7 +213,7 @@ function DrillDownTable({ type, title, rows, loading, search, onSearchChange, on
                 )}
               </tbody>
             </table>
-            <div style={{ padding: '10px 16px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+            <div style={{ padding: '12px 16px', fontSize: '0.8rem', color: 'var(--text-muted)', borderTop: '1px solid var(--border-subtle)' }}>
               {filtered.length} of {rows.length} rows
             </div>
           </div>
@@ -228,48 +228,30 @@ function CustomerModal({ customer, onClose }) {
   const statusColor = { pending: '#f59e0b', processing: '#3b82f6', shipped: '#8b5cf6', delivered: '#16a34a', cancelled: '#ef4444' };
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1000,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: '24px 16px',
-      }}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: 'var(--white)', borderRadius: 16,
-          width: '100%', maxWidth: 680, maxHeight: '80vh',
-          display: 'flex', flexDirection: 'column',
-          boxShadow: '0 8px 40px rgba(0,0,0,0.22)',
-        }}
-      >
+    <div className="product-form-modal" onClick={onClose}>
+      <div className="product-form-card" onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
         {/* Header */}
-        <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ paddingBottom: 16, borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: "'Mona Sans','Mona-Sans',sans-serif", fontWeight: 900, fontSize: '1.1rem' }}>
+            <div style={{ fontFamily: "'Mona Sans','Mona-Sans',sans-serif", fontWeight: 900, fontSize: '1.2rem' }}>
               {customer.name || 'Unknown'}
             </div>
-            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: 2 }}>{customer.phone}</div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: 4 }}>{customer.phone}</div>
           </div>
-          <button
-            onClick={onClose}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 4 }}
-          >
-            <X size={18} />
+          <button onClick={onClose} className="dash-drawer-close">
+            <X size={16} />
           </button>
         </div>
 
         {/* Order list */}
         <div style={{ overflowY: 'auto', flex: 1 }}>
           {customer.loading ? (
-            <div style={{ padding: 24 }}><SkelTable rows={5} cols={4} /></div>
+            <div style={{ padding: '10px 0' }}><SkelTable rows={5} cols={4} /></div>
           ) : customer.orders.length === 0 ? (
-            <p style={{ padding: 24, color: 'var(--text-muted)', fontSize: '0.88rem' }}>No orders found.</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', padding: '10px 0' }}>No orders found.</p>
           ) : (
             <>
-              <div style={{ padding: '10px 24px 4px', fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+              <div style={{ paddingBottom: 8, fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>
                 {customer.orders.length} order{customer.orders.length !== 1 ? 's' : ''} · all time
               </div>
               {customer.orders.map(order => (
@@ -277,7 +259,7 @@ function CustomerModal({ customer, onClose }) {
                   key={order.id}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 12,
-                    padding: '12px 24px', borderBottom: '1px solid var(--border-subtle)',
+                    padding: '16px 0', borderBottom: '1px solid var(--border-subtle)',
                   }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -316,6 +298,7 @@ function CustomerModal({ customer, onClose }) {
 export default function Stats() {
   const { selectedStore } = useOutletContext() || {};
   const [period, setPeriod]     = useState('month');
+  const [customDate, setCustomDate] = useState('');
   const [kpis,   setKpis]       = useState(null);
   const [lists,  setLists]      = useState(null);
   const [kpiErr, setKpiErr]     = useState(false);
@@ -341,10 +324,10 @@ export default function Stats() {
       setListErr(false);
       setDrillDown(null);
 
-      const startParam = periodStart(period);
+      const { start: startParam, end: endParam } = getPeriodParams(period, customDate);
       const [kpisRes, listsRes] = await Promise.all([
-        supabase.rpc('get_product_stats_kpis',  { p_store_id: storeParam, p_start: startParam }),
-        supabase.rpc('get_product_stats_lists', { p_store_id: storeParam, p_start: startParam }),
+        supabase.rpc('get_product_stats_kpis',  { p_store_id: storeParam, p_start: startParam, p_end: endParam }),
+        supabase.rpc('get_product_stats_lists', { p_store_id: storeParam, p_start: startParam, p_end: endParam }),
       ]);
       if (cancelled) return;
       if (kpisRes.error)  setKpiErr(true);  else setKpis(kpisRes.data);
@@ -353,7 +336,7 @@ export default function Stats() {
     };
     run();
     return () => { cancelled = true; };
-  }, [selectedStore, period]);
+  }, [selectedStore, period, customDate]);
 
   const avgOrder = kpis && kpis.order_count > 0 ? kpis.revenue / kpis.order_count : 0;
 
@@ -361,13 +344,13 @@ export default function Stats() {
   const openDrillDown = async (type, title) => {
     setDrillDown({ type, title, rows: [], loading: true });
     setDrillSearch('');
-    const startParam = periodStart(period);
+    const { start: startParam, end: endParam } = getPeriodParams(period, customDate);
 
     if (type === 'products' || type === 'products_units') {
-      const { data } = await supabase.rpc('get_stats_all_products', { p_store_id: storeParam, p_start: startParam });
+      const { data } = await supabase.rpc('get_stats_all_products', { p_store_id: storeParam, p_start: startParam, p_end: endParam });
       setDrillDown(d => d ? { ...d, rows: data || [], loading: false } : d);
     } else if (type === 'customers') {
-      const { data } = await supabase.rpc('get_stats_all_customers', { p_store_id: storeParam, p_start: startParam });
+      const { data } = await supabase.rpc('get_stats_all_customers', { p_store_id: storeParam, p_start: startParam, p_end: endParam });
       setDrillDown(d => d ? { ...d, rows: data || [], loading: false } : d);
     } else if (type === 'locations') {
       // use lists data directly — no separate RPC needed for locations
@@ -407,38 +390,34 @@ export default function Stats() {
         <h2 style={{ fontFamily: "'Mona Sans','Mona-Sans','Helvetica Neue',sans-serif", fontSize: '1.4rem', fontWeight: 900, margin: 0 }}>
           Stats
         </h2>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {PERIODS.map(p => (
-            <button
-              key={p.key}
-              className={`dash-filter-btn${period === p.key ? ' active' : ''}`}
-              onClick={() => setPeriod(p.key)}
-            >
-              {p.label}
-            </button>
-          ))}
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div className="dash-segmented-control">
+            {PERIODS.map(p => (
+              <button
+                key={p.key}
+                className={`dash-filter-btn${period === p.key ? ' active' : ''}`}
+                onClick={() => { setPeriod(p.key); setCustomDate(''); }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <DashCalendar
+            value={customDate}
+            onChange={v => { setCustomDate(v); setPeriod(v ? 'custom' : 'month'); }}
+            placeholder="Pick a date"
+          />
         </div>
       </div>
 
       {loading ? (
         <>
-          <SkelFilterPills count={4} />
+          <SkelFilterPills count={5} />
           <SkelKpiGrid count={4} />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16, marginTop: 8 }}>
-            {Array.from({ length: 6 }).map((_, i) => <SkelTable key={i} rows={5} cols={2} />)}
+            {Array.from({ length: 6 }).map((_, i) => <SkelTopListCard key={i} />)}
           </div>
         </>
-      ) : drillDown ? (
-        <DrillDownTable
-          type={drillDown.type}
-          title={drillDown.title}
-          rows={drillDown.rows}
-          loading={drillDown.loading}
-          search={drillSearch}
-          onSearchChange={setDrillSearch}
-          onRowClick={drillDown.type === 'customers' ? handleDrillRowClick : null}
-          onBack={() => setDrillDown(null)}
-        />
       ) : (
         <>
           {/* KPI cards */}
@@ -511,6 +490,19 @@ export default function Stats() {
             />
           </div>
         </>
+      )}
+
+      {drillDown && (
+        <DrillDownTable
+          type={drillDown.type}
+          title={drillDown.title}
+          rows={drillDown.rows}
+          loading={drillDown.loading}
+          search={drillSearch}
+          onSearchChange={setDrillSearch}
+          onRowClick={drillDown.type === 'customers' ? handleDrillRowClick : null}
+          onBack={() => setDrillDown(null)}
+        />
       )}
 
       {/* Customer history modal */}

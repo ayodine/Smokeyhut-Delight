@@ -142,7 +142,7 @@ export default function OrderingGuidePopup() {
           className="btn-primary"
           style={{ width: '100%', marginTop: 24, justifyContent: 'center', padding: '16px' }}
         >
-          <img src="/logo.svg" alt="" style={{ width: 20, height: 20 }} /> I Understand — Let's Order!
+          <img src="/logo.svg" alt="" style={{ width: 20, height: 20 }} /> I Agree — Let's Order!
         </button>
       </div>
     </>

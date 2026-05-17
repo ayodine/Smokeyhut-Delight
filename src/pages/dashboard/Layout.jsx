@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import {
@@ -7,12 +7,14 @@ import {
   Settings, LogOut, Globe, Menu, UserCog, MapPin, Tag,
   DollarSign, TrendingUp, Receipt, Archive, ChevronDown,
 } from 'lucide-react';
+import AdminChatBubble from '../../components/AdminChatBubble';
+import CustomSelect from '../../components/CustomSelect';
 
 const allNavItems = [
   { to: '/admin',           icon: BarChart2,   label: 'Overview',  end: true, roles: ['Admin', 'Manager', 'Staff'] },
   { to: '/admin/orders',    icon: Package,     label: 'Orders',               roles: ['Admin', 'Manager', 'Staff'] },
   { to: '/admin/shipping',  icon: Truck,       label: 'Shipping',             roles: ['Admin', 'Manager', 'Rider', 'Staff'] },
-  { to: '/admin/payments',  icon: CreditCard,  label: 'Payments',             roles: ['Admin'] },
+  { to: '/admin/payments',  icon: CreditCard,  label: 'Payments',             roles: ['Admin', 'Manager', 'Staff'] },
   { to: '/admin/stores',    icon: Store,       label: 'Stores',               roles: ['Admin', 'Manager', 'Staff'] },
   { to: '/admin/products',  icon: ShoppingBag, label: 'Products',             roles: ['Admin', 'Manager', 'Staff'] },
   { to: '/admin/customers', icon: Users,       label: 'Customers',            roles: ['Admin', 'Manager', 'Staff'] },
@@ -33,9 +35,16 @@ const allNavItems = [
 
 function passesPermission(label, role, userPermissions) {
   if (role === 'Admin') return true;
-  const perms = userPermissions || [];
-  if (perms.length === 0) return role !== 'Staff';
-  return perms.some(p => p.startsWith(label + ':'));
+  
+  const perms = Array.isArray(userPermissions) ? userPermissions : [];
+  
+  // If the user has specific permissions assigned, STRICTLY enforce them regardless of role
+  if (perms.length > 0) {
+    return perms.some(p => p.startsWith(`${label}:`));
+  }
+  
+  // If no permissions assigned, Staff gets nothing, but Managers/Riders get their default role access
+  return role !== 'Staff';
 }
 
 export default function DashboardLayout() {
@@ -62,6 +71,15 @@ export default function DashboardLayout() {
     return acc;
   }, []);
 
+  const allowed = navItems.flatMap(item =>
+    item.type === 'group' ? item.children.map(c => c.to) : [item.to]
+  );
+  const isRouteAllowed = allowed.some(path =>
+    path === '/admin' ? location.pathname === '/admin' : location.pathname.startsWith(path)
+  );
+  const firstNavItem = navItems[0];
+  const firstAllowedPath = firstNavItem?.type === 'group' ? firstNavItem.children[0]?.to : firstNavItem?.to;
+
   useEffect(() => {
     supabase.from('stores').select('id, name').order('id').then(({ data }) => {
       if (data) setStoreOptions(data);
@@ -73,21 +91,10 @@ export default function DashboardLayout() {
     if (location.pathname.startsWith('/admin/finance')) setFinanceOpen(true);
   }, [location.pathname]);
 
-  // Redirect to first allowed page if current path is not permitted
   useEffect(() => {
-    if (!userRole) return;
-    const allowed = navItems.flatMap(item =>
-      item.type === 'group' ? item.children.map(c => c.to) : [item.to]
-    );
-    const isAllowed = allowed.some(path =>
-      path === '/admin' ? location.pathname === '/admin' : location.pathname.startsWith(path)
-    );
-    if (!isAllowed) {
-      const first = navItems[0];
-      const firstPath = first?.type === 'group' ? first.children[0]?.to : first?.to;
-      navigate(firstPath || '/admin/shipping', { replace: true });
-    }
-  }, [userRole, location.pathname]);
+    if (!userRole || isRouteAllowed) return;
+    navigate(firstAllowedPath || '/admin/shipping', { replace: true });
+  }, [userRole, location.pathname, userPermissions]);
 
   const handleLogout = async () => {
     await signOut();
@@ -186,17 +193,27 @@ export default function DashboardLayout() {
           </div>
           <div className="dash-topbar-right">
             {role !== 'Rider' && (
-              <select className="dash-store-select" value={selectedStore} onChange={e => setSelectedStore(e.target.value)}>
-                <option value="all">All Stores</option>
-                {storeOptions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
+              <div style={{ width: 180 }}>
+                <CustomSelect
+                  value={selectedStore}
+                  onChange={e => setSelectedStore(e.target.value)}
+                  options={[
+                    { value: 'all', label: 'All Stores' },
+                    ...storeOptions.map(s => ({ value: s.id, label: s.name }))
+                  ]}
+                />
+              </div>
             )}
           </div>
         </header>
         <div className="dash-content">
-          <Outlet context={{ selectedStore }} />
+          {isRouteAllowed
+            ? <Outlet context={{ selectedStore }} />
+            : (userRole && firstAllowedPath ? <Navigate to={firstAllowedPath} replace /> : null)
+          }
         </div>
       </main>
+      <AdminChatBubble />
     </div>
   );
 }

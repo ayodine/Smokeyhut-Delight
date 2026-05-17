@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Package, Truck, CheckCircle, Loader2, MapPin, Banknote, X } from 'lucide-react';
+import { Package, Truck, CheckCircle, Loader2, MapPin, Banknote } from 'lucide-react';
+import DashCalendar from '../../components/DashCalendar';
 import { SkelKpiGrid, SkelTable, SkelDashHeader, SkelFilterPills, SkelChart } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../context/ToastContext';
@@ -39,7 +40,7 @@ export default function Shipping() {
     { key: 'delivered',  label: 'Delivered' },
   ];
 
-  useEffect(() => { fetchData(); }, [selectedStore]);
+  useEffect(() => { fetchData(); }, [selectedStore, dateFilter]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -49,8 +50,15 @@ export default function Shipping() {
       .from('orders')
       .select('id, customer_name, customer_phone, delivery_address, total, delivery_fee, status, created_at, notes')
       .not('status', 'in', '("cancelled")')
-      .order('created_at', { ascending: false })
-      .limit(300);
+      .order('created_at', { ascending: false });
+
+    if (dateFilter) {
+      const start = new Date(dateFilter); start.setHours(0,0,0,0);
+      const end = new Date(dateFilter); end.setHours(23,59,59,999);
+      tableQuery = tableQuery.gte('created_at', start.toISOString()).lte('created_at', end.toISOString());
+    } else {
+      tableQuery = tableQuery.limit(300);
+    }
     if (selectedStore && selectedStore !== 'all') {
       tableQuery = tableQuery.eq('store_id', selectedStore);
     }
@@ -77,7 +85,20 @@ export default function Shipping() {
 
     setOrders(ordersRes.data || []);
 
-    if (kpisRes.data) {
+    if (dateFilter) {
+      // When filtering by a specific date, calculate KPIs locally from the fetched orders
+      // (because tableQuery has no row limit for specific dates, this is 100% accurate)
+      const dateOrders = ordersRes.data || [];
+      setKpis({
+        pending:         dateOrders.filter(o => o.status === 'pending').length,
+        processing:      dateOrders.filter(o => o.status === 'processing').length,
+        shipped:         dateOrders.filter(o => o.status === 'shipped').length,
+        delivered:       dateOrders.filter(o => o.status === 'delivered').length,
+        total_fees:      dateOrders.reduce((s, o) => s + (Number(o.delivery_fee) || 0), 0),
+        delivered_count: dateOrders.filter(o => o.status === 'delivered').length,
+        delivered_fees:  dateOrders.filter(o => o.status === 'delivered').reduce((s, o) => s + (Number(o.delivery_fee) || 0), 0),
+      });
+    } else if (kpisRes.data) {
       setKpis(kpisRes.data);
     } else {
       const all = kpiFallbackRes.data || [];
@@ -109,41 +130,30 @@ export default function Shipping() {
   const handleStatusUpdate = async (order, nextStatus) => {
     setUpdating(order.id);
 
-    // Decrement stock only when transitioning to 'shipped' for the first time
-    if (nextStatus === 'shipped') {
-      const { data: current } = await supabase.from('orders').select('status').eq('id', order.id).single();
-      if (current?.status !== 'shipped') {
-        const { data: orderItems } = await supabase.from('order_items').select('product_id, qty').eq('order_id', order.id);
-        const validItems = (orderItems || []).filter(i => i.product_id);
-        if (validItems.length > 0) {
-          const productIds = [...new Set(validItems.map(i => String(i.product_id)))];
-          const { data: productStock } = await supabase.from('products').select('id, stock').in('id', productIds);
-          if (productStock?.length) {
-            const stockMap = Object.fromEntries(productStock.map(p => [String(p.id), p.stock ?? 0]));
-            const qtyMap = {};
-            validItems.forEach(i => {
-              qtyMap[String(i.product_id)] = (qtyMap[String(i.product_id)] || 0) + (i.qty || 0);
-            });
-            await Promise.all(
-              Object.entries(qtyMap).map(([pid, qty]) =>
-                supabase.from('products').update({ stock: Math.max(0, (stockMap[pid] ?? 0) - qty) }).eq('id', pid)
-              )
-            );
-          }
-        }
-      }
-    }
-
     const { error } = await supabase.from('orders').update({ status: nextStatus }).eq('id', order.id);
     if (error) {
       showToast('Update failed', error.message, 'error');
     } else {
       setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: nextStatus } : o));
-      // Refresh server-side KPIs after status change
-      const storeParam = selectedStore && selectedStore !== 'all' ? Number(selectedStore) : null;
-      supabase.rpc('get_shipping_kpis', { p_store_id: storeParam }).then(({ data }) => {
-        if (data) setKpis(data);
-      });
+      // Refresh server-side KPIs after status change (if not date-filtered)
+      if (!dateFilter) {
+        const storeParam = selectedStore && selectedStore !== 'all' ? Number(selectedStore) : null;
+        supabase.rpc('get_shipping_kpis', { p_store_id: storeParam }).then(({ data }) => {
+          if (data) setKpis(data);
+        });
+      } else {
+        // If date-filtered, update KPI locally instantly
+        setKpis(prev => {
+          const wasStatus = order.status;
+          return {
+            ...prev,
+            [wasStatus]: Math.max(0, prev[wasStatus] - 1),
+            [nextStatus]: prev[nextStatus] + 1,
+            delivered_count: nextStatus === 'delivered' ? prev.delivered_count + 1 : prev.delivered_count,
+            delivered_fees: nextStatus === 'delivered' ? prev.delivered_fees + (Number(order.delivery_fee) || 0) : prev.delivered_fees,
+          };
+        });
+      }
       showToast('Status updated', `Order ${order.id} → ${nextStatus}`);
     }
     setUpdating(null);
@@ -164,8 +174,8 @@ export default function Shipping() {
       <SkelDashHeader />
       <SkelKpiGrid count={6} />
       <SkelChart height={160} />
-      <SkelFilterPills count={6} />
-      <SkelTable rows={6} cols={5} />
+      <SkelFilterPills count={5} />
+      <SkelTable rows={6} cols={8} />
     </div>
   );
 
@@ -233,28 +243,10 @@ export default function Shipping() {
             </button>
           ))}
         </div>
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-          <input
-            type="date"
-            value={dateFilter}
-            onChange={e => setDateFilter(e.target.value)}
-            style={{
-              padding: '9px 12px', borderRadius: 8, fontSize: '0.85rem',
-              border: `1px solid ${dateFilter ? 'var(--red)' : 'var(--border-subtle)'}`,
-              background: 'var(--white)', color: 'var(--text)',
-              fontFamily: "'DM Sans',sans-serif", cursor: 'pointer', outline: 'none',
-              paddingRight: dateFilter ? 32 : 12,
-            }}
-          />
-          {dateFilter && (
-            <button
-              onClick={() => setDateFilter('')}
-              style={{ position: 'absolute', right: 8, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', padding: 0 }}
-              title="Clear date"
-            ><X size={14} /></button>
-          )}
-        </div>
+        <DashCalendar value={dateFilter} onChange={setDateFilter} placeholder="Filter by date" />
       </div>
+
+
 
       <div className="dash-card">
         <div style={{ overflowX: 'auto' }}>
@@ -264,8 +256,8 @@ export default function Shipping() {
                 <th>Order ID</th>
                 <th>Customer</th>
                 <th><MapPin size={13} style={{ verticalAlign: 'text-bottom' }} /> Delivery Address</th>
-                <th>Amount</th>
-                <th>Delivery Fee</th>
+                <th>Amount Paid</th>
+                <th style={{ color: 'var(--red)', fontWeight: 800 }}>Collect (Delivery)</th>
                 <th>Time</th>
                 <th>Status</th>
                 <th>Action</th>
@@ -285,8 +277,12 @@ export default function Shipping() {
                       <div>{order.delivery_address}</div>
                       {order.notes && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>Note: {order.notes}</div>}
                     </td>
-                    <td style={{ fontWeight: 700 }}>{fmt(order.total)}</td>
-                    <td style={{ fontWeight: 700, color: 'var(--green)' }}>{order.delivery_fee ? fmt(order.delivery_fee) : '—'}</td>
+                    <td style={{ fontWeight: 700 }}>
+                      <div style={{ color: 'var(--green)' }}>Paid: {fmt(order.total)}</div>
+                    </td>
+                    <td style={{ fontWeight: 800, color: 'var(--red)', background: 'rgba(192,32,31,0.08)', borderRadius: 8 }}>
+                      {order.delivery_fee ? fmt(order.delivery_fee) : '—'}
+                    </td>
                     <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                       <div>{new Date(order.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
                       <div style={{ fontWeight: 600 }}>{new Date(order.created_at).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>

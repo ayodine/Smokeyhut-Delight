@@ -6,7 +6,6 @@ const corsHeaders = {
 };
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
-const OPS_EMAIL      = Deno.env.get('ADMIN_EMAIL') ?? 'Smokeyhut04@gmail.com'; // receives new orders & transfer alerts
 const FROM_EMAIL     = Deno.env.get('FROM_EMAIL') ?? 'Smokeyhut Delight <orders@smokeyhutdelight.com>';
 
 // Statuses where customer + ADMIN_EMAIL + ADMIN_EMAIL_2 are notified
@@ -128,7 +127,8 @@ serve(async (req) => {
             <tr><td style="color:#888;padding:4px 0">Bank</td><td style="color:#fff;font-weight:700;text-align:right">Moniepoint</td></tr>
             <tr><td style="color:#888;padding:4px 0">Account Name</td><td style="color:#fff;font-weight:700;text-align:right">Smokeyhut Delight</td></tr>
             <tr><td style="color:#888;padding:4px 0">Account Number</td><td style="color:#fff;font-weight:700;text-align:right">5655718527</td></tr>
-            <tr><td style="color:#888;padding:4px 0">Amount</td><td style="color:#c0201f;font-weight:900;text-align:right">₦${Number(order.total).toLocaleString()}</td></tr>
+            ${order.delivery_fee > 0 ? `<tr><td style="color:#888;padding:4px 0">Delivery Fee</td><td style="color:#fff;font-weight:700;text-align:right">₦${Number(order.delivery_fee).toLocaleString()}</td></tr>` : ''}
+            <tr><td style="color:#888;padding:4px 0">Total Amount</td><td style="color:#c0201f;font-weight:900;text-align:right">₦${Number(order.total).toLocaleString()}</td></tr>
           </table>
           <p style="color:#888;font-size:0.78rem;margin:10px 0 0">Use your order reference <strong style="color:#fff">${order.id}</strong> as the payment description.</p>
         </div>`;
@@ -146,17 +146,6 @@ serve(async (req) => {
           ),
         );
       }
-
-      // Notify admin
-      await sendEmail(
-        OPS_EMAIL,
-        `New Order — ${order.id}`,
-        buildEmail(
-          `New order from ${order.customer_name}`,
-          `Phone: ${order.customer_phone}<br>Delivery: ${order.delivery_address}<br>Total: ₦${Number(order.total).toLocaleString()}`,
-          order.id,
-        ),
-      );
 
       return new Response(JSON.stringify({ ok: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

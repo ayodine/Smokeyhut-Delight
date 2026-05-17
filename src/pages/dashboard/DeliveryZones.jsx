@@ -4,6 +4,7 @@ import { useToast } from '../../context/ToastContext';
 import { MapPin, Plus, Trash2, Edit2, Check, X } from 'lucide-react';
 import { SkelList } from '../../components/Skeleton';
 import { fetchFlatAreas } from '../../lib/deliveryMatcher';
+import ConfirmModal from '../../components/ConfirmModal';
 
 export default function DeliveryZones() {
   const { showToast } = useToast();
@@ -11,6 +12,7 @@ export default function DeliveryZones() {
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ name: '', price: '', aliases: '' });
+  const [confirmAction, setConfirmAction] = useState(null);
 
   const refresh = async () => {
     setLoading(true);
@@ -69,12 +71,23 @@ export default function DeliveryZones() {
     }
   };
 
-  const deleteLocation = async (id) => {
-    if (!confirm('Delete this delivery location?')) return;
-    const { error } = await supabase.from('delivery_areas').delete().eq('id', id);
-    if (error) { showToast('Error', error.message, 'error'); return; }
-    showToast('Deleted', 'Location removed', 'success');
-    await refresh();
+  const deleteLocation = (id) => {
+    setConfirmAction({
+      title: 'Delete Location',
+      message: 'Are you sure you want to delete this delivery location?',
+      onConfirm: async () => {
+        setConfirmAction(prev => ({ ...prev, isLoading: true }));
+        const { error } = await supabase.from('delivery_areas').delete().eq('id', id);
+        if (error) { 
+          showToast('Error', error.message, 'error'); 
+          setConfirmAction(null);
+          return; 
+        }
+        showToast('Deleted', 'Location removed', 'success');
+        await refresh();
+        setConfirmAction(null);
+      }
+    });
   };
 
   const fmt = (n) => '₦' + Number(n).toLocaleString();
@@ -98,26 +111,37 @@ export default function DeliveryZones() {
         Manage delivery locations and their fees. Customers type their area at checkout and are matched automatically.
       </p>
 
-      {editingId === 'new' && (
-        <div className="dash-card" style={{ marginBottom: 16, border: '2px solid var(--red)' }}>
-          <h4 style={{ margin: '0 0 16px', fontFamily: "'Mona Sans', 'Mona-Sans', sans-serif" }}>New Location</h4>
-          <div className="form-row">
-            <div className="form-group">
-              <label>Location Name</label>
-              <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Abule Egba" autoFocus />
+      {editingId !== null && (
+        <div className="product-form-modal" onClick={() => setEditingId(null)}>
+          <div className="product-form-card" onClick={e => e.stopPropagation()} style={{ maxWidth: 450 }}>
+            <h3 style={{ marginTop: 0, marginBottom: 24 }}>
+              {editingId === 'new' ? 'New Location' : 'Edit Location'}
+              <button onClick={() => setEditingId(null)} className="dash-drawer-close">
+                <X size={16} />
+              </button>
+            </h3>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Location Name</label>
+                <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Abule Egba" autoFocus />
+              </div>
+              <div className="form-group">
+                <label>Delivery Fee (₦)</label>
+                <input type="number" value={form.price} onChange={e => setForm(p => ({ ...p, price: e.target.value }))} placeholder="3000" />
+              </div>
             </div>
-            <div className="form-group">
-              <label>Delivery Fee (₦)</label>
-              <input type="number" value={form.price} onChange={e => setForm(p => ({ ...p, price: e.target.value }))} placeholder="3000" />
+            <div className="form-group" style={{ marginBottom: 16 }}>
+              <label>Aliases (comma-separated, optional)</label>
+              <input value={form.aliases} onChange={e => setForm(p => ({ ...p, aliases: e.target.value }))} placeholder="abule-egba, abule egba road" />
             </div>
-          </div>
-          <div className="form-group" style={{ marginBottom: 16 }}>
-            <label>Aliases (comma-separated, optional)</label>
-            <input value={form.aliases} onChange={e => setForm(p => ({ ...p, aliases: e.target.value }))} placeholder="abule-egba, abule egba road" />
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn-primary" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6 }} onClick={saveLocation}><Check size={16} /> Save Location</button>
-            <button className="btn-secondary" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => setEditingId(null)}><X size={16} /> Cancel</button>
+            <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+              <button className="btn-secondary" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '12px' }} onClick={() => setEditingId(null)}>
+                Cancel
+              </button>
+              <button className="btn-primary" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '12px' }} onClick={saveLocation}>
+                <Check size={16} /> Save
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -128,29 +152,7 @@ export default function DeliveryZones() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {areas.map(area => (
             <div key={area.id} className="dash-card" style={{ padding: 0, overflow: 'hidden' }}>
-              {editingId === area.id ? (
-                <div style={{ padding: '16px 20px' }}>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Location Name</label>
-                      <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} autoFocus />
-                    </div>
-                    <div className="form-group">
-                      <label>Delivery Fee (₦)</label>
-                      <input type="number" value={form.price} onChange={e => setForm(p => ({ ...p, price: e.target.value }))} />
-                    </div>
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 16 }}>
-                    <label>Aliases</label>
-                    <input value={form.aliases} onChange={e => setForm(p => ({ ...p, aliases: e.target.value }))} />
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="btn-primary" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6 }} onClick={saveLocation}><Check size={16} /> Save</button>
-                    <button className="btn-secondary" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => setEditingId(null)}><X size={16} /> Cancel</button>
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px' }}>
                   <MapPin size={15} color="var(--text-muted)" style={{ flexShrink: 0 }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{area.name}</div>
@@ -176,7 +178,6 @@ export default function DeliveryZones() {
                     <Trash2 size={15} />
                   </button>
                 </div>
-              )}
             </div>
           ))}
 
@@ -187,6 +188,12 @@ export default function DeliveryZones() {
           )}
         </div>
       )}
+
+      <ConfirmModal 
+        isOpen={!!confirmAction} 
+        onClose={() => setConfirmAction(null)} 
+        {...confirmAction} 
+      />
     </div>
   );
 }

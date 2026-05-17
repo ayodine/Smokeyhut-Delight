@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { MapPin, Phone, Edit2, Trash2, X, Store as StoreIcon, Loader2 } from 'lucide-react';
-import { SkelList } from '../../components/Skeleton';
+import { MapPin, Phone, Edit2, Trash2, X, Store as StoreIcon, Loader2, DollarSign, Package } from 'lucide-react';
+import { SkelDashHeader, SkelStoreCard } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
+import ConfirmModal from '../../components/ConfirmModal';
 
 const fmt = (n) => '₦' + n.toLocaleString();
 
@@ -16,6 +17,7 @@ export default function Stores() {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: '', address: '', phone: '', zones: '' });
+  const [confirmAction, setConfirmAction] = useState(null);
 
   useEffect(() => {
     fetchData();
@@ -23,22 +25,29 @@ export default function Stores() {
 
   const fetchData = async () => {
     setLoading(true);
-    const [storesRes, ordersRes, staffRes] = await Promise.all([
+    const [storesRes, ordersRes] = await Promise.all([
       supabase.from('stores').select('*').order('id', { ascending: true }),
-      supabase.from('orders').select('store_id, total, status').neq('status', 'cancelled'),
-      supabase.from('profiles').select('id').not('role', 'eq', 'customer'),
+      supabase.from('orders')
+        .select('store_id, total, status')
+        .is('deleted_at', null),
     ]);
 
-    const orders = ordersRes.data || [];
-    const staffCount = staffRes.data?.length || 0;
+    const allOrders = ordersRes.data || [];
+    // Orders with no store assigned (WhatsApp, manual) appear in every store's view on
+    // the Orders page — mirror that same logic here so the numbers stay consistent.
+    const unassigned = allOrders.filter(o => o.store_id === null || o.store_id === undefined);
 
     const enriched = (storesRes.data || []).map(store => {
-      const storeOrders = orders.filter(o => o.store_id === store.id);
+      const storeOrders = [
+        ...allOrders.filter(o => Number(o.store_id) === Number(store.id)),
+        ...unassigned,
+      ];
+      const activeOrders = storeOrders.filter(o => o.status !== 'cancelled');
       return {
         ...store,
-        revenue: storeOrders.reduce((sum, o) => sum + Number(o.total || 0), 0),
-        orders: storeOrders.length,
-        staff: staffCount,
+        revenue: activeOrders.reduce((sum, o) => sum + Number(o.total || 0), 0),
+        orders: activeOrders.length,
+        pending: storeOrders.filter(o => o.status === 'pending').length,
       };
     });
 
@@ -77,7 +86,27 @@ export default function Stores() {
     setSaving(false);
   };
 
-  if (loading) return <SkelList rows={3} height={140} />;
+  const handleDelete = (store) => {
+    setConfirmAction({
+      title: 'Delete Store',
+      message: `Are you sure you want to delete "${store.name}"?`,
+      onConfirm: async () => {
+        setConfirmAction(prev => ({ ...prev, isLoading: true }));
+        await supabase.from('stores').delete().eq('id', store.id);
+        setStoreList(storeList.filter(s => s.id !== store.id));
+        setConfirmAction(null);
+      }
+    });
+  };
+
+  if (loading) return (
+    <div>
+      <SkelDashHeader hasButton />
+      <div className="store-cards">
+        <SkelStoreCard /><SkelStoreCard /><SkelStoreCard />
+      </div>
+    </div>
+  );
 
   return (
     <div>
@@ -110,43 +139,52 @@ export default function Stores() {
               </div>
 
               <div className="store-stats">
-                <div className="store-stat-card">
-                  <div className="store-stat-value">{fmt(store.revenue || 0)}</div>
-                  <div className="store-stat-label">Revenue</div>
+                <div className="kpi-card red" style={{ padding: '14px 12px' }}>
+                  <div className="kpi-icon" style={{ marginBottom: 4 }}><DollarSign size={16} /></div>
+                  <div className="kpi-value" style={{ fontSize: '1.25rem' }}>{fmt(store.revenue || 0)}</div>
+                  <div className="kpi-label">Revenue</div>
                 </div>
-                <div className="store-stat-card">
-                  <div className="store-stat-value">{store.orders || 0}</div>
-                  <div className="store-stat-label">Orders</div>
+                <div className="kpi-card blue" style={{ padding: '14px 12px' }}>
+                  <div className="kpi-icon" style={{ marginBottom: 4 }}><Package size={16} /></div>
+                  <div className="kpi-value" style={{ fontSize: '1.25rem' }}>{store.orders || 0}</div>
+                  <div className="kpi-label">Orders</div>
                 </div>
-                <div className="store-stat-card">
-                  <div className="store-stat-value">{store.staff || 0}</div>
-                  <div className="store-stat-label">Staff</div>
+                <div className="kpi-card yellow" style={{ padding: '14px 12px' }}>
+                  <div className="kpi-icon" style={{ marginBottom: 4 }}><Package size={16} /></div>
+                  <div className="kpi-value" style={{ fontSize: '1.25rem' }}>{store.pending || 0}</div>
+                  <div className="kpi-label">Pending</div>
                 </div>
-                <div className="store-stat-card">
-                  <div className="store-stat-value" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Phone size={20} />
-                  </div>
-                  <div className="store-stat-label">{store.phone}</div>
+                <div className="kpi-card purple" style={{ padding: '14px 12px' }}>
+                  <div className="kpi-icon" style={{ marginBottom: 4 }}><Phone size={16} /></div>
+                  <div className="kpi-value" style={{ fontSize: '0.95rem', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{store.phone}</div>
+                  <div className="kpi-label">Phone</div>
                 </div>
               </div>
 
-              <div style={{ marginTop: 16, padding: '14px', background: 'var(--black2)', borderRadius: 10 }}>
+              <div style={{ marginTop: 16, padding: '16px', background: 'var(--black2)', borderRadius: 12 }}>
                 <div style={{ fontWeight: 800, fontSize: '0.82rem', marginBottom: 8, color: 'var(--text)' }}>Operating Hours</div>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Mon–Sat: {hours.weekday}</div>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Sunday: {hours.sunday}</div>
+                <div style={{ fontSize: '0.88rem', color: 'var(--text-muted)' }}>Mon–Sat: <span style={{ color: 'var(--text)', fontWeight: 600 }}>{hours.weekday}</span></div>
+                <div style={{ fontSize: '0.88rem', color: 'var(--text-muted)' }}>Sunday: <span style={{ color: 'var(--text)', fontWeight: 600 }}>{hours.sunday}</span></div>
               </div>
 
-              <div style={{ marginTop: 12, fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 16 }}>
-                <strong>Delivery Zones:</strong> {zones.join(', ')}
+              <div style={{ marginTop: 16, fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 20 }}>
+                <strong style={{ color: 'var(--text)', display: 'block', marginBottom: 6, fontSize: '0.82rem' }}>Delivery Zones:</strong>
+                <div style={{ lineHeight: 1.5 }}>{zones.length > 0 ? zones.join(', ') : 'None assigned'}</div>
               </div>
 
-              <div style={{ display: 'flex', gap: 12, borderTop: '1px solid var(--border-subtle)', paddingTop: 16 }}>
-                <button style={{ flex: 1, padding: '8px', borderRadius: 8, background: 'var(--black2)', border: 'none', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={() => { setEditing(store.id); setForm({ name: store.name, address: store.address, phone: store.phone, zones: zones.join(', ') }); setShowModal(true); }}>
-                  <Edit2 size={14} /> Edit
+              <div style={{ display: 'flex', gap: 12, borderTop: '1px solid var(--border-subtle)', paddingTop: 20 }}>
+                <button style={{ flex: 1, padding: '10px', borderRadius: 10, background: 'var(--black2)', border: 'none', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--text)', transition: 'all 0.2s' }} 
+                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--gray-light)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'var(--black2)' }}
+                  onClick={() => { setEditing(store.id); setForm({ name: store.name, address: store.address, phone: store.phone, zones: zones.join(', ') }); setShowModal(true); }}>
+                  <Edit2 size={16} /> Edit
                 </button>
                 {isAdmin && (
-                  <button style={{ flex: 1, padding: '8px', borderRadius: 8, background: '#fee2e2', color: '#991b1b', border: 'none', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={async () => { if(window.confirm('Delete store?')) { await supabase.from('stores').delete().eq('id', store.id); setStoreList(storeList.filter(s => s.id !== store.id)); } }}>
-                    <Trash2 size={14} /> Delete
+                  <button style={{ flex: 1, padding: '10px', borderRadius: 10, background: '#fee2e2', color: '#991b1b', border: 'none', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, transition: 'all 0.2s' }} 
+                    onMouseEnter={e => { e.currentTarget.style.background = '#fca5a5' }}
+                    onMouseLeave={e => { e.currentTarget.style.background = '#fee2e2' }}
+                    onClick={() => handleDelete(store)}>
+                    <Trash2 size={16} /> Delete
                   </button>
                 )}
               </div>
@@ -157,10 +195,15 @@ export default function Stores() {
       </div>
 
       {showModal && (
-        <div className="product-form-modal">
-          <div className="product-form-card" style={{ maxWidth: 450 }}>
-            <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 0, marginBottom: 24 }}>
-              <StoreIcon size={20} color="var(--red)" /> {editing ? 'Edit' : 'Add'} Store
+        <div className="product-form-modal" onClick={() => setShowModal(false)}>
+          <div className="product-form-card" onClick={e => e.stopPropagation()} style={{ maxWidth: 450 }}>
+            <h3 style={{ marginTop: 0, marginBottom: 24 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <StoreIcon size={20} color="var(--red)" /> {editing ? 'Edit' : 'Add'} Store
+              </div>
+              <button onClick={() => setShowModal(false)} className="dash-drawer-close">
+                <X size={16} />
+              </button>
             </h3>
             
             <div className="form-group"><label>Store Name</label><input value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Lagos Ikeja" /></div>
@@ -169,7 +212,7 @@ export default function Stores() {
             <div className="form-group"><label>Delivery Zones (comma separated)</label><input value={form.zones} onChange={e => setForm({...form, zones: e.target.value})} placeholder="Ikeja, Maryland, Oshodi" /></div>
 
             <div style={{ display: 'flex', gap: 12, marginTop: 32 }}>
-              <button onClick={() => setShowModal(false)} style={{ flex: 1, padding: '12px', background: 'var(--black2)', border: '1px solid var(--border-subtle)', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>
+              <button onClick={() => setShowModal(false)} className="btn-secondary" style={{ flex: 1 }}>
                 Cancel
               </button>
               <button onClick={handleSave} disabled={saving} className="btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
@@ -179,6 +222,12 @@ export default function Stores() {
           </div>
         </div>
       )}
+
+      <ConfirmModal 
+        isOpen={!!confirmAction} 
+        onClose={() => setConfirmAction(null)} 
+        {...confirmAction} 
+      />
     </div>
   );
 }

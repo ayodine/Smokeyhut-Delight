@@ -254,3 +254,8 @@ create policy "Auth write app_settings"
 -- Authentication > Users > Add user
 -- and create your admin user in Supabase.
 -- ============================================================
+
+-- ── 11. INVENTORY ─────────────────────────────────────────────
+ALTER TABLE inventory_items 
+ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'consumable'
+CHECK (category IN ('consumable', 'production'));

@@ -5,8 +5,13 @@ import {
   Archive, BarChart2, ClipboardList, Filter,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
+import { SkelDashHeader, SkelFilterPills, SkelTable } from '../../../components/Skeleton';
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
+import CustomSelect from '../../../components/CustomSelect';
+import ConfirmModal from '../../../components/ConfirmModal';
+import PremiumDateInput from '../../../components/PremiumDateInput';
+import BulkActionBar from '../../../components/BulkActionBar';
 
 const fmt   = v => `₦${Number(v || 0).toLocaleString('en-NG')}`;
 const num   = v => Number(v) || 0;
@@ -64,7 +69,10 @@ function fmtDt(iso) {
 export default function Inventory() {
   const { user } = useAuth();
   const { showToast } = useToast();
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
 
+  const [group, setGroup]   = useState('consumable');
   const [tab, setTab]       = useState('stock');
   const [items, setItems]   = useState([]);
   const [stockMap, setStockMap] = useState({});   // { [item_id]: computed stock }
@@ -126,17 +134,19 @@ export default function Inventory() {
 
   const fetchMovements = async () => {
     setMovLoading(true);
+    const gIds = new Set(items.filter(i => i.category === group).map(i => i.id));
+
     let q = supabase
       .from('inventory_movements')
       .select('id, item_id, type, quantity, reference, note, created_at, inventory_items(name, unit)')
       .order('created_at', { ascending: false })
       .limit(200);
     if (movTypeFilter !== 'all') q = q.eq('type', movTypeFilter);
-    if (movItemFilter !== 'all') q = q.eq('item_id', movItemFilter);
+    if (movItemFilter !== 'all' && gIds.has(Number(movItemFilter))) q = q.eq('item_id', movItemFilter);
     if (movFrom) q = q.gte('created_at', movFrom + 'T00:00:00');
     if (movTo)   q = q.lte('created_at', movTo   + 'T23:59:59');
     const { data } = await q;
-    setMovements(data || []);
+    setMovements((data || []).filter(m => gIds.size === 0 || gIds.has(m.item_id)));
     setMovLoading(false);
   };
 
@@ -163,7 +173,13 @@ export default function Inventory() {
 
   useEffect(() => {
     if (tab === 'movements') fetchMovements();
-  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab, group]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setMovItemFilter('all');
+    setSelectedIds([]);
+    setReportData([]);
+  }, [group]);
 
   // ─── Record movement ─────────────────────────────────────────────────────────
   const openMovModal = (preset = {}) => {
@@ -216,6 +232,7 @@ export default function Inventory() {
       unit_cost: num(itemForm.unit_cost),
       low_stock_threshold: num(itemForm.low_stock_threshold) || 5,
       is_active: true,
+      category: group,
     };
     const { error } = editingItemId
       ? await supabase.from('inventory_items').update(payload).eq('id', editingItemId)
@@ -229,13 +246,37 @@ export default function Inventory() {
     await fetchItemsAndStock();
   };
 
-  const deleteItem = async (id) => {
-    if (!confirm('Remove this item? Movement history will be preserved.')) return;
-    setDeletingItem(id);
-    await supabase.from('inventory_items').update({ is_active: false }).eq('id', id);
-    await fetchItemsAndStock();
-    setDeletingItem(null);
-    showToast('Item removed', '', 'success');
+  const deleteItem = (id) => {
+    setConfirmAction({
+      title: 'Remove Item',
+      message: 'Remove this item? Movement history will be preserved.',
+      onConfirm: async () => {
+        setConfirmAction(prev => ({ ...prev, isLoading: true }));
+        await supabase.from('inventory_items').update({ is_active: false }).eq('id', id);
+        await fetchItemsAndStock();
+        showToast('Item removed', '', 'success');
+        setConfirmAction(null);
+      }
+    });
+  };
+
+  const handleBulkDelete = () => {
+    setConfirmAction({
+      title: 'Remove Selected Items',
+      message: `Remove ${selectedIds.length} items? Movement history will be preserved.`,
+      onConfirm: async () => {
+        setConfirmAction(prev => ({ ...prev, isLoading: true }));
+        const { error } = await supabase.from('inventory_items').update({ is_active: false }).in('id', selectedIds);
+        if (error) {
+          showToast('Error: ' + error.message, '', 'error');
+        } else {
+          showToast('Items removed', '', 'success');
+          setSelectedIds([]);
+          await fetchItemsAndStock();
+        }
+        setConfirmAction(null);
+      }
+    });
   };
 
   // ─── Report ──────────────────────────────────────────────────────────────────
@@ -249,7 +290,7 @@ export default function Inventory() {
       supabase.from('inventory_movements').select('item_id, type, quantity').gte('created_at', fromTs).lte('created_at', toTs),
     ]);
 
-    const report = items.map(item => {
+    const report = groupItems.map(item => {
       const opening = (before || [])
         .filter(m => m.item_id === item.id)
         .reduce((s, m) => {
@@ -279,16 +320,17 @@ export default function Inventory() {
     setReportLoading(false);
   };
 
-  // ─── KPIs ────────────────────────────────────────────────────────────────────
-  const lowStock   = items.filter(i => { const s = stockMap[i.id] ?? 0; return s > 0 && s <= num(i.low_stock_threshold); });
-  const outOfStock = items.filter(i => (stockMap[i.id] ?? 0) <= 0);
-  const totalValue = items.reduce((s, i) => s + (stockMap[i.id] ?? 0) * num(i.unit_cost), 0);
+  // ─── KPIs (scoped to active group) ──────────────────────────────────────────
+  const groupItems = items.filter(i => (i.category || 'consumable') === group);
+  const lowStock   = groupItems.filter(i => { const s = stockMap[i.id] ?? 0; return s > 0 && s <= num(i.low_stock_threshold); });
+  const outOfStock = groupItems.filter(i => (stockMap[i.id] ?? 0) <= 0);
+  const totalValue = groupItems.reduce((s, i) => s + (stockMap[i.id] ?? 0) * num(i.unit_cost), 0);
 
   if (loading) return (
-    <div className="dash-card" style={{ padding: 32 }}>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', color: 'var(--text-muted)' }}>
-        <Loader2 size={20} className="spin" /> Loading inventory…
-      </div>
+    <div>
+      <SkelDashHeader hasButton />
+      <SkelFilterPills count={4} />
+      <SkelTable rows={8} cols={4} />
     </div>
   );
 
@@ -297,7 +339,7 @@ export default function Inventory() {
       {/* ── Header ── */}
       <div className="dash-card-header" style={{ marginBottom: 20 }}>
         <div className="dash-card-title" style={{ fontFamily: "'Mona Sans','Mona-Sans','Helvetica Neue',sans-serif", fontSize: '1.4rem' }}>
-          Consumables Inventory
+          Inventory
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {tab === 'catalog' && (
@@ -313,6 +355,21 @@ export default function Inventory() {
             </button>
           )}
         </div>
+      </div>
+
+      {/* ── Group switcher ── */}
+      <div style={{ display: 'flex', gap: 0, marginBottom: 20, background: 'var(--black2)', borderRadius: 12, padding: 4, width: 'fit-content', border: '1px solid var(--border-subtle)' }}>
+        {[
+          { id: 'consumable', label: 'Consumable' },
+          { id: 'production', label: 'Production' },
+        ].map(g => (
+          <button key={g.id} onClick={() => setGroup(g.id)} style={{
+            padding: '8px 22px', borderRadius: 9, fontWeight: 700, fontSize: '0.88rem',
+            cursor: 'pointer', border: 'none', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.15s',
+            background: group === g.id ? 'var(--red)' : 'transparent',
+            color: group === g.id ? '#fff' : 'var(--text-muted)',
+          }}>{g.label}</button>
+        ))}
       </div>
 
       {/* ── Tabs ── */}
@@ -337,7 +394,7 @@ export default function Inventory() {
           {/* KPI strip */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
             {[
-              { label: 'Items Tracked', value: items.length,       icon: <Package size={18} />,     color: 'var(--text)' },
+              { label: 'Items Tracked', value: groupItems.length,       icon: <Package size={18} />,     color: 'var(--text)' },
               { label: 'Low Stock',     value: lowStock.length,    icon: <TrendingDown size={18} />, color: lowStock.length   > 0 ? '#f59e0b' : 'var(--text)' },
               { label: 'Out of Stock',  value: outOfStock.length,  icon: <AlertTriangle size={18} />, color: outOfStock.length > 0 ? '#ef4444' : 'var(--text)' },
               { label: 'Stock Value',   value: fmt(totalValue),    icon: <BarChart2 size={18} />,    color: 'var(--text)' },
@@ -370,11 +427,15 @@ export default function Inventory() {
             </div>
           )}
 
-          {items.length === 0 ? (
+          {groupItems.length === 0 ? (
             <div className="dash-card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
               <Archive size={36} style={{ marginBottom: 12, opacity: 0.4 }} />
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>No inventory items yet</div>
-              <div style={{ fontSize: '0.85rem', marginBottom: 16 }}>Add consumables like Charcoal, Seasoning, or Groundnut Oil in the <strong>Catalog</strong> tab.</div>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>No {group} items yet</div>
+              <div style={{ fontSize: '0.85rem', marginBottom: 16 }}>
+                {group === 'consumable'
+                  ? 'Add consumables like Charcoal, Seasoning, or Groundnut Oil in the Catalog tab.'
+                  : 'Add production items like Chicken, Beef, or Suya Mix in the Catalog tab.'}
+              </div>
               <button className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 18px', fontSize: '0.85rem' }} onClick={() => setTab('catalog')}>
                 <Plus size={15} /> Add Items
               </button>
@@ -395,7 +456,7 @@ export default function Inventory() {
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map(item => {
+                    {groupItems.map(item => {
                       const stock = stockMap[item.id] ?? 0;
                       const color = stockColor(stock, item.low_stock_threshold);
                       return (
@@ -449,16 +510,19 @@ export default function Inventory() {
                 </button>
               ))}
             </div>
-            <select value={movItemFilter} onChange={e => setMovItemFilter(e.target.value)}
-              style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.85rem', fontFamily: "'DM Sans',sans-serif" }}>
-              <option value="all">All Items</option>
-              {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-            </select>
-            <input type="date" value={movFrom} onChange={e => setMovFrom(e.target.value)}
-              style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.85rem', fontFamily: "'DM Sans',sans-serif" }} />
+            <div style={{ width: 180 }}>
+              <CustomSelect
+                value={movItemFilter}
+                onChange={e => setMovItemFilter(e.target.value)}
+                options={[
+                  { value: 'all', label: 'All Items' },
+                  ...groupItems.map(i => ({ value: i.id, label: i.name }))
+                ]}
+              />
+            </div>
+            <PremiumDateInput value={movFrom} onChange={e => setMovFrom(e.target.value)} style={{ width: '160px' }} />
             <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>→</span>
-            <input type="date" value={movTo} onChange={e => setMovTo(e.target.value)}
-              style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.85rem', fontFamily: "'DM Sans',sans-serif" }} />
+            <PremiumDateInput value={movTo} onChange={e => setMovTo(e.target.value)} style={{ width: '160px' }} />
             <button onClick={fetchMovements}
               style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black2)', color: 'var(--text)', fontWeight: 700, fontSize: '0.83rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
               {movLoading ? <Loader2 size={13} className="spin" /> : <Filter size={13} />} Apply
@@ -527,11 +591,9 @@ export default function Inventory() {
         <>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 20, flexWrap: 'wrap' }}>
             <label style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-muted)' }}>From</label>
-            <input type="date" value={reportFrom} onChange={e => setReportFrom(e.target.value)}
-              style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.9rem', fontFamily: "'DM Sans',sans-serif" }} />
+            <PremiumDateInput value={reportFrom} onChange={e => setReportFrom(e.target.value)} style={{ width: '160px' }} />
             <label style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-muted)' }}>To</label>
-            <input type="date" value={reportTo} onChange={e => setReportTo(e.target.value)}
-              style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.9rem', fontFamily: "'DM Sans',sans-serif" }} />
+            <PremiumDateInput value={reportTo} onChange={e => setReportTo(e.target.value)} style={{ width: '160px' }} />
             <button className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 18px', fontSize: '0.85rem' }} onClick={generateReport}>
               {reportLoading ? <Loader2 size={15} className="spin" /> : <BarChart2 size={15} />} Generate
             </button>
@@ -597,11 +659,13 @@ export default function Inventory() {
          ══════════════════════════════════════════════════════════════════════ */}
       {tab === 'catalog' && (
         <div className="dash-card">
-          {items.length === 0 ? (
+          {groupItems.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
               <Archive size={36} style={{ marginBottom: 12, opacity: 0.4 }} />
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>No items in catalog</div>
-              <div style={{ fontSize: '0.85rem', marginBottom: 16 }}>Add consumables like Charcoal, Seasoning, Groundnut Oil…</div>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>No {group} items in catalog</div>
+              <div style={{ fontSize: '0.85rem', marginBottom: 16 }}>
+                {group === 'consumable' ? 'Add consumables like Charcoal, Seasoning, Groundnut Oil…' : 'Add production items like Chicken, Beef, Suya Mix…'}
+              </div>
               <button className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 18px', fontSize: '0.85rem' }}
                 onClick={() => { setItemForm(EMPTY_ITEM); setEditingItemId(null); setShowItemModal(true); }}>
                 <Plus size={15} /> Add First Item
@@ -612,6 +676,17 @@ export default function Inventory() {
               <table className="dash-table">
                 <thead>
                   <tr>
+                    <th style={{ width: 44, textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={groupItems.length > 0 && groupItems.every(p => selectedIds.includes(p.id))}
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedIds(groupItems.map(p => p.id));
+                          else setSelectedIds([]);
+                        }}
+                        style={{ cursor: 'pointer', accentColor: 'var(--red)' }}
+                      />
+                    </th>
                     <th>Name</th>
                     <th>Unit</th>
                     <th style={{ textAlign: 'right' }}>Unit Cost</th>
@@ -620,8 +695,22 @@ export default function Inventory() {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map(item => (
-                    <tr key={item.id}>
+                  {groupItems.map(item => {
+                    const isSelected = selectedIds.includes(item.id);
+                    const rowStyle = isSelected ? { background: 'rgba(192, 32, 31, 0.06)', borderLeft: '3px solid var(--red)' } : {};
+                    return (
+                    <tr key={item.id} style={rowStyle}>
+                      <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) setSelectedIds([...selectedIds, item.id]);
+                            else setSelectedIds(selectedIds.filter(id => id !== item.id));
+                          }}
+                          style={{ cursor: 'pointer', accentColor: 'var(--red)' }}
+                        />
+                      </td>
                       <td style={{ fontWeight: 600 }}>{item.name}</td>
                       <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{item.unit}</td>
                       <td style={{ textAlign: 'right' }}>{fmt(item.unit_cost)}</td>
@@ -639,12 +728,21 @@ export default function Inventory() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           )}
         </div>
+      )}
+
+      {tab === 'catalog' && (
+        <BulkActionBar 
+          selectedCount={selectedIds.length} 
+          onDeselectAll={() => setSelectedIds([])}
+          actions={[{ type: 'delete', onClick: handleBulkDelete }]}
+        />
       )}
 
       {/* ══════════════════════════════════════════════════════════════════════
@@ -746,14 +844,14 @@ export default function Inventory() {
             {/* Item */}
             <div style={{ marginBottom: 14 }}>
               <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6 }}>Item *</label>
-              <select value={movForm.item_id} onChange={e => setMovForm(f => ({ ...f, item_id: e.target.value }))} style={SELECT_S}>
-                <option value="">— Select item —</option>
-                {items.map(i => (
-                  <option key={i.id} value={i.id}>
-                    {i.name} ({(stockMap[i.id] ?? 0).toLocaleString()} {i.unit})
-                  </option>
-                ))}
-              </select>
+              <CustomSelect
+                value={movForm.item_id}
+                onChange={e => setMovForm(f => ({ ...f, item_id: e.target.value }))}
+                options={[
+                  { value: '', label: '— Select item —' },
+                  ...groupItems.map(i => ({ value: i.id, label: `${i.name} (${(stockMap[i.id] ?? 0).toLocaleString()} ${i.unit})` }))
+                ]}
+              />
             </div>
 
             {/* Type */}
@@ -847,9 +945,11 @@ export default function Inventory() {
 
             <div style={{ marginBottom: 20 }}>
               <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6 }}>Unit of Measure</label>
-              <select value={itemForm.unit} onChange={e => setItemForm(f => ({ ...f, unit: e.target.value }))} style={SELECT_S}>
-                {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-              </select>
+              <CustomSelect
+                value={itemForm.unit}
+                onChange={e => setItemForm(f => ({ ...f, unit: e.target.value }))}
+                options={UNITS.map(u => ({ value: u, label: u }))}
+              />
             </div>
 
             <div style={{ display: 'flex', gap: 10 }}>
@@ -866,6 +966,11 @@ export default function Inventory() {
           </div>
         </div>
       )}
+      <ConfirmModal 
+        isOpen={!!confirmAction} 
+        onClose={() => setConfirmAction(null)} 
+        {...confirmAction} 
+      />
     </div>
   );
 }

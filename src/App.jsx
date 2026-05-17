@@ -1,5 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 
 // Prefetch products as early as possible
 import { prefetchProducts } from './lib/productsCache';
@@ -64,6 +64,15 @@ function ScrollToTop() {
   return null;
 }
 
+// Redirect visitors from smokeyhutdelight.store straight to the menu page
+function StoreHostRedirect() {
+  const hostname = window.location.hostname;
+  if (hostname === 'smokeyhutdelight.store' || hostname === 'www.smokeyhutdelight.store') {
+    return <Navigate to="/menu" replace />;
+  }
+  return null;
+}
+
 function StorefrontLayout() {
   const [cartOpen, setCartOpen] = useState(false);
   return (
@@ -107,6 +116,7 @@ export default function App() {
           <CartProvider>
             <ToastProvider>
               <ScrollToTop />
+              <StoreHostRedirect />
               <Routes>
                 {/* Admin (lazy-loaded) */}
                 <Route path="/admin/login" element={<Suspense fallback={<AdminLoader />}><Login /></Suspense>} />

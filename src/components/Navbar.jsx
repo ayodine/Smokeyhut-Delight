@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useSettings } from '../context/SettingsContext';
-import { ShoppingCart, Home, Store, Menu, X, Info } from 'lucide-react';
+import { ShoppingCart, Menu, X, Store, ShoppingBag } from 'lucide-react';
 
 export default function Navbar({ onCartOpen }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -69,33 +69,29 @@ export default function Navbar({ onCartOpen }) {
       <div className="nav-header-spacer" style={{ height: tickerVisible ? 96 : 60 }} />
 
       {/* Mobile bottom nav bar */}
-      <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
-        <Link to="/" className={`mobile-nav-item${location.pathname === '/' ? ' active' : ''}`}>
-          <Home size={22} />
-          <span>Home</span>
-        </Link>
-        <Link to="/shop" className={`mobile-nav-item${location.pathname === '/shop' ? ' active' : ''}`}>
+      <nav className="mobile-bottom-nav premium-bottom-nav" aria-label="Mobile navigation">
+        <Link to="/" className="premium-nav-btn" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', color: location.pathname === '/' ? 'var(--red)' : 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 700, textDecoration: 'none' }}>
           <Store size={22} />
-          <span>Shop</span>
+          Home
         </Link>
-        <button className="mobile-nav-item mobile-nav-cart" onClick={onCartOpen} aria-label="Open cart">
-          <span className="mobile-cart-icon-wrap">
-            <ShoppingCart size={24} />
-            {itemCount > 0 && <span className="mobile-cart-badge">{itemCount}</span>}
-          </span>
-          <span>Cart</span>
-        </button>
-        <Link to="/about" className={`mobile-nav-item${location.pathname === '/about' ? ' active' : ''}`}>
-          <Info size={22} />
-          <span>About</span>
+        <Link to="/shop" className="premium-nav-btn" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', color: location.pathname === '/shop' ? 'var(--red)' : 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 700, textDecoration: 'none' }}>
+          <ShoppingBag size={22} />
+          Shop
         </Link>
         <button
-          className={`mobile-nav-item${mobileOpen ? ' active' : ''}`}
-          onClick={() => setMobileOpen(!mobileOpen)}
-          aria-label="Menu"
+          className="premium-nav-btn"
+          onClick={onCartOpen}
+          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', color: itemCount > 0 ? 'var(--red)' : 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 700, position: 'relative' }}
         >
-          {mobileOpen ? <X size={22} /> : <Menu size={22} />}
-          <span>Menu</span>
+          <span style={{ position: 'relative', display: 'inline-flex' }}>
+            <ShoppingCart size={22} />
+            {itemCount > 0 && (
+              <span style={{ position: 'absolute', top: -6, right: -8, background: 'var(--red)', color: '#fff', borderRadius: '50%', width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 900, lineHeight: 1 }}>
+                {itemCount}
+              </span>
+            )}
+          </span>
+          Cart
         </button>
       </nav>
 

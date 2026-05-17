@@ -3,6 +3,9 @@ import { supabase } from '../../lib/supabase';
 import { useToast } from '../../context/ToastContext';
 import { Tag, Plus, Trash2, Edit2, Check, X, ToggleLeft, ToggleRight } from 'lucide-react';
 import { SkelList } from '../../components/Skeleton';
+import CustomSelect from '../../components/CustomSelect';
+import ConfirmModal from '../../components/ConfirmModal';
+import PremiumDateInput from '../../components/PremiumDateInput';
 
 const EMPTY_FORM = { code: '', type: 'percent', value: '', min_order_amount: '', max_uses: '', expires_at: '', is_active: true };
 
@@ -15,6 +18,7 @@ export default function Coupons() {
   const [editing, setEditing] = useState(null); // null | 'new' | coupon.id
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
 
   const fetch = async () => {
     const { data } = await supabase.from('coupons').select('*').order('created_at', { ascending: false });
@@ -80,12 +84,19 @@ export default function Coupons() {
     fetch();
   };
 
-  const deleteCoupon = async (c) => {
-    if (!confirm(`Delete coupon "${c.code}"?`)) return;
-    const { error } = await supabase.from('coupons').delete().eq('id', c.id);
-    if (error) { showToast('Error', error.message, 'error'); return; }
-    showToast('Deleted', `Coupon ${c.code} deleted`, 'success');
-    fetch();
+  const deleteCoupon = (c) => {
+    setConfirmAction({
+      title: 'Delete Coupon',
+      message: `Are you sure you want to delete coupon "${c.code}"?`,
+      onConfirm: async () => {
+        setConfirmAction(prev => ({ ...prev, isLoading: true }));
+        const { error } = await supabase.from('coupons').delete().eq('id', c.id);
+        if (error) { showToast('Error', error.message, 'error'); setConfirmAction(null); return; }
+        showToast('Deleted', `Coupon ${c.code} deleted`, 'success');
+        fetch();
+        setConfirmAction(null);
+      }
+    });
   };
 
   const set = (k) => (e) => setForm(prev => ({ ...prev, [k]: e.target.value }));
@@ -104,56 +115,67 @@ export default function Coupons() {
         )}
       </div>
 
-      {/* Create / Edit form */}
+      {/* Create / Edit form (Drawer) */}
       {editing !== null && (
-        <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-subtle)', borderRadius: 16, padding: 24, marginBottom: 24 }}>
-          <h3 style={{ marginTop: 0, marginBottom: 20 }}>{editing === 'new' ? 'Create Coupon' : 'Edit Coupon'}</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16 }}>
-            <div className="form-group">
-              <label>Code *</label>
-              <input value={form.code} onChange={e => setForm(p => ({ ...p, code: e.target.value.toUpperCase() }))} placeholder="e.g. WELCOME10" />
+        <div className="product-form-modal" onClick={cancel}>
+          <div className="product-form-card" onClick={e => e.stopPropagation()} style={{ maxWidth: 450 }}>
+            <h3 style={{ marginTop: 0, marginBottom: 24 }}>
+              {editing === 'new' ? 'Create Coupon' : 'Edit Coupon'}
+              <button onClick={cancel} className="dash-drawer-close">
+                <X size={16} />
+              </button>
+            </h3>
+            <div style={{ display: 'grid', gap: 16 }}>
+              <div className="form-group">
+                <label>Code *</label>
+                <input value={form.code} onChange={e => setForm(p => ({ ...p, code: e.target.value.toUpperCase() }))} placeholder="e.g. WELCOME10" />
+              </div>
+              <div className="form-group">
+                <label>Type *</label>
+                <CustomSelect 
+                  value={form.type} 
+                  onChange={set('type')} 
+                  options={[
+                    { value: 'percent', label: 'Percentage (%)' },
+                    { value: 'fixed', label: 'Fixed Amount (₦)' }
+                  ]} 
+                />
+              </div>
+              <div className="form-group">
+                <label>Value * {form.type === 'percent' ? '(%)' : '(₦)'}</label>
+                <input type="number" min="0" value={form.value} onChange={set('value')} placeholder={form.type === 'percent' ? '10' : '500'} />
+              </div>
+              <div className="form-group">
+                <label>Min Order Amount (₦)</label>
+                <input type="number" min="0" value={form.min_order_amount} onChange={set('min_order_amount')} placeholder="Optional" />
+              </div>
+              <div className="form-group">
+                <label>Max Uses</label>
+                <input type="number" min="0" value={form.max_uses} onChange={set('max_uses')} placeholder="Unlimited" />
+              </div>
+              <div className="form-group">
+                <label>Expires On</label>
+                <PremiumDateInput value={form.expires_at} onChange={set('expires_at')} />
+              </div>
             </div>
-            <div className="form-group">
-              <label>Type *</label>
-              <select value={form.type} onChange={set('type')} style={{ width: '100%', padding: '12px 36px 12px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.9rem', fontFamily: "'DM Sans', sans-serif", outline: 'none', WebkitAppearance: 'none', appearance: 'none', cursor: 'pointer', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235C5247' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}>
-                <option value="percent">Percentage (%)</option>
-                <option value="fixed">Fixed Amount (₦)</option>
-              </select>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, marginBottom: 24, padding: '16px 0', borderTop: '1px solid var(--border-subtle)', borderBottom: '1px solid var(--border-subtle)' }}>
+              <input
+                type="checkbox"
+                id="is_active"
+                checked={form.is_active}
+                onChange={e => setForm(p => ({ ...p, is_active: e.target.checked }))}
+                style={{ width: 16, height: 16, cursor: 'pointer' }}
+              />
+              <label htmlFor="is_active" style={{ cursor: 'pointer', fontSize: '0.9rem', fontWeight: 700 }}>Active (visible to customers)</label>
             </div>
-            <div className="form-group">
-              <label>Value * {form.type === 'percent' ? '(%)' : '(₦)'}</label>
-              <input type="number" min="0" value={form.value} onChange={set('value')} placeholder={form.type === 'percent' ? '10' : '500'} />
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button className="btn-secondary" onClick={cancel} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px' }}>
+                Cancel
+              </button>
+              <button className="btn-primary" onClick={save} disabled={saving} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px' }}>
+                {saving ? 'Saving...' : 'Save Coupon'}
+              </button>
             </div>
-            <div className="form-group">
-              <label>Min Order Amount (₦)</label>
-              <input type="number" min="0" value={form.min_order_amount} onChange={set('min_order_amount')} placeholder="Optional" />
-            </div>
-            <div className="form-group">
-              <label>Max Uses</label>
-              <input type="number" min="0" value={form.max_uses} onChange={set('max_uses')} placeholder="Unlimited" />
-            </div>
-            <div className="form-group">
-              <label>Expires On</label>
-              <input type="date" value={form.expires_at} onChange={set('expires_at')} />
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, marginBottom: 20 }}>
-            <input
-              type="checkbox"
-              id="is_active"
-              checked={form.is_active}
-              onChange={e => setForm(p => ({ ...p, is_active: e.target.checked }))}
-              style={{ width: 16, height: 16, cursor: 'pointer' }}
-            />
-            <label htmlFor="is_active" style={{ cursor: 'pointer', fontSize: '0.9rem' }}>Active (visible to customers)</label>
-          </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn-primary" onClick={save} disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px' }}>
-              <Check size={16} /> {saving ? 'Saving...' : 'Save Coupon'}
-            </button>
-            <button className="btn-secondary" onClick={cancel} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px' }}>
-              <X size={16} /> Cancel
-            </button>
           </div>
         </div>
       )}
@@ -226,6 +248,12 @@ export default function Coupons() {
           ))}
         </div>
       )}
+
+      <ConfirmModal 
+        isOpen={!!confirmAction} 
+        onClose={() => setConfirmAction(null)} 
+        {...confirmAction} 
+      />
     </div>
   );
 }

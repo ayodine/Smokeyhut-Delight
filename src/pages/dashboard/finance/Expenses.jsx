@@ -2,8 +2,10 @@ import { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, Loader2, FolderOpen, Receipt, Edit2, Check, X, ChevronUp, ChevronDown, DollarSign, Hash, Tag, TrendingDown } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { useToast } from '../../../context/ToastContext';
-import { SkelList, SkelKpiGrid } from '../../../components/Skeleton';
+import { SkelDashHeader, SkelFilterPills, SkelKpiGrid, SkelTable } from '../../../components/Skeleton';
 import Pagination from '../../../components/Pagination';
+import CustomSelect from '../../../components/CustomSelect';
+import ConfirmModal from '../../../components/ConfirmModal';
 
 const fmt = v => `₦${Number(v || 0).toLocaleString('en-NG')}`;
 
@@ -56,6 +58,7 @@ export default function Expenses() {
   const [sortDir, setSortDir]     = useState('desc');
   const [page, setPage]           = useState(1);
   const PER_PAGE = 20;
+  const [confirmAction, setConfirmAction] = useState(null);
   const { showToast } = useToast();
 
   useEffect(() => { fetchAll(); }, []);
@@ -110,20 +113,30 @@ export default function Expenses() {
     fetchAll();
   };
 
-  const deleteExpense = async (id) => {
-    if (!window.confirm('Delete this expense?')) return;
-    setDeleting(id);
-    await supabase.from('expenses').delete().eq('id', id);
-    setExpenses(prev => prev.filter(e => e.id !== id));
-    setDeleting(null);
+  const deleteExpense = (id) => {
+    setConfirmAction({
+      title: 'Delete Expense',
+      message: 'Are you sure you want to delete this expense?',
+      onConfirm: async () => {
+        setConfirmAction(prev => ({ ...prev, isLoading: true }));
+        await supabase.from('expenses').delete().eq('id', id);
+        setExpenses(prev => prev.filter(e => e.id !== id));
+        setConfirmAction(null);
+      }
+    });
   };
 
-  const deleteCategory = async (id) => {
-    if (!window.confirm('Delete this category? Expenses in it will become uncategorised.')) return;
-    setDeleting(id);
-    await supabase.from('expense_categories').delete().eq('id', id);
-    setCategories(prev => prev.filter(c => c.id !== id));
-    setDeleting(null);
+  const deleteCategory = (id) => {
+    setConfirmAction({
+      title: 'Delete Category',
+      message: 'Delete this category? Expenses in it will become uncategorised.',
+      onConfirm: async () => {
+        setConfirmAction(prev => ({ ...prev, isLoading: true }));
+        await supabase.from('expense_categories').delete().eq('id', id);
+        setCategories(prev => prev.filter(c => c.id !== id));
+        setConfirmAction(null);
+      }
+    });
   };
 
   const startEditCat = (cat) => { setEditingCatId(cat.id); setEditingCatVal(cat.name); };
@@ -181,8 +194,10 @@ export default function Expenses() {
 
   if (loading) return (
     <div>
+      <SkelDashHeader hasButton />
+      <SkelFilterPills count={5} />
       <SkelKpiGrid count={4} />
-      <SkelList rows={5} height={72} />
+      <SkelTable rows={5} cols={4} />
     </div>
   );
 
@@ -370,11 +385,16 @@ export default function Expenses() {
 
       {/* ── MODAL ── */}
       {showModal && (
-        <div className="product-form-modal">
-          <div className="product-form-card" style={{ maxWidth: 460 }}>
-            <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              {modalType === 'expense' ? <Receipt size={20} color="var(--red)" /> : <FolderOpen size={20} color="var(--red)" />}
-              {modalType === 'expense' ? 'Add Expense' : 'New Category'}
+        <div className="product-form-modal" onClick={closeModal}>
+          <div className="product-form-card" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <h3 style={{ marginTop: 0, marginBottom: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {modalType === 'expense' ? <Receipt size={20} color="var(--red)" /> : <FolderOpen size={20} color="var(--red)" />}
+                {modalType === 'expense' ? 'Add Expense' : 'New Category'}
+              </div>
+              <button onClick={closeModal} className="dash-drawer-close">
+                <X size={16} />
+              </button>
             </h3>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 24 }}>
               {modalType === 'expense' ? 'Record a new business expense.' : 'Create an expense category to organise your costs.'}
@@ -384,10 +404,14 @@ export default function Expenses() {
               <>
                 <div className="form-group">
                   <label>Category</label>
-                  <select value={form.category_id} onChange={e => setForm(p => ({ ...p, category_id: e.target.value }))} style={SELECT_STYLE}>
-                    <option value="">— Uncategorised —</option>
-                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
+                  <CustomSelect
+                    value={form.category_id}
+                    onChange={e => setForm(p => ({ ...p, category_id: e.target.value }))}
+                    options={[
+                      { value: '', label: '— Uncategorised —' },
+                      ...categories.map(c => ({ value: c.id, label: c.name }))
+                    ]}
+                  />
                 </div>
                 <div className="form-row">
                   <div className="form-group">
@@ -435,7 +459,7 @@ export default function Expenses() {
             )}
 
             <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-              <button onClick={closeModal} style={{ flex: 1, padding: 12, background: 'var(--black2)', border: '1px solid var(--border-subtle)', borderRadius: 8, cursor: 'pointer', fontWeight: 700, color: 'var(--text)' }}>
+              <button onClick={closeModal} className="btn-secondary" style={{ flex: 1 }}>
                 Cancel
               </button>
               <button
@@ -450,6 +474,12 @@ export default function Expenses() {
           </div>
         </div>
       )}
+
+      <ConfirmModal 
+        isOpen={!!confirmAction} 
+        onClose={() => setConfirmAction(null)} 
+        {...confirmAction} 
+      />
     </div>
   );
 }

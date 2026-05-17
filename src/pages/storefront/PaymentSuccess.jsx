@@ -54,7 +54,7 @@ export default function PaymentSuccess() {
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
             <Loader2 size={64} className="spin" color="var(--red)" />
             <h2 style={{ fontSize: '2rem', fontWeight: 800 }}>Verifying <span>Payment</span></h2>
-            <p style={{ color: 'var(--text-muted)' }}>Please wait while we confirm your transaction with Paystack...</p>
+            <p style={{ color: 'var(--text-muted)' }}>Please wait while we confirm your order...</p>
           </div>
         )}
 

@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Users, DollarSign, Package, Trash2, Download, Mail, Send, Loader2 } from 'lucide-react';
+import { Users, DollarSign, Package, Trash2, Download, Mail, Send, Loader2, UserPlus, Repeat2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { SkelTable } from '../../components/Skeleton';
+import { SkelDashHeader, SkelKpiGrid, SkelTable } from '../../components/Skeleton';
 import Pagination from '../../components/Pagination';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
+import CustomSelect from '../../components/CustomSelect';
+import { useToast } from '../../context/ToastContext';
+import ConfirmModal from '../../components/ConfirmModal';
 
 const fmt = (n) => '₦' + n.toLocaleString();
 
@@ -34,6 +37,8 @@ export default function Customers() {
   const [sending, setSending] = useState(false);
   const [form, setForm] = useState({ name: '', subject: '', body: '', audience: 'all' });
   const [sendResult, setSendResult] = useState(null);
+  const [confirmAction, setConfirmAction] = useState(null);
+  const { showToast } = useToast();
 
   useEffect(() => { fetchData(); }, []);
   useEffect(() => { if (tab === 'campaigns') fetchCampaigns(); }, [tab]);
@@ -122,56 +127,79 @@ export default function Customers() {
     XLSX.writeFile(wb, `smokeyhut-customers-${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  const handleDelete = async (phone) => {
-    if (window.confirm('Remove this customer from the directory? Their orders will remain.')) {
-      await supabase.from('orders').update({ customer_name: 'Deleted Customer', customer_email: null }).eq('customer_phone', phone);
-      setCustomers(prev => prev.filter(c => c.id !== phone));
-    }
+  const handleDelete = (phone) => {
+    setConfirmAction({
+      title: 'Remove Customer',
+      message: 'Remove this customer from the directory? Their orders will remain.',
+      onConfirm: async () => {
+        setConfirmAction(prev => ({ ...prev, isLoading: true }));
+        await supabase.from('orders').update({ customer_name: 'Deleted Customer', customer_email: null }).eq('customer_phone', phone);
+        setCustomers(prev => prev.filter(c => c.id !== phone));
+        showToast('Customer removed', '', 'success');
+        setConfirmAction(null);
+      }
+    });
   };
 
   // ── Send campaign ────────────────────────────────────────────────────────
-  const sendCampaign = async () => {
+  const sendCampaign = () => {
     if (!form.name.trim() || !form.subject.trim() || !form.body.trim()) {
-      return alert('Please fill in campaign name, subject, and message body.');
+      return showToast('Error', 'Please fill in campaign name, subject, and message body.', 'error');
     }
     if (audienceList.length === 0) {
-      return alert('No recipients with email addresses match the selected audience filter.');
+      return showToast('Error', 'No recipients with email addresses match the selected audience filter.', 'error');
     }
-    if (!window.confirm(`Send "${form.subject}" to ${audienceList.length} recipient${audienceList.length !== 1 ? 's' : ''}?`)) return;
 
-    setSending(true);
-    setSendResult(null);
+    setConfirmAction({
+      title: 'Send Campaign',
+      message: `Send "${form.subject}" to ${audienceList.length} recipient${audienceList.length !== 1 ? 's' : ''}?`,
+      isDestructive: false,
+      confirmText: 'Send Now',
+      onConfirm: async () => {
+        setConfirmAction(prev => ({ ...prev, isLoading: true }));
+        setSending(true);
+        setSendResult(null);
 
-    try {
-      const recipients = audienceList.map(c => ({ email: c.email, name: c.name || '' }));
-      const { data: result, error } = await supabase.functions.invoke('send-campaign', {
-        body: { subject: form.subject, body: form.body, recipients },
-      });
+        try {
+          const recipients = audienceList.map(c => ({ email: c.email, name: c.name || '' }));
+          const { data: result, error } = await supabase.functions.invoke('send-campaign', {
+            body: { subject: form.subject, body: form.body, recipients },
+          });
 
-      if (error) throw new Error(error.message || 'Send failed');
+          if (error) throw new Error(error.message || 'Send failed');
 
-      // Save campaign record
-      await supabase.from('email_campaigns').insert({
-        name: form.name,
-        subject: form.subject,
-        body: form.body,
-        audience: form.audience,
-        recipient_count: recipients.length,
-        sent_count: result?.sent ?? recipients.length,
-        status: result?.failed > 0 ? 'partial' : 'sent',
-      });
+          // Save campaign record
+          await supabase.from('email_campaigns').insert({
+            name: form.name,
+            subject: form.subject,
+            body: form.body,
+            audience: form.audience,
+            recipient_count: recipients.length,
+            sent_count: result?.sent ?? recipients.length,
+            status: result?.failed > 0 ? 'partial' : 'sent',
+          });
 
-      setSendResult({ sent: result?.sent ?? recipients.length, failed: result?.failed ?? 0 });
-      setForm({ name: '', subject: '', body: '', audience: 'all' });
-      fetchCampaigns();
-    } catch (err) {
-      alert('Error sending campaign: ' + err.message);
-    } finally {
-      setSending(false);
-    }
+          setSendResult({ sent: result?.sent ?? recipients.length, failed: result?.failed ?? 0 });
+          setForm({ name: '', subject: '', body: '', audience: 'all' });
+          showToast('Success', `Campaign sent`, 'success');
+          fetchCampaigns();
+        } catch (err) {
+          showToast('Error sending campaign', err.message, 'error');
+        } finally {
+          setSending(false);
+          setConfirmAction(null);
+        }
+      }
+    });
   };
 
-  if (loading) return <SkelTable rows={8} cols={5} />;
+  if (loading) return (
+    <div>
+      <SkelDashHeader hasButton />
+      <SkelKpiGrid count={3} />
+      <SkelTable rows={8} cols={5} />
+    </div>
+  );
 
   // ── Styles ───────────────────────────────────────────────────────────────
   const tabBtn = (active) => ({
@@ -231,6 +259,16 @@ export default function Customers() {
               <div className="kpi-value">{customers.reduce((s, c) => s + c.orders, 0)}</div>
               <div className="kpi-label">Total Orders</div>
             </div>
+            <div className="kpi-card blue">
+              <div className="kpi-icon"><UserPlus size={24} /></div>
+              <div className="kpi-value">{customers.filter(c => c.orders === 1).length}</div>
+              <div className="kpi-label">New Customers</div>
+            </div>
+            <div className="kpi-card green">
+              <div className="kpi-icon"><Repeat2 size={24} /></div>
+              <div className="kpi-value">{customers.filter(c => c.orders >= 2).length}</div>
+              <div className="kpi-label">Returning Customers</div>
+            </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
@@ -260,7 +298,20 @@ export default function Customers() {
                 <tbody>
                   {pagedCustomers.map(c => (
                     <tr key={c.id}>
-                      <td style={{ fontWeight: 700 }}>{c.name}</td>
+                      <td style={{ fontWeight: 700 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span>{c.name}</span>
+                          <span style={{
+                            fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
+                            padding: '2px 8px', borderRadius: 20, flexShrink: 0,
+                            ...(c.orders === 1
+                              ? { background: '#dbeafe', color: '#1d4ed8' }
+                              : { background: '#dcfce7', color: '#15803d' })
+                          }}>
+                            {c.orders === 1 ? 'New' : 'Returning'}
+                          </span>
+                        </div>
+                      </td>
                       <td>{c.email || <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
                       <td>{c.phone || '—'}</td>
                       <td style={{ fontWeight: 600 }}>{c.orders}</td>
@@ -321,13 +372,11 @@ export default function Customers() {
               </div>
               <div className="form-group" style={{ margin: 0 }}>
                 <label>Target Audience</label>
-                <select
+                <CustomSelect
                   value={form.audience}
                   onChange={e => setForm(f => ({ ...f, audience: e.target.value }))}
-                  style={selectStyle}
-                >
-                  {AUDIENCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
+                  options={AUDIENCE_OPTIONS}
+                />
               </div>
             </div>
 
@@ -437,7 +486,11 @@ export default function Customers() {
             )}
           </div>
         </>
-      )}
+      )}      <ConfirmModal 
+        isOpen={!!confirmAction} 
+        onClose={() => setConfirmAction(null)} 
+        {...confirmAction} 
+      />
     </div>
   );
 }

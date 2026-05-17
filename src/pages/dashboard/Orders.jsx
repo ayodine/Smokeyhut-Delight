@@ -1,12 +1,16 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Search, Loader2, FileText, Plus, Trash2, X, ChevronUp, ChevronDown, Clock, Truck, CheckCircle, XCircle, RefreshCw, RotateCcw, AlertTriangle, Layers } from 'lucide-react';
-import { SkelTable, SkelLine, SkelKpiGrid } from '../../components/Skeleton';
+import { Search, Loader2, FileText, Plus, Trash2, X, ChevronUp, ChevronDown, Clock, Truck, CheckCircle, XCircle, RefreshCw, RotateCcw, AlertTriangle, Layers, BellRing, Sparkles } from 'lucide-react';
+import { SkelTable, SkelKpiGrid } from '../../components/Skeleton';
 import Pagination from '../../components/Pagination';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { useOutletContext } from 'react-router-dom';
 import { fetchFlatAreas } from '../../lib/deliveryMatcher';
+import CustomSelect from '../../components/CustomSelect';
+import BulkActionBar from '../../components/BulkActionBar';
+import DashCalendar from '../../components/DashCalendar';
+import ConfirmModal from '../../components/ConfirmModal';
 
 const fmt = (n) => '₦' + Number(n).toLocaleString();
 const statuses = ['all', 'pending', 'processing', 'shipped', 'delivered', 'cancelled'];
@@ -42,7 +46,8 @@ function generateInvoice(order) {
   const items = order.order_items || [];
   const deliveryFee = order.delivery_fee || 0;
   const couponDiscount = order.coupon_discount || 0;
-  const subtotal = items.reduce((s, i) => s + (i.price * i.qty), 0) || ((order.total || 0) + couponDiscount - deliveryFee);
+  let subtotal = items.reduce((s, i) => s + (i.price * i.qty), 0);
+  if (!subtotal) subtotal = (order.total || 0) + couponDiscount;
   const dateStr = new Date(order.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' });
   const channel = getChannel(order.notes);
   const notes = order.notes ? order.notes.replace(/^\[via .+?\]\n?/, '') : '';
@@ -147,10 +152,10 @@ function generateInvoice(order) {
   <hr class="divider" />
 
   <div class="row"><span>Subtotal</span><span>₦${subtotal.toLocaleString()}</span></div>
-  <div class="row"><span>Delivery</span><span>${deliveryFee > 0 ? '₦' + deliveryFee.toLocaleString() : 'Free'}</span></div>
+  <div class="row" style="color: #c0201f; font-weight: 700;"><span>Delivery (Pay on Delivery)</span><span>${deliveryFee > 0 ? '₦' + deliveryFee.toLocaleString() : 'Free'}</span></div>
   ${couponDiscount > 0 ? `<div class="row" style="color:#16a34a"><span>Discount (${order.coupon_code})</span><span>−₦${couponDiscount.toLocaleString()}</span></div>` : ''}
   ${notes ? `<div style="font-size:9px;color:#555;margin:2mm 0">Notes: ${notes}</div>` : ''}
-  <div class="row total"><span>TOTAL</span><span>₦${Number(order.total).toLocaleString()}</span></div>
+  <div class="row total"><span>AMOUNT PAID UPFRONT</span><span>₦${Number(order.total).toLocaleString()}</span></div>
 
   <div class="footer">
     <hr class="divider" />
@@ -180,7 +185,7 @@ function currentTime() {
 
 const emptyNewOrder = {
   name: '', phone: '', email: '', address: '', store: '',
-  channel: 'WhatsApp', payment: 'cash', notes: '',
+  channel: 'WhatsApp', payment: 'bank_transfer', notes: '',
   items: [{ product: '', name: '', qty: 1, price: '' }],
   zoneId: '', deliveryFee: 0,
   orderDate: todayDate(), orderTime: currentTime(),
@@ -192,6 +197,7 @@ export default function Orders() {
   const { showToast } = useToast();
   const isAdmin = userRole === 'Admin';
   const canCreateOrder = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Orders:create');
+  const canCancelOrder = isAdmin || (userPermissions || []).includes('Orders:cancel');
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
   const [storeList, setStoreList] = useState([]);
@@ -216,8 +222,30 @@ export default function Orders() {
   const [trashView, setTrashView] = useState(false);
   const [deletedOrders, setDeletedOrders] = useState([]);
   const [dateFilter, setDateFilter] = useState(''); // YYYY-MM-DD
+  const [confirmAction, setConfirmAction] = useState(null);
   const [sourceFilter, setSourceFilter] = useState('all'); // 'all' | 'storefront' | 'whatsapp'
   const [newOrderAlert, setNewOrderAlert] = useState(null); // { id, name, total }
+  
+  // Auto-clear new order alert after 10 seconds
+  useEffect(() => {
+    if (!newOrderAlert) return;
+    const t = setTimeout(() => setNewOrderAlert(null), 10000);
+    return () => clearTimeout(t);
+  }, [newOrderAlert]);
+
+  // Bulk action selections state
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [selectedTrashIds, setSelectedTrashIds] = useState([]);
+
+  // Auto-reset selections when view or filters change
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [filter, sourceFilter, page, trashView]);
+
+  useEffect(() => {
+    setSelectedTrashIds([]);
+  }, [trashView]);
+
   const [realtimeStatus, setRealtimeStatus] = useState('connecting'); // 'connecting' | 'ok' | 'error'
   const audioCtxRef = useRef(null);
   const mountedRef = useRef(true);
@@ -272,7 +300,14 @@ export default function Orders() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, async (payload) => {
         const order = payload.new;
         if (!mountedRef.current) return;
-        if (storeFilter && String(order.store_id) !== String(storeFilter)) return;
+        
+        // Safe check for storeFilter matching
+        if (storeFilter && order.store_id !== null && order.store_id !== undefined && String(order.store_id) !== String(storeFilter)) {
+          return;
+        }
+
+        // Short delay to allow order_items to be inserted by the sequential API/edge-function calls
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
         // Fetch order_items for the new order
         const { data: items } = await supabase.from('order_items').select('*').eq('order_id', order.id);
@@ -327,14 +362,14 @@ export default function Orders() {
 
     const buildBase = () => {
       let q = supabase.from('orders').select('*, order_items(*)');
-      if (storeFilter) q = q.eq('store_id', storeFilter);
+      if (storeFilter) q = q.or(`store_id.eq.${storeFilter},store_id.is.null`);
       return q;
     };
 
     // Deleted orders only need summary columns — skip order_items join to save egress
     const buildDeletedBase = () => {
       let q = supabase.from('orders').select('id, customer_name, customer_email, customer_phone, delivery_address, total, status, created_at, deleted_at, store_id, notes');
-      if (storeFilter) q = q.eq('store_id', storeFilter);
+      if (storeFilter) q = q.or(`store_id.eq.${storeFilter},store_id.is.null`);
       return q;
     };
 
@@ -357,49 +392,27 @@ export default function Orders() {
   };
 
   const updateStatus = async (id, newStatus) => {
-    // Guard: only decrement stock once, when transitioning TO 'shipped'
-    if (newStatus === 'shipped') {
-      // Fetch current DB status to prevent double-decrement after page refresh
-      const { data: current } = await supabase.from('orders').select('status').eq('id', id).single();
-      if (current?.status !== 'shipped') {
-        // Always fetch order_items fresh from DB — do NOT read from React state,
-        // because the realtime handler can overwrite state with empty items before
-        // order_items are inserted (race condition on manual orders).
-        const { data: orderItems } = await supabase.from('order_items').select('product_id, qty').eq('order_id', id);
-        const validItems = (orderItems || []).filter(i => i.product_id);
-        if (validItems.length > 0) {
-          const productIds = [...new Set(validItems.map(i => String(i.product_id)))];
-          const { data: productStock } = await supabase.from('products').select('id, stock').in('id', productIds);
-          if (productStock?.length) {
-            const stockMap = Object.fromEntries(productStock.map(p => [String(p.id), p.stock ?? 0]));
-            const qtyMap = {};
-            validItems.forEach(i => {
-              qtyMap[String(i.product_id)] = (qtyMap[String(i.product_id)] || 0) + (i.qty || 0);
-            });
-            await Promise.all(
-              Object.entries(qtyMap).map(([pid, qty]) =>
-                supabase.from('products').update({ stock: Math.max(0, (stockMap[pid] ?? 0) - qty) }).eq('id', pid)
-              )
-            );
-          }
-        }
-      }
-    }
-
     await supabase.from('orders').update({ status: newStatus }).eq('id', id);
     setOrders(prev => prev.map(o => o.id === id ? { ...o, status: newStatus } : o));
   };
 
-  const deleteOrder = async (id) => {
-    if (!window.confirm('Move this order to trash? You can recover it later.')) return;
-    const now = new Date().toISOString();
-    const { error } = await supabase.from('orders').update({ deleted_at: now }).eq('id', id);
-    if (!error) {
-      const moved = orders.find(o => o.id === id);
-      setOrders(prev => prev.filter(o => o.id !== id));
-      if (moved) setDeletedOrders(prev => [{ ...moved, deleted_at: now }, ...prev]);
-      showToast('Order moved to trash', 'You can recover it from Trash.', 'info');
-    }
+  const deleteOrder = (id) => {
+    setConfirmAction({
+      title: 'Move to Trash?',
+      message: 'You can recover this order later from the Trash.',
+      onConfirm: async () => {
+        setConfirmAction(prev => ({ ...prev, isLoading: true }));
+        const now = new Date().toISOString();
+        const { error } = await supabase.from('orders').update({ deleted_at: now }).eq('id', id);
+        if (!error) {
+          const moved = orders.find(o => o.id === id);
+          setOrders(prev => prev.filter(o => o.id !== id));
+          if (moved) setDeletedOrders(prev => [{ ...moved, deleted_at: now }, ...prev]);
+          showToast('Order moved to trash', 'You can recover it from Trash.', 'info');
+        }
+        setConfirmAction(null);
+      }
+    });
   };
 
   const restoreOrder = async (id) => {
@@ -412,14 +425,111 @@ export default function Orders() {
     }
   };
 
-  const permanentDelete = async (id) => {
-    if (!window.confirm('Permanently delete this order? This cannot be undone.')) return;
-    await supabase.from('order_items').delete().eq('order_id', id);
-    const { error } = await supabase.from('orders').delete().eq('id', id);
-    if (!error) {
-      setDeletedOrders(prev => prev.filter(o => o.id !== id));
-      showToast('Order permanently deleted', '', 'info');
+  const permanentDelete = (id) => {
+    setConfirmAction({
+      title: 'Permanently Delete?',
+      message: 'This action cannot be undone.',
+      isDestructive: true,
+      onConfirm: async () => {
+        setConfirmAction(prev => ({ ...prev, isLoading: true }));
+        await supabase.from('order_items').delete().eq('order_id', id);
+        const { error } = await supabase.from('orders').delete().eq('id', id);
+        if (!error) {
+          setDeletedOrders(prev => prev.filter(o => o.id !== id));
+          showToast('Order permanently deleted', '', 'info');
+        }
+        setConfirmAction(null);
+      }
+    });
+  };
+
+  // ── Bulk Actions Helpers ──────────────────────────────────
+  const handleBulkStatusUpdate = async (newStatus) => {
+    if (selectedIds.length === 0) return;
+    try {
+      setLoading(true);
+      const { error } = await supabase.from('orders').update({ status: newStatus }).in('id', selectedIds);
+      if (!error) {
+        setOrders(prev => prev.map(o => selectedIds.includes(o.id) ? { ...o, status: newStatus } : o));
+        setSelectedIds([]);
+        showToast('Bulk Status Updated', `Successfully updated ${selectedIds.length} orders to ${newStatus}`, 'success');
+      } else {
+        showToast('Update failed', error.message, 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Update failed', 'An unexpected error occurred', 'error');
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const handleBulkMoveToTrash = () => {
+    if (selectedIds.length === 0) return;
+    setConfirmAction({
+      title: 'Move Selected to Trash?',
+      message: `Are you sure you want to move ${selectedIds.length} selected orders to the trash?`,
+      onConfirm: async () => {
+        setConfirmAction(prev => ({ ...prev, isLoading: true }));
+        const now = new Date().toISOString();
+        const { error } = await supabase.from('orders').update({ deleted_at: now }).in('id', selectedIds);
+        if (!error) {
+          const moved = orders.filter(o => selectedIds.includes(o.id)).map(o => ({ ...o, deleted_at: now }));
+          setOrders(prev => prev.filter(o => !selectedIds.includes(o.id)));
+          setDeletedOrders(prev => [...moved, ...prev]);
+          setSelectedIds([]);
+          showToast('Orders moved to trash', `${moved.length} orders moved to trash`, 'info');
+        } else {
+          showToast('Failed to delete', error.message, 'error');
+        }
+        setConfirmAction(null);
+      }
+    });
+  };
+
+  const handleBulkRecover = async () => {
+    if (selectedTrashIds.length === 0) return;
+    try {
+      setLoading(true);
+      const { error } = await supabase.from('orders').update({ deleted_at: null }).in('id', selectedTrashIds);
+      if (!error) {
+        const moved = deletedOrders.filter(o => selectedTrashIds.includes(o.id)).map(o => ({ ...o, deleted_at: null }));
+        setDeletedOrders(prev => prev.filter(o => !selectedTrashIds.includes(o.id)));
+        setOrders(prev => [...moved, ...prev]);
+        setSelectedTrashIds([]);
+        showToast('Orders restored', `${moved.length} orders successfully restored`, 'success');
+      } else {
+        showToast('Failed to restore', error.message, 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Error', 'An unexpected error occurred', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBulkPermanentDelete = () => {
+    if (selectedTrashIds.length === 0) return;
+    setConfirmAction({
+      title: 'Delete Selected Forever?',
+      message: `Are you sure you want to permanently delete the ${selectedTrashIds.length} selected orders? This action cannot be undone.`,
+      isDestructive: true,
+      onConfirm: async () => {
+        setConfirmAction(prev => ({ ...prev, isLoading: true }));
+        // Delete child items first to satisfy foreign keys
+        await supabase.from('order_items').delete().in('order_id', selectedTrashIds);
+        const { error } = await supabase.from('orders').delete().in('id', selectedTrashIds);
+        if (!error) {
+          setDeletedOrders(prev => prev.filter(o => !selectedTrashIds.includes(o.id)));
+          setSelectedTrashIds([]);
+          showToast('Permanently deleted', 'Selected orders deleted forever', 'info');
+        } else {
+          showToast('Failed to delete', error.message, 'error');
+        }
+        setConfirmAction(null);
+      }
+    });
   };
 
   // ── Manual order helpers ──────────────────────────────────
@@ -506,8 +616,8 @@ export default function Orders() {
     const c = [...prev]; const it = [...c[oIdx].items]; it[iIdx] = { ...it[iIdx], [field]: value };
     c[oIdx] = { ...c[oIdx], items: it }; return c;
   });
-  const addBulkItemRow = (oIdx) => setBulkOrders(prev => { const c = [...prev]; c[oIdx].items = [...c[oIdx].items, { product: '', name: '', qty: 1, price: '' }]; return c; });
-  const removeBulkItemRow = (oIdx, iIdx) => setBulkOrders(prev => { const c = [...prev]; c[oIdx].items = c[oIdx].items.filter((_, i) => i !== iIdx); return c; });
+  const addBulkItemRow = (oIdx) => setBulkOrders(prev => { const c = [...prev]; c[oIdx] = { ...c[oIdx], items: [...c[oIdx].items, { product: '', name: '', qty: 1, price: '' }] }; return c; });
+  const removeBulkItemRow = (oIdx, iIdx) => setBulkOrders(prev => { const c = [...prev]; c[oIdx] = { ...c[oIdx], items: c[oIdx].items.filter((_, i) => i !== iIdx) }; return c; });
   const pickBulkProduct = (oIdx, iIdx, productId) => {
     const p = products.find(pr => String(pr.id) === String(productId));
     setBulkOrders(prev => {
@@ -571,7 +681,7 @@ export default function Orders() {
       setShowBulkOrder(false);
       setBulkOrders([{ ...emptyNewOrder, orderDate: todayDate(), orderTime: currentTime() }]);
       await fetchData();
-      showToast('Success', `${orderInsertData.length} manual order(s) added successfully`, 'success');
+      showToast('Success', `${validOrders.length} manual order(s) added successfully`, 'success');
     } catch (err) {
       console.error('Bulk order error:', err);
       showToast('Save failed', err.message || 'Could not save bulk orders', 'error');
@@ -641,13 +751,8 @@ export default function Orders() {
 
   if (loading) return (
     <div>
-      <SkelKpiGrid count={4} />
-      <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-        <SkelLine style={{ width: 220, height: 36, borderRadius: 10 }} />
-        <SkelLine style={{ width: 120, height: 36, borderRadius: 10 }} />
-        <SkelLine style={{ width: 120, height: 36, borderRadius: 10 }} />
-      </div>
-      <SkelTable rows={8} cols={5} />
+      <SkelKpiGrid count={5} />
+      <SkelTable rows={8} cols={8} />
     </div>
   );
 
@@ -656,20 +761,106 @@ export default function Orders() {
       {/* New order alert banner */}
       {newOrderAlert && (
         <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          background: 'linear-gradient(90deg, #1a4a1a, #1e5c1e)',
-          border: '1px solid #2d7a2d', borderRadius: 12, padding: '12px 18px',
-          marginBottom: 16, gap: 12, animation: 'slideDown 0.3s ease',
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          zIndex: 9999,
+          width: 340,
+          background: 'var(--white)',
+          border: '1px solid var(--border-subtle)',
+          borderLeft: '4px solid var(--red)',
+          borderRadius: '16px',
+          boxShadow: '0 16px 48px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)',
+          overflow: 'hidden',
+          animation: 'toastSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards',
         }}>
-          <style>{`@keyframes slideDown { from { opacity:0; transform:translateY(-10px) } to { opacity:1; transform:translateY(0) } }`}</style>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: '1.3rem' }}>🛎️</span>
-            <div>
-              <div style={{ color: '#7fff7f', fontWeight: 700, fontSize: '0.9rem' }}>New order received!</div>
-              <div style={{ color: '#aaffaa', fontSize: '0.8rem' }}>{newOrderAlert.name} — ₦{Number(newOrderAlert.total).toLocaleString()}</div>
+          <style>{`
+            @keyframes toastSlideIn {
+              from { opacity: 0; transform: translateX(60px) scale(0.97); }
+              to   { opacity: 1; transform: translateX(0)   scale(1);    }
+            }
+            @keyframes bellPulse {
+              0%   { box-shadow: 0 0 0 0   rgba(192,32,31,0.35); }
+              70%  { box-shadow: 0 0 0 8px rgba(192,32,31,0);    }
+              100% { box-shadow: 0 0 0 0   rgba(192,32,31,0);    }
+            }
+            @keyframes shrinkBar {
+              from { width: 100%; }
+              to   { width: 0%;   }
+            }
+          `}</style>
+
+          {/* Body */}
+          <div style={{ padding: '16px 16px 12px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+              background: 'rgba(192,32,31,0.08)', border: '1px solid rgba(192,32,31,0.15)',
+              color: 'var(--red)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              animation: 'bellPulse 2s infinite',
+            }}>
+              <BellRing size={18} />
             </div>
+
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+                <span style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text)', fontFamily: "'Mona Sans', sans-serif" }}>
+                  New Order
+                </span>
+                <Sparkles size={13} style={{ color: '#f59e0b', flexShrink: 0 }} />
+              </div>
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: 1.4, marginBottom: 8 }}>
+                <strong style={{ color: 'var(--text)', fontWeight: 700 }}>{newOrderAlert.name}</strong> just placed an order
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="status-badge pending">Pending</span>
+                <span style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--text)', fontFamily: "'Mona Sans', sans-serif" }}>
+                  ₦{Number(newOrderAlert.total).toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setNewOrderAlert(null)}
+              style={{
+                background: 'none', border: 'none', color: 'var(--text-muted)',
+                cursor: 'pointer', padding: 4, borderRadius: '50%', flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <X size={15} />
+            </button>
           </div>
-          <button onClick={() => setNewOrderAlert(null)} style={{ background: 'none', border: 'none', color: '#7fff7f', cursor: 'pointer', fontSize: '1.2rem', lineHeight: 1 }}>×</button>
+
+          {/* Actions */}
+          <div style={{ display: 'flex', gap: 8, padding: '0 16px 14px' }}>
+            <button
+              onClick={() => { setSearch(newOrderAlert.id); setNewOrderAlert(null); }}
+              style={{
+                flex: 1, background: 'var(--red)', color: '#fff', border: 'none',
+                borderRadius: 8, padding: '8px 12px', fontSize: '0.82rem', fontWeight: 700,
+                cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
+              }}
+            >
+              View Order
+            </button>
+            <button
+              onClick={() => setNewOrderAlert(null)}
+              style={{
+                background: 'var(--black2)', color: 'var(--text-muted)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 8, padding: '8px 14px', fontSize: '0.82rem', fontWeight: 700,
+                cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
+
+          {/* Timer bar */}
+          <div style={{
+            height: 3, background: 'var(--red)', opacity: 0.6,
+            animation: 'shrinkBar 10s linear forwards',
+          }} />
         </div>
       )}
       <div className="dash-card-header" style={{ marginBottom: 20, alignItems: 'flex-start' }}>
@@ -714,27 +905,10 @@ export default function Orders() {
               <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 12, top: 12 }} />
               <input className="dash-search" placeholder="Search orders..." value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 40 }} />
             </div>
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <input
-                type="date"
-                value={dateFilter}
-                onChange={e => { setDateFilter(e.target.value); if (e.target.value) setPeriod('all'); }}
-                style={{
-                  padding: '9px 12px', borderRadius: 8, fontSize: '0.85rem',
-                  border: `1px solid ${dateFilter ? 'var(--red)' : 'var(--border-subtle)'}`,
-                  background: 'var(--white)', color: 'var(--text)',
-                  fontFamily: "'DM Sans',sans-serif", cursor: 'pointer',
-                  outline: 'none',
-                }}
-              />
-              {dateFilter && (
-                <button
-                  onClick={() => setDateFilter('')}
-                  style={{ position: 'absolute', right: 8, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1rem', lineHeight: 1, padding: 0 }}
-                  title="Clear date"
-                >×</button>
-              )}
-            </div>
+            <DashCalendar
+              value={dateFilter}
+              onChange={v => { setDateFilter(v); if (v) setPeriod('all'); }}
+            />
             {/* Test chime button — helps "unlock" AudioContext after first interaction */}
             <button
               onClick={() => playChime()}
@@ -810,6 +984,20 @@ export default function Orders() {
                 <table className="dash-table">
                   <thead>
                     <tr>
+                      <th style={{ width: 44, textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={deletedOrders.length > 0 && deletedOrders.every(o => selectedTrashIds.includes(o.id))}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedTrashIds(deletedOrders.map(o => o.id));
+                            } else {
+                              setSelectedTrashIds([]);
+                            }
+                          }}
+                          style={{ cursor: 'pointer', width: 16, height: 16, accentColor: 'var(--red)' }}
+                        />
+                      </th>
                       <th>Order ID</th>
                       <th>Customer</th>
                       <th>Total</th>
@@ -820,9 +1008,32 @@ export default function Orders() {
                     </tr>
                   </thead>
                   <tbody>
-                    {deletedOrders.map(order => (
-                      <tr key={order.id} style={{ opacity: 0.8 }}>
-                        <td style={{ fontWeight: 700, color: 'var(--text-muted)' }}>{order.id}</td>
+                    {deletedOrders.map(order => {
+                      const isSelected = selectedTrashIds.includes(order.id);
+                      return (
+                        <tr 
+                          key={order.id} 
+                          style={{ 
+                            opacity: 0.8,
+                            background: isSelected ? 'rgba(0, 0, 0, 0.04)' : undefined,
+                            borderLeft: isSelected ? '3px solid var(--text-muted)' : undefined,
+                          }}
+                        >
+                          <td style={{ width: 44, textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedTrashIds([...selectedTrashIds, order.id]);
+                                } else {
+                                  setSelectedTrashIds(selectedTrashIds.filter(id => id !== order.id));
+                                }
+                              }}
+                              style={{ cursor: 'pointer', width: 16, height: 16, accentColor: 'var(--red)' }}
+                            />
+                          </td>
+                          <td style={{ fontWeight: 700, color: 'var(--text-muted)' }}>{order.id}</td>
                         <td>
                           <div style={{ fontWeight: 700 }}>{order.customer_name}</div>
                           <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{order.customer_phone}</div>
@@ -852,7 +1063,7 @@ export default function Orders() {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                    ); })}
                   </tbody>
                 </table>
               </div>
@@ -914,6 +1125,22 @@ export default function Orders() {
         <div style={{ overflowX: 'auto' }}>
           <table className="dash-table">
             <thead><tr>
+              <th style={{ width: 44, textAlign: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={paged.length > 0 && paged.every(o => selectedIds.includes(o.id))}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      const newSel = [...new Set([...selectedIds, ...paged.map(o => o.id)])];
+                      setSelectedIds(newSel);
+                    } else {
+                      const pageIds = paged.map(o => o.id);
+                      setSelectedIds(selectedIds.filter(id => !pageIds.includes(id)));
+                    }
+                  }}
+                  style={{ cursor: 'pointer', width: 16, height: 16, accentColor: 'var(--red)' }}
+                />
+              </th>
               <th style={thStyle('id')} onClick={() => handleSort('id')}>ID <SortIcon col="id" /></th>
               <th style={thStyle('customer_name')} onClick={() => handleSort('customer_name')}>Customer <SortIcon col="customer_name" /></th>
               <th style={thStyle('items')} onClick={() => handleSort('items')}>Items <SortIcon col="items" /></th>
@@ -926,9 +1153,31 @@ export default function Orders() {
               {paged.map(order => {
                 const itemsCount = order.order_items?.length || 0;
                 const channel = getChannel(order.notes);
+                const isSelected = selectedIds.includes(order.id);
                 return (
                   <React.Fragment key={order.id}>
-                    <tr style={{ cursor: 'pointer' }} onClick={() => setExpandedId(expandedId === order.id ? null : order.id)}>
+                    <tr 
+                      style={{ 
+                        cursor: 'pointer',
+                        background: isSelected ? 'rgba(192, 32, 31, 0.06)' : undefined,
+                        borderLeft: isSelected ? '3px solid var(--red)' : undefined,
+                      }} 
+                      onClick={() => setExpandedId(expandedId === order.id ? null : order.id)}
+                    >
+                      <td style={{ width: 44, textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedIds([...selectedIds, order.id]);
+                            } else {
+                              setSelectedIds(selectedIds.filter(id => id !== order.id));
+                            }
+                          }}
+                          style={{ cursor: 'pointer', width: 16, height: 16, accentColor: 'var(--red)' }}
+                        />
+                      </td>
                       <td style={{ fontWeight: 700, color: 'var(--red)' }}>{order.id}</td>
                       <td>
                         <div style={{ fontWeight: 700 }}>{order.customer_name}</div>
@@ -942,6 +1191,11 @@ export default function Orders() {
                             {order.coupon_code}
                           </div>
                         )}
+                        {order.delivery_fee > 0 && (
+                          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--red)', marginTop: 4 }}>
+                            To Collect: {fmt(order.delivery_fee)}
+                          </div>
+                        )}
                       </td>
                       <td style={{ fontSize: '0.82rem' }}>
                         {channel && <div style={{ fontSize: '0.72rem', background: 'rgba(192,32,31,0.08)', color: 'var(--red)', padding: '2px 7px', borderRadius: 20, display: 'inline-block', fontWeight: 800, marginBottom: 2 }}>{channel}</div>}
@@ -953,82 +1207,12 @@ export default function Orders() {
                         <div style={{ fontSize: '0.75rem', marginTop: 2 }}>{new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
                       </td>
                     </tr>
-                    {expandedId === order.id && (
-                      <tr><td colSpan="7" style={{ background: 'var(--black2)', padding: '16px 20px' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, fontSize: '0.88rem' }}>
-                          <div><strong>Address:</strong> {order.delivery_address}</div>
-                          <div><strong>Email:</strong> {order.customer_email || 'N/A'}</div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <strong>Store:</strong>
-                            {storeList.length > 1 ? (
-                              <select
-                                value={order.store_id || ''}
-                                onChange={async (e) => {
-                                  const storeId = e.target.value ? Number(e.target.value) : null;
-                                  await supabase.from('orders').update({ store_id: storeId }).eq('id', order.id);
-                                  setOrders(prev => prev.map(o => o.id === order.id ? { ...o, store_id: storeId } : o));
-                                }}
-                                style={{ padding: '6px 28px 6px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', background: 'var(--black2)', color: 'var(--text)', fontSize: '0.82rem', fontFamily: "'DM Sans', sans-serif", outline: 'none', WebkitAppearance: 'none', appearance: 'none', cursor: 'pointer', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%235C5247' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
-                              >
-                                <option value="">Unassigned</option>
-                                {storeList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                              </select>
-                            ) : (
-                              <span>{storeList.find(s => s.id === order.store_id)?.name || order.store_id || 'Unassigned'}</span>
-                            )}
-                          </div>
-                          {channel && <div><strong>Channel:</strong> {channel}</div>}
-                          {order.notes?.replace(/^\[via .+?\]\n?/, '') && (
-                            <div><strong>Notes:</strong> {order.notes.replace(/^\[via .+?\]\n?/, '')}</div>
-                          )}
-                          <div style={{ gridColumn: '1 / -1' }}>
-                            <strong>Items:</strong>
-                            <ul style={{ marginTop: 6, paddingLeft: 18 }}>
-                              {(order.order_items || []).map((item, i) => (
-                                <li key={i}>{item.name} × {item.qty} — {fmt(item.price * item.qty)}</li>
-                              ))}
-                              {!order.order_items?.length && <li style={{ color: 'var(--text-muted)' }}>No items found.</li>}
-                            </ul>
-                            {order.delivery_fee > 0 && (
-                              <div style={{ marginTop: 6, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                                Delivery fee: {fmt(order.delivery_fee)}
-                              </div>
-                            )}
-                            {order.coupon_code && (
-                              <div style={{ marginTop: 6, fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ background: 'rgba(34,197,94,0.12)', color: '#16a34a', padding: '2px 10px', borderRadius: 20, fontWeight: 800, fontSize: '0.75rem' }}>
-                                  COUPON: {order.coupon_code}
-                                </span>
-                                <span style={{ color: '#16a34a', fontWeight: 700 }}>−{fmt(order.coupon_discount || 0)}</span>
-                              </div>
-                            )}
-                            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(0,0,0,0.05)', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                              <strong style={{ fontSize: '0.8rem' }}>Actions:</strong>
-                              <select value={order.status} onChange={e => updateStatus(order.id, e.target.value)} style={{ padding: '6px 28px 6px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', background: 'var(--black2)', color: 'var(--text)', fontSize: '0.82rem', fontFamily: "'DM Sans', sans-serif", outline: 'none', WebkitAppearance: 'none', appearance: 'none', cursor: 'pointer', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%235C5247' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}>
-                                {statuses.filter(s => s !== 'all').map(s => <option key={s} value={s}>{s}</option>)}
-                              </select>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); generateInvoice(order); }}
-                                style={{ background: 'var(--black2)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}
-                              >
-                                <FileText size={14} /> Invoice
-                              </button>
-                              {isAdmin && (
-                                <button onClick={() => deleteOrder(order.id)} style={{ background: '#fee2e2', color: '#991b1b', border: 'none', padding: '6px 12px', borderRadius: 6, cursor: 'pointer', fontWeight: 700, fontSize: '0.8rem' }}>
-                                  Delete
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </td></tr>
-                    )}
                   </React.Fragment>
                 );
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>No orders found matching your filter.</td>
+                  <td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>No orders found matching your filter.</td>
                 </tr>
               )}
             </tbody>
@@ -1039,262 +1223,451 @@ export default function Orders() {
       </>
       )}
 
-      {/* ── New Manual Order Modal ── */}
-      {showNewOrder && (
-        <div className="product-form-modal" onClick={() => setShowNewOrder(false)}>
-          <div className="product-form-card" onClick={e => e.stopPropagation()} style={{ position: 'relative', maxWidth: 580 }}>
-            <button onClick={() => setShowNewOrder(false)} style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
-              <X size={22} />
-            </button>
-            <h3 style={{ marginTop: 0, marginBottom: 6, fontFamily: "'Mona Sans','Mona-Sans','Helvetica Neue',sans-serif" }}>New Manual Order</h3>
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 20 }}>Record an order that came through a non-website channel.</p>
-
-            {/* Channel, Payment & Store */}
-            <div className="form-row">
-              <div className="form-group">
-                <label>Order Channel</label>
-                <select value={newOrder.channel} onChange={setField('channel')} style={{ width: '100%', padding: '12px 36px 12px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.9rem', fontFamily: "'DM Sans', sans-serif", outline: 'none', WebkitAppearance: 'none', appearance: 'none', cursor: 'pointer', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235C5247' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}>
-                  {CHANNELS.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Payment Method</label>
-                <select value={newOrder.payment} onChange={setField('payment')} style={{ width: '100%', padding: '12px 36px 12px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.9rem', fontFamily: "'DM Sans', sans-serif", outline: 'none', WebkitAppearance: 'none', appearance: 'none', cursor: 'pointer', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235C5247' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}>
-                  {PAYMENT_METHODS.map(p => <option key={p} value={p}>{p.replace(/_/g, ' ')}</option>)}
-                </select>
-              </div>
-            </div>
-            {storeList.length > 0 && (
-              <div className="form-group">
-                <label>Store (fulfilling this order)</label>
-                <select value={newOrder.store} onChange={setField('store')} style={{ width: '100%', padding: '12px 36px 12px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.9rem', fontFamily: "'DM Sans', sans-serif", outline: 'none', WebkitAppearance: 'none', appearance: 'none', cursor: 'pointer', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235C5247' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}>
-                  {storeList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              </div>
-            )}
-
-            {/* Order Date & Time */}
-            <div className="form-row">
-              <div className="form-group">
-                <label>Order Date</label>
-                <input type="date" value={newOrder.orderDate} onChange={setField('orderDate')} max={todayDate()} />
-              </div>
-              <div className="form-group">
-                <label>Order Time</label>
-                <input type="time" value={newOrder.orderTime} onChange={setField('orderTime')} />
-              </div>
-            </div>
-
-            {/* Customer Info */}
-            <div className="form-row">
-              <div className="form-group"><label>Customer Name *</label><input value={newOrder.name} onChange={setField('name')} placeholder="Full name" /></div>
-              <div className="form-group"><label>Phone *</label><input value={newOrder.phone} onChange={setField('phone')} placeholder="+234 000 000 0000" /></div>
-            </div>
-            <div className="form-row">
-              <div className="form-group"><label>Email</label><input type="email" value={newOrder.email} onChange={setField('email')} placeholder="customer@email.com" /></div>
-              <div className="form-group"><label>Delivery Address</label><input value={newOrder.address} onChange={setField('address')} placeholder="Street / Pickup / Offline" /></div>
-            </div>
-            {areas.length > 0 && (
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Delivery Location</label>
-                  <select
-                    value={newOrder.zoneId}
-                    onChange={e => pickZone(e.target.value)}
-                    style={{ width: '100%', padding: '12px 36px 12px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.9rem', fontFamily: "'DM Sans', sans-serif", outline: 'none', WebkitAppearance: 'none', appearance: 'none', cursor: 'pointer', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235C5247' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}
-                  >
-                    <option value="">— No delivery fee (pickup / free) —</option>
-                    {areas.map(a => (
-                      <option key={a.id} value={a.id}>
-                        {a.name} — {fmt(a.price)}
-                      </option>
-                    ))}
-                  </select>
+      {/* ── Slide-Out Drawer ── */}
+      <div className={`dash-drawer-overlay ${expandedId ? 'open' : ''}`} onClick={() => setExpandedId(null)}></div>
+      <div className={`dash-drawer ${expandedId ? 'open' : ''}`}>
+        {(() => {
+          const sel = periodSearchFiltered.find(o => o.id === expandedId);
+          if (!sel) return null;
+          const selChannel = getChannel(sel.notes);
+          return (
+            <>
+              <div className="dash-drawer-header">
+                <div>
+                  <h3 style={{ margin: 0, fontFamily: "'Mona Sans', sans-serif", fontSize: '1.2rem', color: 'var(--red)' }}>#{sel.id}</h3>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                    {new Date(sel.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                  </div>
                 </div>
-                <div className="form-group">
-                  <label>Delivery Fee</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={newOrder.deliveryFee}
-                    onChange={e => setNewOrder(f => ({ ...f, deliveryFee: e.target.value, zoneId: '' }))}
-                    placeholder="₦ 0"
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                  <span className={`status-badge ${sel.status}`}>{sel.status}</span>
+                  <button className="dash-drawer-close" onClick={() => setExpandedId(null)}><X size={16} /></button>
+                </div>
+              </div>
+              <div className="dash-drawer-content">
+                <div style={{ background: 'var(--card-bg2)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 20, marginBottom: 20 }}>
+                  <h4 style={{ fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text-muted)', marginBottom: 12 }}>Customer Details</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, fontSize: '0.9rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span><strong>Name:</strong> {sel.customer_name}</span>
+                      {(() => {
+                        const count = orders.filter(o => o.customer_phone && o.customer_phone === sel.customer_phone).length;
+                        const isNew = count <= 1;
+                        return (
+                          <span style={{
+                            fontSize: '0.68rem', fontWeight: 800, padding: '2px 8px', borderRadius: 20, flexShrink: 0,
+                            ...(isNew ? { background: '#dbeafe', color: '#1d4ed8' } : { background: '#dcfce7', color: '#15803d' })
+                          }}>
+                            {isNew ? 'New' : 'Returning'}
+                          </span>
+                        );
+                      })()}
+                    </div>
+                    <div><strong>Phone:</strong> {sel.customer_phone}</div>
+                    <div><strong>Email:</strong> {sel.customer_email || '—'}</div>
+                    <div><strong>Address:</strong> {sel.delivery_address}</div>
+                  </div>
+                </div>
+
+                <div style={{ background: 'var(--white)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 20, marginBottom: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                  <h4 style={{ fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text-muted)', marginBottom: 12 }}>Order Items</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {(sel.order_items || []).map((item, i) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 8, borderBottom: '1px dashed var(--border-subtle)', fontSize: '0.9rem' }}>
+                        <div>
+                          <span style={{ fontWeight: 700 }}>{item.qty}x</span> {item.name}
+                        </div>
+                        <div style={{ fontWeight: 600 }}>{fmt(item.price * item.qty)}</div>
+                      </div>
+                    ))}
+                    {!sel.order_items?.length && <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No items found.</div>}
+                  </div>
+                </div>
+
+                <div style={{ background: 'rgba(192,32,31,0.03)', border: '1px solid rgba(192,32,31,0.1)', borderRadius: 12, padding: 20, marginBottom: 20 }}>
+                  <h4 style={{ fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--red)', marginBottom: 12 }}>Payment & Fulfillment</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, fontSize: '0.9rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Amount Paid:</span>
+                      <strong style={{ fontSize: '1.1rem' }}>{fmt(sel.total || 0)}</strong>
+                    </div>
+                    {sel.delivery_fee > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--red)' }}>
+                        <span>To Collect on Delivery:</span>
+                        <strong>{fmt(sel.delivery_fee)}</strong>
+                      </div>
+                    )}
+                    {sel.coupon_code && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#16a34a' }}>
+                        <span>Discount ({sel.coupon_code}):</span>
+                        <strong>−{fmt(sel.coupon_discount || 0)}</strong>
+                      </div>
+                    )}
+                    <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0' }}></div>
+                    <div><strong>Channel:</strong> {selChannel || 'Storefront'}</div>
+                    <div><strong>Method:</strong> {(sel.payment_method || '').replace(/_/g, ' ')}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <strong>Store:</strong>
+                      {storeList.length > 1 ? (
+                        <select
+                          value={sel.store_id || ''}
+                          onChange={async (e) => {
+                            const storeId = e.target.value ? Number(e.target.value) : null;
+                            await supabase.from('orders').update({ store_id: storeId }).eq('id', sel.id);
+                            setOrders(prev => prev.map(o => o.id === sel.id ? { ...o, store_id: storeId } : o));
+                          }}
+                          style={{ padding: '4px 24px 4px 8px', borderRadius: 6, border: '1px solid var(--border-subtle)', background: 'var(--white)', fontSize: '0.82rem', fontFamily: "'DM Sans', sans-serif", outline: 'none' }}
+                        >
+                          <option value="">Unassigned</option>
+                          {storeList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                      ) : (
+                        <span>{storeList.find(s => s.id === sel.store_id)?.name || sel.store_id || 'Unassigned'}</span>
+                      )}
+                    </div>
+                    {sel.notes?.replace(/^\[via .+?\]\n?/, '') && (
+                      <div style={{ marginTop: 8, padding: 12, background: '#fff', borderRadius: 8, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                        <strong>Note:</strong> {sel.notes.replace(/^\[via .+?\]\n?/, '')}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+              </div>
+              <div className="dash-drawer-footer">
+                <div style={{ width: 150, flexShrink: 0 }}>
+                  <CustomSelect
+                    value={sel.status}
+                    onChange={e => updateStatus(sel.id, e.target.value)}
+                    options={statuses.filter(s => s !== 'all' && (canCancelOrder || s !== 'cancelled')).map(s => ({ value: s, label: s }))}
                   />
                 </div>
-              </div>
-            )}
-
-            {/* Items */}
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <label style={{ fontWeight: 700, fontSize: '0.85rem' }}>Order Items</label>
-                <button type="button" onClick={addItemRow} style={{ background: 'var(--black2)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '4px 10px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Plus size={12} /> Add Row
+                <button onClick={() => generateInvoice(sel)} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--white)', border: '1px solid var(--border-subtle)', padding: '8px 16px', borderRadius: 8, fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem' }}>
+                  <FileText size={15} /> Invoice
                 </button>
+                {isAdmin && (
+                  <button onClick={() => { setExpandedId(null); deleteOrder(sel.id); }} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#fee2e2', color: '#991b1b', border: 'none', padding: '8px 16px', borderRadius: 8, fontWeight: 700, cursor: 'pointer', marginLeft: 'auto', fontSize: '0.85rem' }}>
+                    <Trash2 size={15} /> Delete
+                  </button>
+                )}
               </div>
-              {newOrder.items.map((item, i) => {
-                const isCustom = products.length > 0 && !item.product;
-                return (
-                  <div key={i} style={{ marginBottom: 8 }}>
-                    {/* Row 1: product selector + (custom name if needed) */}
-                    <div style={{ display: 'grid', gridTemplateColumns: products.length > 0 ? (isCustom ? '1fr 1fr' : '1fr') : '1fr', gap: 8, marginBottom: 6 }}>
-                      {products.length > 0 ? (
-                        <select
-                          value={item.product}
-                          onChange={e => e.target.value ? pickProduct(i, e.target.value) : updateItemField(i, 'product', '')}
-                          style={{ padding: '8px 28px 8px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', background: 'var(--black2)', color: 'var(--text)', fontSize: '0.85rem', fontFamily: "'DM Sans', sans-serif", outline: 'none', WebkitAppearance: 'none', appearance: 'none', cursor: 'pointer', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%235C5247' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
-                        >
-                          <option value="">— Custom item —</option>
-                          {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                        </select>
-                      ) : null}
-                      {isCustom && (
-                        <input value={item.name} onChange={e => updateItemField(i, 'name', e.target.value)} placeholder="Item name" style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.85rem' }} />
-                      )}
-                      {products.length === 0 && (
-                        <input value={item.name} onChange={e => updateItemField(i, 'name', e.target.value)} placeholder="Item name" style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.85rem' }} />
-                      )}
-                    </div>
-                    {/* Row 2: qty + price + delete */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'center' }}>
-                      <input type="number" min="1" value={item.qty} onChange={e => updateItemField(i, 'qty', e.target.value)} placeholder="Qty" style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.85rem' }} />
-                      <input type="number" value={item.price} onChange={e => updateItemField(i, 'price', e.target.value)} placeholder="Price ₦" style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.85rem' }} />
-                      {newOrder.items.length > 1 ? (
-                        <button type="button" onClick={() => removeItemRow(i)} style={{ background: '#fee2e2', border: 'none', borderRadius: 6, padding: '8px', cursor: 'pointer', color: '#991b1b', display: 'flex', alignItems: 'center' }}>
-                          <Trash2 size={14} />
-                        </button>
-                      ) : <div />}
-                    </div>
-                  </div>
-                );
-              })}
-              <div style={{ textAlign: 'right', marginTop: 6 }}>
-                {Number(newOrder.deliveryFee) > 0 && (
-                  <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 2 }}>
-                    Items: {fmt(itemsSubtotal)} + Delivery: {fmt(newOrder.deliveryFee)}
+            </>
+          );
+        })()}
+      </div>
+
+      {/* ── New Manual Order Drawer ── */}
+      <div
+        className="dash-drawer checkout-drawer-premium"
+        style={{
+          transform: showNewOrder ? 'translateX(0)' : 'translateX(100%)',
+          position: 'fixed', top: 0, right: 0, bottom: 0, width: '100%', maxWidth: 480,
+          background: 'var(--card-bg)', zIndex: 10000,
+          display: 'flex', flexDirection: 'column',
+          transition: 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+          boxShadow: showNewOrder ? '-12px 0 48px rgba(0,0,0,0.1)' : 'none'
+        }}
+      >
+        <div className="dash-drawer-header" style={{ padding: '24px 28px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--white)' }}>
+          <h2 style={{ margin: 0, fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Plus size={20} /> New Manual Order
+          </h2>
+          <button onClick={() => setShowNewOrder(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={24} /></button>
+        </div>
+
+        <div className="dash-drawer-content" style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
+
+          {/* Customer */}
+          <h3 style={{ margin: '0 0 12px 0', fontSize: '0.95rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Customer</h3>
+          <div className="form-row" style={{ marginBottom: 0 }}>
+            <div className="form-group"><label>Name *</label><input value={newOrder.name} onChange={setField('name')} placeholder="Full name" style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-subtle)', fontSize: '0.9rem', width: '100%', boxSizing: 'border-box' }} /></div>
+            <div className="form-group"><label>Phone *</label><input value={newOrder.phone} onChange={setField('phone')} placeholder="+234 000 000 0000" style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-subtle)', fontSize: '0.9rem', width: '100%', boxSizing: 'border-box' }} /></div>
+          </div>
+          <div className="form-row" style={{ marginBottom: 0 }}>
+            <div className="form-group"><label>Email</label><input type="email" value={newOrder.email} onChange={setField('email')} placeholder="customer@email.com" style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-subtle)', fontSize: '0.9rem', width: '100%', boxSizing: 'border-box' }} /></div>
+            <div className="form-group"><label>Delivery Address</label><input value={newOrder.address} onChange={setField('address')} placeholder="Street / Pickup" style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-subtle)', fontSize: '0.9rem', width: '100%', boxSizing: 'border-box' }} /></div>
+          </div>
+
+          {/* Order Details */}
+          <h3 style={{ margin: '20px 0 12px 0', fontSize: '0.95rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, paddingTop: 20, borderTop: '1px solid var(--border-subtle)' }}>Order Details</h3>
+          <div className="form-row" style={{ marginBottom: 0 }}>
+            <div className="form-group">
+              <label>Channel</label>
+              <CustomSelect value={newOrder.channel} onChange={setField('channel')} options={CHANNELS.map(c => ({ value: c, label: c }))} />
+            </div>
+            <div className="form-group">
+              <label>Payment Method</label>
+              <CustomSelect value={newOrder.payment} onChange={setField('payment')} options={PAYMENT_METHODS.map(p => ({ value: p, label: p.replace(/_/g, ' ') }))} />
+            </div>
+          </div>
+          <div className="form-row" style={{ marginBottom: 0 }}>
+            <div className="form-group">
+              <label>Order Date</label>
+              <DashCalendar value={newOrder.orderDate} onChange={setField('orderDate')} placeholder="Select date" />
+            </div>
+            <div className="form-group">
+              <label>Order Time</label>
+              <input type="time" value={newOrder.orderTime} onChange={setField('orderTime')} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-subtle)', fontSize: '0.9rem', width: '100%', boxSizing: 'border-box' }} />
+            </div>
+          </div>
+          {areas.length > 0 && (
+            <div className="form-row" style={{ marginBottom: 0 }}>
+              <div className="form-group">
+                <label>Delivery Zone</label>
+                <CustomSelect value={newOrder.zoneId} onChange={e => pickZone(e.target.value)} options={[{ value: '', label: '— Pickup / Free —' }, ...areas.map(a => ({ value: a.id, label: `${a.name} — ${fmt(a.price)}` }))]} />
+              </div>
+              <div className="form-group">
+                <label>Delivery Fee</label>
+                <input type="number" min="0" value={newOrder.deliveryFee} onChange={e => setNewOrder(f => ({ ...f, deliveryFee: e.target.value, zoneId: '' }))} placeholder="₦ 0" style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-subtle)', fontSize: '0.9rem', width: '100%', boxSizing: 'border-box' }} />
+              </div>
+            </div>
+          )}
+          {storeList.length > 0 && (
+            <div className="form-group">
+              <label>Store</label>
+              <CustomSelect value={newOrder.store} onChange={setField('store')} options={storeList.map(s => ({ value: s.id, label: s.name }))} />
+            </div>
+          )}
+
+          {/* Items */}
+          <h3 style={{ margin: '20px 0 12px 0', fontSize: '0.95rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, paddingTop: 20, borderTop: '1px solid var(--border-subtle)' }}>Items</h3>
+          <div style={{ background: 'var(--black2)', padding: '12px 16px', borderRadius: 10, border: '1px solid var(--border-subtle)', marginBottom: 4 }}>
+            {newOrder.items.map((item, i) => (
+              <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16, paddingBottom: 16, borderBottom: i < newOrder.items.length - 1 ? '1px dashed var(--border-subtle)' : 'none' }}>
+                
+                {/* Product Select */}
+                {products.length > 0 && (
+                  <div style={{ width: '100%' }}>
+                    <CustomSelect
+                      value={item.product}
+                      onChange={e => e.target.value ? pickProduct(i, e.target.value) : updateItemField(i, 'product', '')}
+                      options={[{ value: '', label: '— Custom Product —' }, ...products.map(p => ({ value: p.id, label: p.name }))]}
+                    />
                   </div>
                 )}
-                <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--red)' }}>
-                  Total: {fmt(newOrderTotal)}
+                
+                {/* Item Name */}
+                <div style={{ width: '100%' }}>
+                  <input value={item.name} onChange={e => updateItemField(i, 'name', e.target.value)} placeholder="Item Name" style={{ width: '100%', boxSizing: 'border-box', padding: '10px 14px', fontSize: '0.9rem', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--white)', color: 'var(--text)' }} />
+                </div>
+
+                {/* Qty, Price, Delete */}
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', width: '100%' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid var(--border-subtle)', borderRadius: 8, overflow: 'hidden', background: 'var(--white)', padding: '2px 4px', height: 42 }}>
+                    <button type="button" onClick={() => updateItemField(i, 'qty', Math.max(1, Number(item.qty) - 1))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 12px', fontSize: '1.2rem', fontWeight: 700, color: 'var(--text)', height: '100%' }}>−</button>
+                    <span style={{ fontWeight: 800, fontSize: '0.9rem', minWidth: 24, textAlign: 'center' }}>{item.qty}</span>
+                    <button type="button" onClick={() => updateItemField(i, 'qty', Number(item.qty) + 1)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 12px', fontSize: '1.2rem', fontWeight: 700, color: 'var(--text)', height: '100%' }}>+</button>
+                  </div>
+                  <input type="number" value={item.price} onChange={e => updateItemField(i, 'price', e.target.value)} placeholder="Price" style={{ flex: 1, height: 42, boxSizing: 'border-box', padding: '0 14px', fontSize: '0.9rem', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--white)', color: 'var(--text)' }} />
+                  <button type="button" onClick={() => removeItemRow(i)} style={{ height: 42, width: 42, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--white)', border: '1px solid var(--border-subtle)', borderRadius: 8, color: newOrder.items.length > 1 ? '#991b1b' : 'var(--border-subtle)', cursor: newOrder.items.length > 1 ? 'pointer' : 'default', flexShrink: 0 }} disabled={newOrder.items.length === 1}><Trash2 size={16} /></button>
                 </div>
               </div>
+            ))}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+              <button type="button" onClick={addItemRow} style={{ background: 'var(--card-bg)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '5px 12px', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}><Plus size={13} /> Add Item</button>
+              <span style={{ fontWeight: 800, color: 'var(--red)', fontSize: '0.9rem' }}>Subtotal: {fmt(itemsSubtotal)}</span>
             </div>
-
-            <div className="form-group">
-              <label>Notes (optional)</label>
-              <textarea value={newOrder.notes} onChange={setField('notes')} placeholder="Any extra details..." style={{ minHeight: 60 }} />
-            </div>
-
-            <button
-              className="btn-primary"
-              onClick={handleSaveNewOrder}
-              disabled={savingNew || !newOrder.name.trim() || !newOrder.phone.trim() || newOrderTotal === 0}
-              style={{ width: '100%', justifyContent: 'center', padding: '13px' }}
-            >
-              {savingNew ? <Loader2 size={16} className="spin" /> : <><Plus size={16} /> Save Order ({fmt(newOrderTotal)})</>}
-            </button>
           </div>
+
+          {/* Notes */}
+          <div className="form-group" style={{ marginTop: 16 }}>
+            <label>Notes (optional)</label>
+            <textarea value={newOrder.notes} onChange={setField('notes')} placeholder="Any extra details..." style={{ minHeight: 72, padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-subtle)', fontSize: '0.9rem', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+          </div>
+
         </div>
-      )}
 
-      {/* ── New Bulk Orders Modal ── */}
-      {showBulkOrder && (
-        <div className="product-form-modal" style={{ padding: '0 20px', alignItems: 'flex-start' }} onClick={() => setShowBulkOrder(false)}>
-          <div className="product-form-card" onClick={e => e.stopPropagation()} style={{ position: 'relative', maxWidth: 900, width: '100%', marginTop: '5vh', maxHeight: '90vh', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-            <button onClick={() => setShowBulkOrder(false)} style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
-              <X size={22} />
-            </button>
-            <h3 style={{ marginTop: 0, marginBottom: 6, fontFamily: "'Mona Sans','Mona-Sans','Helvetica Neue',sans-serif" }}>Bulk Add Orders</h3>
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 20 }}>Speedily record multiple different offline orders. Only valid orders with items will be saved.</p>
+        <div className="dash-drawer-footer" style={{ padding: '20px 28px', borderTop: '1px solid var(--border-subtle)', background: 'var(--white)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Subtotal</span>
+            <span style={{ fontWeight: 600 }}>{fmt(itemsSubtotal)}</span>
+          </div>
+          {Number(newOrder.deliveryFee) > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Delivery</span>
+              <span style={{ fontWeight: 600 }}>{fmt(newOrder.deliveryFee)}</span>
+            </div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16, paddingTop: 10, borderTop: '1px dashed var(--border-subtle)' }}>
+            <span style={{ fontWeight: 800, fontSize: '1.1rem' }}>Total</span>
+            <span style={{ fontWeight: 900, fontSize: '1.3rem', color: 'var(--red)' }}>{fmt(newOrderTotal)}</span>
+          </div>
+          <button
+            className="btn-primary"
+            onClick={handleSaveNewOrder}
+            disabled={savingNew || !newOrder.name.trim() || !newOrder.phone.trim() || newOrderTotal === 0}
+            style={{ width: '100%', padding: '14px', fontSize: '1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8 }}
+          >
+            {savingNew ? <Loader2 size={18} className="spin" /> : <><CheckCircle size={18} /> Save Order</>}
+          </button>
+        </div>
+      </div>
+      {showNewOrder && <div className="dash-drawer-overlay open" onClick={() => setShowNewOrder(false)}></div>}
 
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 20, marginBottom: 20 }}>
-              {bulkOrders.map((bo, oIdx) => {
-                const subtotal = bo.items.reduce((s, i) => s + (Number(i.qty) * Number(i.price) || 0), 0);
-                const total = subtotal + Number(bo.deliveryFee || 0);
-                return (
-                  <div key={oIdx} style={{ background: 'var(--black2)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 20, position: 'relative' }}>
-                    {bulkOrders.length > 1 && (
-                      <button onClick={() => removeBulkOrder(oIdx)} style={{ position: 'absolute', top: 12, right: 12, background: '#fee2e2', border: 'none', color: '#991b1b', width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                        <Trash2 size={14} />
-                      </button>
-                    )}
-                    <h4 style={{ margin: '0 0 16px 0', fontSize: '0.95rem' }}>Order #{oIdx + 1}</h4>
-                    
-                    <div className="form-row">
-                      <div className="form-group"><input value={bo.name} onChange={e => updateBulkOrder(oIdx, 'name', e.target.value)} placeholder="Customer Name *" style={{ padding: '10px 14px' }} /></div>
-                      <div className="form-group"><input value={bo.phone} onChange={e => updateBulkOrder(oIdx, 'phone', e.target.value)} placeholder="Phone *" style={{ padding: '10px 14px' }} /></div>
-                      <div className="form-group">
-                        <select value={bo.channel} onChange={e => updateBulkOrder(oIdx, 'channel', e.target.value)} style={{ width: '100%', padding: '10px 36px 10px 14px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.85rem' }}>
-                          {CHANNELS.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                      </div>
-                      <div className="form-group">
-                        <select value={bo.payment} onChange={e => updateBulkOrder(oIdx, 'payment', e.target.value)} style={{ width: '100%', padding: '10px 36px 10px 14px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.85rem' }}>
-                          {PAYMENT_METHODS.map(p => <option key={p} value={p}>{p.replace(/_/g, ' ')}</option>)}
-                        </select>
-                      </div>
-                    </div>
+      {/* ── Bulk Orders Drawer ── */}
+      <div
+        className="dash-drawer checkout-drawer-premium"
+        style={{
+          transform: showBulkOrder ? 'translateX(0)' : 'translateX(100%)',
+          position: 'fixed', top: 0, right: 0, bottom: 0, width: '100%', maxWidth: 720,
+          background: 'var(--card-bg)', zIndex: 10000,
+          display: 'flex', flexDirection: 'column',
+          transition: 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+          boxShadow: showBulkOrder ? '-12px 0 48px rgba(0,0,0,0.1)' : 'none'
+        }}
+      >
+        <div className="dash-drawer-header" style={{ padding: '24px 28px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--white)' }}>
+          <div>
+            <h2 style={{ margin: '0 0 4px 0', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Plus size={20} /> Bulk Add Orders
+            </h2>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0 }}>Speedily record multiple different offline orders.</p>
+          </div>
+          <button onClick={() => setShowBulkOrder(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={24} /></button>
+        </div>
 
-                    <div className="form-row">
-                      <div className="form-group"><input value={bo.address} onChange={e => updateBulkOrder(oIdx, 'address', e.target.value)} placeholder="Delivery Address / Pickup" style={{ padding: '10px 14px' }} /></div>
-                      {areas.length > 0 && (
-                        <div className="form-group">
-                          <select value={bo.zoneId} onChange={e => pickBulkZone(oIdx, e.target.value)} style={{ width: '100%', padding: '10px 36px 10px 14px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.85rem' }}>
-                            <option value="">— No fee —</option>
-                            {areas.map(a => <option key={a.id} value={a.id}>{a.name} — {fmt(a.price)}</option>)}
-                          </select>
-                        </div>
-                      )}
-                      <div className="form-group"><input type="email" value={bo.email} onChange={e => updateBulkOrder(oIdx, 'email', e.target.value)} placeholder="Email (optional)" style={{ padding: '10px 14px' }} /></div>
-                    </div>
-
-                    <div style={{ background: 'var(--black)', padding: '12px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)', marginBottom: 12 }}>
-                      <label style={{ display: 'block', fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 8 }}>Items</label>
-                      {bo.items.map((item, iIdx) => (
-                        <div key={iIdx} style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 1.5fr) 1fr 60px 80px auto', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-                          {products.length > 0 ? (
-                            <select value={item.product} onChange={e => e.target.value ? pickBulkProduct(oIdx, iIdx, e.target.value) : updateBulkItemField(oIdx, iIdx, 'product', '')} style={{ padding: '8px 10px', fontSize: '0.8rem', borderRadius: 6 }}>
-                              <option value="">— Custom —</option>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                            </select>
-                          ) : <div />}
-                          <input value={item.name} onChange={e => updateBulkItemField(oIdx, iIdx, 'name', e.target.value)} placeholder="Name" style={{ padding: '8px 10px', fontSize: '0.8rem', borderRadius: 6 }} />
-                          <input type="number" min="1" value={item.qty} onChange={e => updateBulkItemField(oIdx, iIdx, 'qty', e.target.value)} placeholder="Qty" style={{ padding: '8px 10px', fontSize: '0.8rem', borderRadius: 6 }} />
-                          <input type="number" value={item.price} onChange={e => updateBulkItemField(oIdx, iIdx, 'price', e.target.value)} placeholder="Price" style={{ padding: '8px 10px', fontSize: '0.8rem', borderRadius: 6 }} />
-                          <button type="button" onClick={() => removeBulkItemRow(oIdx, iIdx)} style={{ background: 'none', border: 'none', color: '#991b1b', cursor: 'pointer', padding: 4 }}><Trash2 size={14}/></button>
-                        </div>
-                      ))}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-                        <button type="button" onClick={() => addBulkItemRow(oIdx)} style={{ background: 'var(--black2)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '4px 10px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>+ Add Item Row</button>
-                        <div style={{ fontWeight: 800, color: 'var(--red)', fontSize: '0.9rem' }}>Total: {fmt(total)}</div>
-                      </div>
+        <div className="dash-drawer-content" style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            {bulkOrders.map((bo, oIdx) => {
+              const subtotal = bo.items.reduce((s, i) => s + (Number(i.qty) * Number(i.price) || 0), 0);
+              const total = subtotal + Number(bo.deliveryFee || 0);
+              return (
+                <div key={oIdx} style={{ background: 'var(--black2)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 20, position: 'relative' }}>
+                  {bulkOrders.length > 1 && (
+                    <button onClick={() => removeBulkOrder(oIdx)} style={{ position: 'absolute', top: 12, right: 12, background: '#fee2e2', border: 'none', color: '#991b1b', width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                  <h4 style={{ margin: '0 0 16px 0', fontSize: '0.95rem' }}>Order #{oIdx + 1}</h4>
+                  
+                  <div className="form-row" style={{ marginBottom: 12 }}>
+                    <div className="form-group"><input value={bo.name} onChange={e => updateBulkOrder(oIdx, 'name', e.target.value)} placeholder="Customer Name *" style={{ padding: '10px 14px' }} /></div>
+                    <div className="form-group"><input value={bo.phone} onChange={e => updateBulkOrder(oIdx, 'phone', e.target.value)} placeholder="Phone *" style={{ padding: '10px 14px' }} /></div>
+                    <div className="form-group">
+                      <CustomSelect
+                        value={bo.channel}
+                        onChange={e => updateBulkOrder(oIdx, 'channel', e.target.value)}
+                        options={CHANNELS.map(c => ({ value: c, label: c }))}
+                      />
                     </div>
                   </div>
-                );
-              })}
-            </div>
 
-            <div style={{ display: 'flex', gap: 12, borderTop: '1px solid var(--border-subtle)', paddingTop: 20, position: 'sticky', bottom: 0, background: 'var(--card-bg)' }}>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={addBulkOrder}
-                style={{ flex: 1, padding: '13px', display: 'flex', justifyContent: 'center', gap: 6, alignItems: 'center' }}
-              >
-                <Plus size={16} /> Add Another Order
-              </button>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={handleSaveBulkOrders}
-                disabled={savingBulk || !bulkOrders.some(bo => bo.name.trim() && bo.phone.trim() && bo.items.some(i => i.name.trim() && Number(i.price) > 0))}
-                style={{ flex: 1, padding: '13px', display: 'flex', justifyContent: 'center', gap: 6, alignItems: 'center' }}
-              >
-                {savingBulk ? <Loader2 size={16} className="spin" /> : <><CheckCircle size={16} /> Save All Orders ({bulkOrders.filter(bo => bo.name.trim() && bo.phone.trim() && bo.items.some(i => i.name.trim() && Number(i.price) > 0)).length} valid)</>}
-              </button>
-            </div>
+                  <div className="form-row" style={{ marginBottom: 12 }}>
+                    <div className="form-group">
+                      <CustomSelect
+                        value={bo.payment}
+                        onChange={e => updateBulkOrder(oIdx, 'payment', e.target.value)}
+                        options={PAYMENT_METHODS.map(p => ({ value: p, label: p.replace(/_/g, ' ') }))}
+                      />
+                    </div>
+                    <div className="form-group"><input value={bo.address} onChange={e => updateBulkOrder(oIdx, 'address', e.target.value)} placeholder="Delivery Address / Pickup" style={{ padding: '10px 14px' }} /></div>
+                    {areas.length > 0 && (
+                      <div className="form-group">
+                        <CustomSelect
+                          value={bo.zoneId}
+                          onChange={e => pickBulkZone(oIdx, e.target.value)}
+                          options={[
+                            { value: '', label: '— No delivery fee —' },
+                            ...areas.map(a => ({ value: a.id, label: `${a.name} — ${fmt(a.price)}` }))
+                          ]}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ background: 'var(--black)', padding: '12px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
+                    <label style={{ display: 'block', fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Items</label>
+                    {bo.items.map((item, iIdx) => (
+                      <div key={iIdx} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 12, paddingBottom: 12, borderBottom: iIdx < bo.items.length - 1 ? '1px dashed var(--border-subtle)' : 'none' }}>
+                        <div style={{ flex: '1 1 100%', display: 'flex', gap: 8 }}>
+                          {products.length > 0 ? (
+                            <div style={{ flex: 1 }}>
+                              <CustomSelect
+                                value={item.product}
+                                onChange={e => e.target.value ? pickBulkProduct(oIdx, iIdx, e.target.value) : updateBulkItemField(oIdx, iIdx, 'product', '')}
+                                options={[
+                                  { value: '', label: '— Custom Product —' },
+                                  ...products.map(p => ({ value: p.id, label: p.name }))
+                                ]}
+                              />
+                            </div>
+                          ) : <div />}
+                          <input value={item.name} onChange={e => updateBulkItemField(oIdx, iIdx, 'name', e.target.value)} placeholder="Item Name" style={{ flex: 1, padding: '8px 10px', fontSize: '0.85rem', borderRadius: 6, border: '1px solid var(--border-subtle)', background: 'var(--white)' }} />
+                        </div>
+                        <div style={{ flex: '1 1 100%', display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid var(--border-subtle)', borderRadius: 6, overflow: 'hidden', background: 'var(--white)', padding: '2px 4px', height: 38 }}>
+                            <button type="button" onClick={() => updateBulkItemField(oIdx, iIdx, 'qty', Math.max(1, Number(item.qty) - 1))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 10px', fontSize: '1rem', fontWeight: 700, color: 'var(--text)' }}>−</button>
+                            <span style={{ minWidth: 20, textAlign: 'center', fontWeight: 800, fontSize: '0.85rem' }}>{item.qty}</span>
+                            <button type="button" onClick={() => updateBulkItemField(oIdx, iIdx, 'qty', Number(item.qty) + 1)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 10px', fontSize: '1rem', fontWeight: 700, color: 'var(--text)' }}>+</button>
+                          </div>
+                          <input type="number" value={item.price} onChange={e => updateBulkItemField(oIdx, iIdx, 'price', e.target.value)} placeholder="Price" style={{ flex: 1, padding: '8px 10px', height: 38, fontSize: '0.85rem', borderRadius: 6, border: '1px solid var(--border-subtle)', background: 'var(--white)' }} />
+                          <button type="button" onClick={() => removeBulkItemRow(oIdx, iIdx)} style={{ background: 'none', border: 'none', color: '#991b1b', cursor: 'pointer', padding: 4 }}><Trash2 size={16}/></button>
+                        </div>
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                      <button type="button" onClick={() => addBulkItemRow(oIdx)} style={{ background: 'var(--white)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '6px 12px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}><Plus size={14} /> Add Item</button>
+                      <div style={{ fontWeight: 800, color: 'var(--red)', fontSize: '0.95rem' }}>Total: {fmt(total)}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
-      )}
+
+        <div className="dash-drawer-footer" style={{ padding: '20px 28px', borderTop: '1px solid var(--border-subtle)', background: 'var(--white)', display: 'flex', gap: 12 }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={addBulkOrder}
+            style={{ flex: 1, padding: '13px', display: 'flex', justifyContent: 'center', gap: 6, alignItems: 'center', fontWeight: 700 }}
+          >
+            <Plus size={16} /> New Empty Order
+          </button>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={handleSaveBulkOrders}
+            disabled={savingBulk || !bulkOrders.some(bo => bo.name.trim() && bo.phone.trim() && bo.items.some(i => i.name.trim() && Number(i.price) > 0))}
+            style={{ flex: 1.5, padding: '13px', display: 'flex', justifyContent: 'center', gap: 6, alignItems: 'center', fontWeight: 700 }}
+          >
+            {savingBulk ? <Loader2 size={16} className="spin" /> : <><CheckCircle size={16} /> Save Valid Orders ({bulkOrders.filter(bo => bo.name.trim() && bo.phone.trim() && bo.items.some(i => i.name.trim() && Number(i.price) > 0)).length})</>}
+          </button>
+        </div>
+      </div>
+      {showBulkOrder && <div className="dash-drawer-overlay open" onClick={() => setShowBulkOrder(false)}></div>}
+
+      {/* Floating Bulk Actions Bar (Active Orders) */}
+      <BulkActionBar 
+        selectedCount={selectedIds.length} 
+        onDeselectAll={() => setSelectedIds([])}
+        actions={[
+          ...['pending', 'processing', 'shipped', 'delivered', ...(canCancelOrder ? ['cancelled'] : [])].map(st => ({
+            type: 'status',
+            label: st,
+            onClick: () => handleBulkStatusUpdate(st)
+          })),
+          { type: 'delete', label: 'Trash', onClick: handleBulkMoveToTrash }
+        ]}
+      />
+
+      {/* Floating Bulk Actions Bar (Trash View) */}
+      <BulkActionBar 
+        selectedCount={selectedTrashIds.length} 
+        onDeselectAll={() => setSelectedTrashIds([])}
+        isTrashView={true}
+        actions={[
+          { type: 'recover', label: 'Recover', onClick: handleBulkRecover },
+          { type: 'delete', label: 'Delete Forever', onClick: handleBulkPermanentDelete }
+        ]}
+      />
+
+      <ConfirmModal 
+        isOpen={!!confirmAction} 
+        onClose={() => setConfirmAction(null)} 
+        {...confirmAction} 
+      />
     </div>
   );
 }

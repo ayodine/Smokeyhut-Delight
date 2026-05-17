@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
-import { UserPlus, Shield, Mail, Phone, Trash2, Loader2, Eye, EyeOff, Edit2, Check } from 'lucide-react';
-import { SkelList } from '../../components/Skeleton';
+import { UserPlus, Shield, Mail, Phone, Trash2, Loader2, Eye, EyeOff, Edit2, Check, X } from 'lucide-react';
+import { SkelKpiGrid, SkelTable } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../context/ToastContext';
+import CustomSelect from '../../components/CustomSelect';
+import ConfirmModal from '../../components/ConfirmModal';
 
 const ROLE_COLORS = { Admin: 'delivered', Manager: 'processing', Rider: 'pending', Staff: 'info' };
 
@@ -16,7 +18,7 @@ const ROLE_INFO = {
 const GRANTABLE_PAGES = [
   'Overview', 'Orders', 'Shipping', 'Payments',
   'Stores', 'Products', 'Customers', 'Zones', 'Coupons',
-  'Sales Report', 'Expenses',
+  'Sales Report', 'Expenses', 'Inventory',
   'Settings',
 ];
 
@@ -24,9 +26,13 @@ const ACTIONS = ['view', 'manage', 'delete'];
 const ACTION_LABELS = { view: 'View', manage: 'Manage', delete: 'Delete' };
 const ACTION_COLORS = { view: '#3b82f6', manage: '#f59e0b', delete: '#ef4444' };
 
-// Pages that support a 'create' sub-permission (controls whether the user can add new records)
-const CREATABLE_PAGES = ['Orders'];
-const CREATE_LABEL = 'Add New';
+// Extra per-page sub-permissions beyond view/manage/delete
+const EXTRA_ACTIONS = {
+  Orders: [
+    { key: 'create', label: 'Add New' },
+    { key: 'cancel', label: 'Cancel Orders' },
+  ],
+};
 
 const EMPTY_FORM = { name: '', email: '', role: 'Staff', phone: '', password: '' };
 
@@ -73,6 +79,7 @@ export default function Staff() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [permissions, setPermissions] = useState([]);
   const [editingId, setEditingId] = useState(null);
+  const [confirmAction, setConfirmAction] = useState(null);
   const { showToast } = useToast();
 
   useEffect(() => { fetchData(); }, []);
@@ -204,30 +211,40 @@ export default function Staff() {
     }
   };
 
-  const handleDelete = async (member) => {
-    if (!window.confirm(`Remove ${member.full_name} from staff? Their login access will be revoked.`)) return;
-    setDeleting(member.id);
-    try {
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-staff`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({ action: 'delete', userId: member.id }),
-      });
-      const data = await res.json();
-      if (!res.ok || data?.error) throw new Error(data?.error || data?.message || `HTTP ${res.status}`);
-      setStaff(prev => prev.filter(s => s.id !== member.id));
-      showToast('Staff member removed', '', 'success');
-    } catch (err) {
-      showToast('Failed to remove', err.message, 'error');
-    } finally {
-      setDeleting(null);
-    }
+  const handleDelete = (member) => {
+    setConfirmAction({
+      title: 'Remove Staff',
+      message: `Remove ${member.full_name} from staff? Their login access will be revoked.`,
+      onConfirm: async () => {
+        setConfirmAction(prev => ({ ...prev, isLoading: true }));
+        try {
+          const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-staff`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            },
+            body: JSON.stringify({ action: 'delete', userId: member.id }),
+          });
+          const data = await res.json();
+          if (!res.ok || data?.error) throw new Error(data?.error || data?.message || `HTTP ${res.status}`);
+          setStaff(prev => prev.filter(s => s.id !== member.id));
+          showToast('Staff member removed', '', 'success');
+        } catch (err) {
+          showToast('Failed to remove', err.message, 'error');
+        } finally {
+          setConfirmAction(null);
+        }
+      }
+    });
   };
 
-  if (loading) return <SkelList rows={4} height={90} />;
+  if (loading) return (
+    <div>
+      <SkelKpiGrid count={4} />
+      <SkelTable rows={4} cols={6} />
+    </div>
+  );
 
   return (
     <div>
@@ -319,11 +336,16 @@ export default function Staff() {
       </div>
 
       {showModal && (
-        <div className="product-form-modal">
-          <div className="product-form-card" style={{ maxWidth: 580 }}>
-            <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <UserPlus size={20} color="var(--red)" />
-              {editingId ? 'Edit Staff Access' : 'Add New Staff'}
+        <div className="product-form-modal" onClick={closeModal}>
+          <div className="product-form-card" onClick={e => e.stopPropagation()} style={{ maxWidth: 580 }}>
+            <h3 style={{ marginTop: 0, marginBottom: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <UserPlus size={20} color="var(--red)" />
+                {editingId ? 'Edit Staff Access' : 'Add New Staff'}
+              </div>
+              <button onClick={closeModal} className="dash-drawer-close">
+                <X size={16} />
+              </button>
             </h3>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 24 }}>
               {editingId
@@ -352,12 +374,16 @@ export default function Staff() {
             <div className="form-row">
               <div className="form-group">
                 <label>Role *</label>
-                <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} style={{ width: '100%', padding: '12px 36px 12px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.9rem', fontFamily: "'DM Sans', sans-serif", outline: 'none', WebkitAppearance: 'none', appearance: 'none', cursor: 'pointer', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235C5247' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}>
-                  <option value="Staff">Staff</option>
-                  <option value="Manager">Manager</option>
-                  <option value="Rider">Rider</option>
-                  <option value="Admin">Admin</option>
-                </select>
+                <CustomSelect
+                  value={form.role}
+                  onChange={e => setForm({ ...form, role: e.target.value })}
+                  options={[
+                    { value: 'Staff', label: 'Staff' },
+                    { value: 'Manager', label: 'Manager' },
+                    { value: 'Rider', label: 'Rider' },
+                    { value: 'Admin', label: 'Admin' }
+                  ]}
+                />
               </div>
             </div>
 
@@ -368,104 +394,95 @@ export default function Staff() {
 
             {/* Permissions grid — all roles except Admin */}
             {form.role !== 'Admin' && (
-              <div style={{ background: 'var(--black2)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
-                {/* Header row */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                  <span style={{ fontWeight: 700, fontSize: '0.82rem' }}>Page Permissions</span>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button type="button" onClick={grantAll} style={{ fontSize: '0.7rem', background: 'none', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '2px 8px', cursor: 'pointer', color: 'var(--text-muted)' }}>
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                  <span style={{ fontWeight: 800, fontSize: '0.95rem' }}>Page Permissions</span>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" onClick={grantAll} className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.75rem', gap: 4 }}>
                       Grant All
                     </button>
-                    <button type="button" onClick={clearAll} style={{ fontSize: '0.7rem', background: 'none', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '2px 8px', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                    <button type="button" onClick={clearAll} className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.75rem', gap: 4 }}>
                       Clear All
                     </button>
                   </div>
                 </div>
 
-                {/* Table */}
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
-                    <thead>
-                      <tr>
-                        <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-muted)', fontWeight: 600, borderBottom: '1px solid var(--border-subtle)', width: '35%' }}>Page</th>
-                        {ACTIONS.map(action => (
-                          <th key={action} style={{ textAlign: 'center', padding: '6px 4px', borderBottom: '1px solid var(--border-subtle)', width: '16%' }}>
-                            <div style={{ color: ACTION_COLORS[action], fontWeight: 700, fontSize: '0.75rem', marginBottom: 4 }}>{ACTION_LABELS[action]}</div>
-                            <button
-                              type="button"
-                              onClick={() => grantAllAction(action)}
-                              style={{ fontSize: '0.65rem', background: 'none', border: `1px solid ${ACTION_COLORS[action]}40`, borderRadius: 4, padding: '1px 6px', cursor: 'pointer', color: ACTION_COLORS[action] }}
-                            >
-                              All
-                            </button>
-                          </th>
-                        ))}
-                        <th style={{ textAlign: 'center', padding: '6px 4px', borderBottom: '1px solid var(--border-subtle)', width: '17%' }}>
-                          <div style={{ color: '#8b5cf6', fontWeight: 700, fontSize: '0.75rem', marginBottom: 4 }}>{CREATE_LABEL}</div>
-                          <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>per page</span>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {GRANTABLE_PAGES.map((page, i) => {
-                        const rowHasAny = ACTIONS.some(a => hasPerm(permissions, page, a)) || hasPerm(permissions, page, 'create');
-                        const isCreatable = CREATABLE_PAGES.includes(page);
-                        const borderStyle = i < GRANTABLE_PAGES.length - 1 ? '1px solid var(--border-subtle)' : 'none';
-                        return (
-                          <tr key={page} style={{ background: rowHasAny ? 'rgba(192,32,31,0.05)' : 'transparent' }}>
-                            <td style={{ padding: '7px 8px', fontWeight: rowHasAny ? 600 : 400, color: rowHasAny ? 'var(--text)' : 'var(--text-muted)', borderBottom: borderStyle }}>
-                              {page}
-                            </td>
-                            {ACTIONS.map(action => {
-                              const checked = hasPerm(permissions, page, action);
-                              return (
-                                <td key={action} style={{ textAlign: 'center', borderBottom: borderStyle }}>
-                                  <div
-                                    onClick={() => setPermissions(prev => togglePerm(prev, page, action))}
-                                    style={{
-                                      width: 18, height: 18, borderRadius: 4, margin: '0 auto', cursor: 'pointer',
-                                      border: `2px solid ${checked ? ACTION_COLORS[action] : 'var(--border-subtle)'}`,
-                                      background: checked ? ACTION_COLORS[action] : 'transparent',
-                                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                      transition: 'all 0.15s',
-                                    }}
-                                  >
-                                    {checked && <Check size={11} color="#fff" strokeWidth={3} />}
-                                  </div>
-                                </td>
-                              );
-                            })}
-                            {/* Add New column — only active for CREATABLE_PAGES */}
-                            <td style={{ textAlign: 'center', borderBottom: borderStyle }}>
-                              {isCreatable ? (
-                                <div
-                                  onClick={() => setPermissions(prev => togglePerm(prev, page, 'create'))}
-                                  style={{
-                                    width: 18, height: 18, borderRadius: 4, margin: '0 auto', cursor: 'pointer',
-                                    border: `2px solid ${hasPerm(permissions, page, 'create') ? '#8b5cf6' : 'var(--border-subtle)'}`,
-                                    background: hasPerm(permissions, page, 'create') ? '#8b5cf6' : 'transparent',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    transition: 'all 0.15s',
-                                  }}
-                                >
-                                  {hasPerm(permissions, page, 'create') && <Check size={11} color="#fff" strokeWidth={3} />}
-                                </div>
-                              ) : (
-                                <span style={{ color: 'var(--border-subtle)', fontSize: '0.7rem' }}>—</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 16 }}>
+                  {GRANTABLE_PAGES.map(page => {
+                    const extras = EXTRA_ACTIONS[page] || [];
+                    const pageActions = [...ACTIONS, ...extras.map(e => e.key)];
+                    const activeCount = pageActions.filter(a => hasPerm(permissions, page, a)).length;
+                    const hasAny = activeCount > 0;
+                    const hasAll = activeCount === pageActions.length;
 
-                {permissions.length === 0 && (
-                  <div style={{ marginTop: 10, fontSize: '0.78rem', color: 'var(--red)', fontWeight: 600 }}>
-                    No permissions selected — this staff member won't see anything after login.
-                  </div>
-                )}
+                    const togglePageAll = () => {
+                      if (hasAll) {
+                        setPermissions(prev => prev.filter(p => !p.startsWith(`${page}:`)));
+                      } else {
+                        const newPerms = pageActions.map(a => `${page}:${a}`);
+                        setPermissions(prev => Array.from(new Set([...prev.filter(p => !p.startsWith(`${page}:`)), ...newPerms])));
+                      }
+                    };
+
+                    return (
+                      <div
+                        key={page}
+                        style={{
+                          background: hasAny ? 'rgba(192,32,31,0.02)' : 'var(--white)',
+                          border: `1px solid ${hasAny ? 'var(--red)' : 'var(--border-subtle)'}`,
+                          borderRadius: 12, padding: 16,
+                          transition: 'all 0.2s ease',
+                          boxShadow: hasAny ? '0 2px 8px rgba(192,32,31,0.05)' : 'none',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, cursor: 'pointer' }} onClick={togglePageAll}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{
+                              width: 18, height: 18, borderRadius: 4,
+                              border: `2px solid ${hasAny ? 'var(--red)' : 'var(--border-subtle)'}`,
+                              background: hasAll ? 'var(--red)' : hasAny ? 'var(--red-light)' : 'transparent',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s',
+                            }}>
+                              {hasAny && <Check size={12} color="#fff" strokeWidth={3} />}
+                            </div>
+                            <span style={{ fontWeight: 800, fontSize: '0.9rem', color: hasAny ? 'var(--red)' : 'var(--text)' }}>
+                              {page}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {pageActions.map(action => {
+                            const checked = hasPerm(permissions, page, action);
+                            const label = extras.find(e => e.key === action)?.label ?? ACTION_LABELS[action];
+                            return (
+                              <button
+                                key={action}
+                                type="button"
+                                onClick={() => setPermissions(prev => togglePerm(prev, page, action))}
+                                style={{
+                                  background: checked ? 'var(--red)' : 'var(--black2)',
+                                  color: checked ? '#fff' : 'var(--text-muted)',
+                                  border: `1px solid ${checked ? 'var(--red)' : 'var(--border-subtle)'}`,
+                                  borderRadius: 20, padding: '4px 10px', fontSize: '0.72rem', fontWeight: 600,
+                                  cursor: 'pointer', transition: 'all 0.15s ease',
+                                }}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {permissions.length === 0 && (
+              <div style={{ marginTop: 10, fontSize: '0.78rem', color: 'var(--red)', fontWeight: 600 }}>
+                No permissions selected — this staff member won't see anything after login.
               </div>
             )}
 
@@ -492,10 +509,7 @@ export default function Staff() {
             )}
 
             <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-              <button
-                onClick={closeModal}
-                style={{ flex: 1, padding: '12px', background: 'var(--black2)', border: '1px solid var(--border-subtle)', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, color: 'var(--text)' }}
-              >
+              <button onClick={closeModal} className="btn-secondary" style={{ flex: 1 }}>
                 Cancel
               </button>
               <button onClick={handleSave} disabled={saving} className="btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
@@ -508,6 +522,12 @@ export default function Staff() {
           </div>
         </div>
       )}
+
+      <ConfirmModal 
+        isOpen={!!confirmAction} 
+        onClose={() => setConfirmAction(null)} 
+        {...confirmAction} 
+      />
     </div>
   );
 }

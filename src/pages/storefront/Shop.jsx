@@ -41,53 +41,78 @@ export default function Shop() {
   }, [products, debouncedSearch, activeFilter]);
 
   return (
-    <div>
-      <div className="breadcrumb container">
-        <Link to="/">Home</Link><span style={{ margin: '0 8px', color: 'var(--gray-light)' }}>›</span> Shop
+    <div style={{ background: '#f5f5f7', minHeight: '100vh', color: '#111' }}>
+      <div style={{ padding: '14px 16px', background: '#fff', borderBottom: '1px solid #e5e5e5' }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', color: '#888' }}>
+          <Link to="/" style={{ color: '#888', textDecoration: 'none' }}>Home</Link>
+          <span>›</span>
+          <span style={{ color: '#111', fontWeight: 700 }}>Shop</span>
+        </div>
       </div>
-      <section className="products-section" style={{ paddingTop: 30 }}>
+      <section style={{ padding: 'clamp(32px, 8vw, 60px) 0', maxWidth: 1200, margin: '0 auto' }}>
         <div className="container">
-          <div className="section-header">
-            <div className="section-tag">Full Menu</div>
-            <h2 className="section-title">The Smokeyhut <span>Menu</span></h2>
-            <p className="section-sub">Every item freshly prepared. Order before 10am for same-day delivery.</p>
-          </div>
-          <div style={{ marginBottom: 30 }}>
+        <div style={{ textAlign: 'center', marginBottom: 48 }}>
+          <h1 style={{ fontWeight: 900, fontSize: 'clamp(2rem, 5vw, 3rem)', color: '#111', marginBottom: 16, letterSpacing: '-0.02em' }}>The Smokeyhut Menu</h1>
+          <p style={{ color: '#666', fontSize: '1.05rem', maxWidth: 600, margin: '0 auto', lineHeight: 1.6 }}>Every item freshly prepared with premium ingredients. Order now for delivery or pickup.</p>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 48, gap: 24 }}>
+          {/* Search */}
+          <div style={{ position: 'relative', width: '100%', maxWidth: 480 }}>
+            <Search size={18} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: '#aaa' }} />
             <input
               type="text"
-              className="product-search"
-              placeholder="Search menu..."
+              placeholder="Search our menu..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              style={{ width: '100%', maxWidth: 400, display: 'block', marginBottom: 16, background: 'var(--card-bg)', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '12px 18px', fontSize: '0.9rem', outline: 'none', fontFamily: "'Nunito', sans-serif", boxShadow: 'var(--shadow)', color: 'var(--text)' }}
+              style={{
+                width: '100%', padding: '16px 20px 16px 44px', borderRadius: 12,
+                border: '1px solid #e5e5e5', background: '#fff', fontSize: '1rem',
+                outline: 'none', color: '#111', boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
+                transition: 'all 0.2s'
+              }}
+              onFocus={e => { e.target.style.borderColor = '#c0201f'; e.target.style.boxShadow = '0 4px 12px rgba(192,32,31,0.08)'; }}
+              onBlur={e => { e.target.style.borderColor = '#e5e5e5'; e.target.style.boxShadow = '0 2px 8px rgba(0,0,0,0.02)'; }}
             />
-            <div className="product-filters">
-              {categories.map(c => (
-                <button
-                  key={c.id}
-                  className={`filter-btn${activeFilter === c.id ? ' active' : ''}`}
-                  onClick={() => setActiveFilter(c.id)}
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
           </div>
 
-          <div className="products-grid">
+          {/* Filters */}
+          <div className="premium-filters-scroll" style={{ display: 'flex', overflowX: 'auto', gap: 10, padding: '4px 20px 24px', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none', width: '100%' }}>
+            <style>{`.premium-filters-scroll::-webkit-scrollbar { display: none; }`}</style>
+            {categories.map(c => (
+              <button
+                key={c.id}
+                onClick={() => setActiveFilter(c.id)}
+                style={{
+                  flexShrink: 0,
+                  padding: '10px 20px', borderRadius: 30, fontSize: '0.88rem', fontWeight: 700,
+                  cursor: 'pointer', transition: 'all 0.2s',
+                  background: activeFilter === c.id ? 'var(--red)' : '#fff',
+                  color: activeFilter === c.id ? '#fff' : '#555',
+                  border: `1px solid ${activeFilter === c.id ? 'var(--red)' : '#e5e5e5'}`,
+                  boxShadow: activeFilter === c.id ? '0 4px 12px rgba(192,32,31,0.2)' : 'none'
+                }}
+                onMouseEnter={e => { if (activeFilter !== c.id) { e.target.style.borderColor = 'var(--red)'; e.target.style.color = 'var(--red)'; } }}
+                onMouseLeave={e => { if (activeFilter !== c.id) { e.target.style.borderColor = '#e5e5e5'; e.target.style.color = '#555'; } }}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+          <div className="premium-grid">
             {loading ? (
-              Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} style={{ background: 'var(--card-bg)', borderRadius: 16, height: 320, animation: 'pulse 1.5s ease-in-out infinite', opacity: 0.6 }} />
+              Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} style={{ background: '#f5f5f7', borderRadius: 12, height: 380, animation: 'pulse 1.5s ease-in-out infinite' }} />
               ))
             ) : filtered.length > 0 ? filtered.map(p => (
-              <ProductCard key={p.id} product={{ ...p, desc: p.short_desc, category: p.category_id }} />
+              <ProductCard key={p.id} product={{ ...p, desc: p.short_desc, category: p.category_id }} variant="shopify" />
             )) : (
-              <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
-                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
-                  <Search size={48} color="var(--border-subtle)" />
-                </div>
-                <p style={{ fontWeight: 700 }}>No items found</p>
-                <p style={{ fontSize: '0.88rem', marginTop: 6 }}>Try a different search or category</p>
+              <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '80px 20px', color: '#888' }}>
+                <Search size={48} color="#ddd" style={{ marginBottom: 16 }} />
+                <h3 style={{ fontWeight: 800, fontSize: '1.2rem', color: '#111', marginBottom: 8 }}>No items found</h3>
+                <p style={{ fontSize: '0.95rem' }}>We couldn't find anything matching your search.</p>
               </div>
             )}
           </div>

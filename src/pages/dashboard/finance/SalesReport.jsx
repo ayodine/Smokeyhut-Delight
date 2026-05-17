@@ -34,13 +34,14 @@ const STATUS_COLORS = {
 
 export default function SalesReport() {
   const [period, setPeriod] = useState('month');
+  const [customDate, setCustomDate] = useState('');
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({
     revenue: 0, deliveryFees: 0, discounts: 0, expenses: 0,
     orderCount: 0, breakdown: [],
   });
 
-  useEffect(() => { load(); }, [period]);
+  useEffect(() => { load(); }, [period, customDate]);
 
   const load = async () => {
     setLoading(true);
@@ -49,10 +50,21 @@ export default function SalesReport() {
     let ordersQ = supabase
       .from('orders')
       .select('id, status, delivery_fee, coupon_discount, created_at, order_items(price, qty)');
-    if (since) ordersQ = ordersQ.gte('created_at', since);
+      
+    if (period === 'custom' && customDate) {
+      const start = new Date(customDate); start.setHours(0,0,0,0);
+      const end = new Date(customDate); end.setHours(23,59,59,999);
+      ordersQ = ordersQ.gte('created_at', start.toISOString()).lte('created_at', end.toISOString());
+    } else if (since) {
+      ordersQ = ordersQ.gte('created_at', since);
+    }
 
     let expensesQ = supabase.from('expenses').select('amount, date');
-    if (since) expensesQ = expensesQ.gte('date', since.split('T')[0]);
+    if (period === 'custom' && customDate) {
+      expensesQ = expensesQ.eq('date', customDate);
+    } else if (since) {
+      expensesQ = expensesQ.gte('date', since.split('T')[0]);
+    }
 
     const [{ data: orders }, { data: expenses }] = await Promise.all([ordersQ, expensesQ]);
 
@@ -82,7 +94,9 @@ export default function SalesReport() {
   const netProfit    = grossRevenue - data.expenses;
 
   const exportToExcel = () => {
-    const periodLabel = PERIODS.find(p => p.value === period)?.label || period;
+    const periodLabel = period === 'custom' && customDate
+      ? `Date: ${new Date(customDate).toLocaleDateString()}`
+      : (PERIODS.find(p => p.value === period)?.label || period);
     const wb = XLSX.utils.book_new();
 
     // Sheet 1: Summary
@@ -151,7 +165,7 @@ export default function SalesReport() {
           {PERIODS.map(p => (
             <button
               key={p.value}
-              onClick={() => setPeriod(p.value)}
+              onClick={() => { setPeriod(p.value); setCustomDate(''); }}
               style={{
                 padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border-subtle)',
                 background: period === p.value ? 'var(--red)' : 'var(--white)',
@@ -162,6 +176,20 @@ export default function SalesReport() {
               {p.label}
             </button>
           ))}
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', marginLeft: 4 }}>
+            <input
+              type="date"
+              value={customDate}
+              onChange={e => { setCustomDate(e.target.value); setPeriod('custom'); }}
+              style={{
+                padding: '6px 12px', borderRadius: 8, fontSize: '0.8rem',
+                border: `1px solid ${period === 'custom' ? 'var(--red)' : 'var(--border-subtle)'}`,
+                background: period === 'custom' ? 'var(--red)' : 'var(--white)',
+                color: period === 'custom' ? '#fff' : 'var(--text)',
+                fontFamily: "'DM Sans',sans-serif", cursor: 'pointer', outline: 'none',
+              }}
+            />
+          </div>
           <button
             onClick={exportToExcel}
             disabled={loading}
@@ -229,7 +257,7 @@ export default function SalesReport() {
           <div className="dash-card-title">Orders by Status</div>
           <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
             <Calendar size={13} style={{ verticalAlign: 'text-bottom', marginRight: 4 }} />
-            {PERIODS.find(p => p.value === period)?.label}
+            {period === 'custom' && customDate ? new Date(customDate).toLocaleDateString('en-NG', { dateStyle: 'medium' }) : PERIODS.find(p => p.value === period)?.label}
           </div>
         </div>
         <div style={{ overflowX: 'auto' }}>

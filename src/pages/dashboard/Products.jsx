@@ -1,11 +1,14 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Package, Trash2, Edit2, Image as ImageIcon, X, FolderKanban, Loader2, AlertTriangle, TrendingUp, DollarSign, Layers } from 'lucide-react';
-import { SkelList, SkelKpiGrid } from '../../components/Skeleton';
+import { Package, Trash2, Edit2, Image as ImageIcon, X, FolderKanban, Loader2, AlertTriangle, TrendingUp, DollarSign, Layers, BarChart2 } from 'lucide-react';
+import { SkelDashHeader, SkelKpiGrid, SkelTable } from '../../components/Skeleton';
 import Pagination from '../../components/Pagination';
 import { supabase } from '../../lib/supabase';
 import { invalidateProducts } from '../../lib/productsCache';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
+import CustomSelect from '../../components/CustomSelect';
+import ConfirmModal from '../../components/ConfirmModal';
+import BulkActionBar from '../../components/BulkActionBar';
 
 const fmt = (n) => '₦' + n.toLocaleString();
 
@@ -20,6 +23,8 @@ export default function Products() {
   const [page, setPage] = useState(1);
   const PER_PAGE = 15;
   const { showToast } = useToast();
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
 
   const [showForm, setShowForm] = useState(false);
   const [showCatModal, setShowCatModal] = useState(false);
@@ -150,17 +155,47 @@ export default function Products() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if(window.confirm('Delete this product? It will be hidden from the storefront.')) {
-      try {
-        const { error } = await supabase.from('products').update({ deleted_at: new Date().toISOString() }).eq('id', id);
-        if (error) throw error;
-        setProductList(prev => prev.filter(p => p.id !== id));
-        showToast('Product deleted successfully');
-      } catch (err) {
-        showToast('Failed to delete product', err?.message || '', 'error');
+  const handleDelete = (id) => {
+    setConfirmAction({
+      title: 'Delete Product',
+      message: 'Delete this product? It will be hidden from the storefront.',
+      onConfirm: async () => {
+        setConfirmAction(prev => ({ ...prev, isLoading: true }));
+        try {
+          const { error } = await supabase.from('products').update({ deleted_at: new Date().toISOString() }).eq('id', id);
+          if (error) throw error;
+          invalidateProducts();
+          setProductList(prev => prev.filter(p => p.id !== id));
+          showToast('Product deleted successfully');
+        } catch (err) {
+          showToast('Failed to delete product', err?.message || '', 'error');
+        } finally {
+          setConfirmAction(null);
+        }
       }
-    }
+    });
+  };
+
+  const handleBulkDelete = () => {
+    setConfirmAction({
+      title: 'Delete Selected Products',
+      message: `Delete ${selectedIds.length} products? They will be hidden from the storefront.`,
+      onConfirm: async () => {
+        setConfirmAction(prev => ({ ...prev, isLoading: true }));
+        try {
+          const { error } = await supabase.from('products').update({ deleted_at: new Date().toISOString() }).in('id', selectedIds);
+          if (error) throw error;
+          invalidateProducts();
+          setProductList(prev => prev.filter(p => !selectedIds.includes(p.id)));
+          setSelectedIds([]);
+          showToast('Products deleted successfully');
+        } catch (err) {
+          showToast('Failed to delete products', err?.message || '', 'error');
+        } finally {
+          setConfirmAction(null);
+        }
+      }
+    });
   };
 
   const handleAddCategory = async () => {
@@ -181,17 +216,24 @@ export default function Products() {
     }
   };
 
-  const handleDeleteCategory = async (id) => {
-    if(window.confirm('Delete category?')) {
-      try {
-        const { error } = await supabase.from('categories').delete().eq('id', id);
-        if (error) throw error;
-        setCatList(catList.filter(c => c.id !== id));
-        showToast('Category deleted successfully');
-      } catch (err) {
-        showToast('Failed to delete category', err?.message || '', 'error');
+  const handleDeleteCategory = (id) => {
+    setConfirmAction({
+      title: 'Delete Category',
+      message: 'Are you sure you want to delete this category?',
+      onConfirm: async () => {
+        setConfirmAction(prev => ({ ...prev, isLoading: true }));
+        try {
+          const { error } = await supabase.from('categories').delete().eq('id', id);
+          if (error) throw error;
+          setCatList(catList.filter(c => c.id !== id));
+          showToast('Category deleted successfully');
+        } catch (err) {
+          showToast('Failed to delete category', err?.message || '', 'error');
+        } finally {
+          setConfirmAction(null);
+        }
       }
-    }
+    });
   };
 
   // ── KPI computations ─────────────────────────────────────
@@ -216,12 +258,15 @@ export default function Products() {
     };
   }, [orderItems, productList]);
 
+  useEffect(() => { setSelectedIds([]); }, [page]);
+
   const pagedProducts = productList.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
   if (loading) return (
     <div>
+      <SkelDashHeader hasButton />
       <SkelKpiGrid count={6} />
-      <SkelList rows={6} height={80} />
+      <SkelTable rows={6} cols={5} />
     </div>
   );
 
@@ -303,7 +348,23 @@ export default function Products() {
       <div className="dash-card">
         <div className="dash-table-wrapper">
           <table className="dash-table">
-            <thead><tr><th>Image</th><th>Name</th><th>Category</th><th>Price</th><th>Stock</th><th>Badge</th><th>Actions</th></tr></thead>
+            <thead><tr>
+              <th style={{ width: 44, textAlign: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={pagedProducts.length > 0 && pagedProducts.every(p => selectedIds.includes(p.id))}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setSelectedIds([...new Set([...selectedIds, ...pagedProducts.map(p => p.id)])]);
+                    } else {
+                      setSelectedIds(selectedIds.filter(id => !pagedProducts.find(p => p.id === id)));
+                    }
+                  }}
+                  style={{ cursor: 'pointer', accentColor: 'var(--red)' }}
+                />
+              </th>
+              <th>Image</th><th>Name</th><th>Category</th><th>Price</th><th>Stock</th><th>Badge</th><th>Actions</th>
+            </tr></thead>
             <tbody>
               {pagedProducts.map(p => {
                 const imgSource = p.image;
@@ -316,8 +377,26 @@ export default function Products() {
                   ? { background: 'rgba(251,191,36,0.06)' }
                   : {};
 
+                const isSelected = selectedIds.includes(p.id);
+                const finalStyle = { ...rowStyle };
+                if (isSelected) {
+                  finalStyle.background = 'rgba(192, 32, 31, 0.06)';
+                  finalStyle.borderLeft = '3px solid var(--red)';
+                }
+
                 return (
-                  <tr key={p.id} style={rowStyle}>
+                  <tr key={p.id} style={finalStyle}>
+                    <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedIds([...selectedIds, p.id]);
+                          else setSelectedIds(selectedIds.filter(id => id !== p.id));
+                        }}
+                        style={{ cursor: 'pointer', accentColor: 'var(--red)' }}
+                      />
+                    </td>
                     <td style={{ textAlign: 'center' }}>
                       {isEmoji ? (
                         <div style={{ fontSize: '1.8rem' }}>{imgSource}</div>
@@ -347,7 +426,7 @@ export default function Products() {
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 6 }}>
-                        <button onClick={() => openEdit(p)} style={{ background: 'var(--black2)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <button onClick={() => openEdit(p)} className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.78rem', gap: 4 }}>
                           <Edit2 size={12} /> Edit
                         </button>
                         {isAdmin && (
@@ -374,15 +453,11 @@ export default function Products() {
       {showForm && (
         <div className="product-form-modal" onClick={() => setShowForm(false)}>
           <div className="product-form-card" onClick={e => e.stopPropagation()} style={{ position: 'relative' }}>
-            <button 
-              onClick={() => setShowForm(false)}
-              style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-            >
-              <X size={24} />
-            </button>
-            
-            <h3 style={{ marginTop: 0, marginBottom: 24, fontSize: '1.2rem', fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif" }}>
+            <h3 style={{ marginTop: 0, marginBottom: 24 }}>
               {editing ? 'Edit' : 'Add'} Product
+              <button onClick={() => setShowForm(false)} className="dash-drawer-close">
+                <X size={16} />
+              </button>
             </h3>
             
             <div style={{ display: 'flex', gap: 20, marginBottom: 16 }}>
@@ -415,7 +490,11 @@ export default function Products() {
               </div>
               <div className="form-group">
                 <label>Stock</label>
-                <input type="number" value={form.stock} onChange={set('stock')} placeholder="20" />
+                <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--border-subtle)', borderRadius: 8, overflow: 'hidden', background: 'var(--white)', height: 38 }}>
+                  <button type="button" onClick={() => set('stock')({ target: { value: Math.max(0, Number(form.stock) - 1) } })} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 12px', fontSize: '1.1rem', fontWeight: 700, color: 'var(--text)', lineHeight: 1, flexShrink: 0 }}>−</button>
+                  <span style={{ flex: 1, textAlign: 'center', fontWeight: 700, fontSize: '0.95rem' }}>{form.stock === '' ? '—' : form.stock}</span>
+                  <button type="button" onClick={() => set('stock')({ target: { value: Number(form.stock || 0) + 1 } })} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 12px', fontSize: '1.1rem', fontWeight: 700, color: 'var(--text)', lineHeight: 1, flexShrink: 0 }}>+</button>
+                </div>
               </div>
             </div>
             {form.compare_price && Number(form.compare_price) > Number(form.price) && (
@@ -425,10 +504,14 @@ export default function Products() {
             )}
             <div className="form-row">
               <div className="form-group"><label>Category</label>
-                <select value={form.category} onChange={set('category')} style={{ width: '100%', padding: '12px 36px 12px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--black)', color: 'var(--text)', fontSize: '0.9rem', fontFamily: "'DM Sans', sans-serif", outline: 'none', WebkitAppearance: 'none', appearance: 'none', cursor: 'pointer', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235C5247' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}>
-                  {catList.length === 0 && <option value="">No categories available</option>}
-                  {catList.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-                </select>
+                <CustomSelect
+                  value={form.category}
+                  onChange={set('category')}
+                  options={catList.length === 0 
+                    ? [{ value: '', label: 'No categories available' }]
+                    : catList.map(c => ({ value: c.id, label: c.label }))
+                  }
+                />
               </div>
               <div className="form-group"><label>Badge (optional)</label><input value={form.badge} onChange={set('badge')} placeholder="bestseller, new, hot, value" /></div>
             </div>
@@ -452,11 +535,11 @@ export default function Products() {
       {showCatModal && (
         <div className="product-form-modal" onClick={() => setShowCatModal(false)}>
           <div className="product-form-card" onClick={e => e.stopPropagation()} style={{ position: 'relative', maxWidth: 400 }}>
-            <button onClick={() => setShowCatModal(false)} style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
-              <X size={24} />
-            </button>
-            <h3 style={{ marginTop: 0, marginBottom: 24, fontSize: '1.2rem', fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif" }}>
+            <h3 style={{ marginTop: 0, marginBottom: 24 }}>
               Manage Categories
+              <button onClick={() => setShowCatModal(false)} className="dash-drawer-close">
+                <X size={16} />
+              </button>
             </h3>
             <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
               <input value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="New category name..." style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }} />
@@ -478,6 +561,18 @@ export default function Products() {
           </div>
         </div>
       )}
+
+      <BulkActionBar 
+        selectedCount={selectedIds.length} 
+        onDeselectAll={() => setSelectedIds([])}
+        actions={[{ type: 'delete', onClick: handleBulkDelete }]}
+      />
+
+      <ConfirmModal 
+        isOpen={!!confirmAction} 
+        onClose={() => setConfirmAction(null)} 
+        {...confirmAction} 
+      />
     </div>
   );
 }

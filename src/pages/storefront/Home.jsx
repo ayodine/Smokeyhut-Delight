@@ -181,9 +181,9 @@ export default function Home() {
             <h2 className="section-title">Order <span>Your Favourites</span></h2>
             <p className="section-sub">Our most-loved dishes, grilled fresh and ready for you today.</p>
           </div>
-          <div className="products-grid">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
             {bestsellers.map(p => (
-              <ProductCard key={p.id} product={{...p, desc: p.short_desc, category: p.category_id}} />
+              <ProductCard key={p.id} product={{...p, desc: p.short_desc, category: p.category_id}} variant="shopify" />
             ))}
             {bestsellers.length === 0 && <div style={{gridColumn:'1/-1', textAlign:'center', color:'var(--text-muted)'}}>Loading menu...</div>}
           </div>
