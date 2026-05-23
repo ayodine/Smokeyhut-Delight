@@ -572,6 +572,20 @@ export default function Orders() {
     if (validItems.length === 0) return;
     setSavingNew(true);
     try {
+      const linkedItems = validItems.filter(i => i.product);
+      if (linkedItems.length > 0) {
+        const { data: stockData } = await supabase.from('products').select('id,name,stock').in('id', linkedItems.map(i => i.product));
+        if (stockData) {
+          const stockMap = Object.fromEntries(stockData.map(p => [String(p.id), p]));
+          const failures = linkedItems.filter(i => { const p = stockMap[String(i.product)]; return p && p.stock < Number(i.qty); });
+          if (failures.length) {
+            const msg = failures.map(i => { const p = stockMap[String(i.product)]; return p.stock === 0 ? `${i.name} is out of stock` : `Only ${p.stock} left of ${i.name}`; }).join(' · ');
+            showToast('Stock check failed', msg, 'error');
+            setSavingNew(false);
+            return;
+          }
+        }
+      }
       const notesStr = `[via ${newOrder.channel}]${newOrder.notes ? '\n' + newOrder.notes : ''}`;
       const orderTimestamp = newOrder.orderDate
         ? new Date(`${newOrder.orderDate}T${newOrder.orderTime || '00:00'}:00`).toISOString()
@@ -636,9 +650,29 @@ export default function Orders() {
   const handleSaveBulkOrders = async () => {
     const validOrders = bulkOrders.filter(o => o.name.trim() && o.phone.trim() && o.items.some(i => i.name.trim() && Number(i.price) > 0));
     if (validOrders.length === 0) return;
-    
+
     setSavingBulk(true);
     try {
+      // Aggregate qty needed per product across all bulk orders before inserting anything
+      const qtyNeeded = {};
+      validOrders.forEach(o => o.items.filter(i => i.product && i.name.trim() && Number(i.price) > 0).forEach(i => {
+        qtyNeeded[String(i.product)] = (qtyNeeded[String(i.product)] || 0) + Number(i.qty);
+      }));
+      const productIds = Object.keys(qtyNeeded);
+      if (productIds.length > 0) {
+        const { data: stockData } = await supabase.from('products').select('id,name,stock').in('id', productIds);
+        if (stockData) {
+          const stockMap = Object.fromEntries(stockData.map(p => [String(p.id), p]));
+          const failures = Object.entries(qtyNeeded).filter(([id, qty]) => { const p = stockMap[id]; return p && p.stock < qty; });
+          if (failures.length) {
+            const msg = failures.map(([id]) => { const p = stockMap[id]; return p.stock === 0 ? `${p.name} is out of stock` : `Insufficient stock for ${p.name} (need ${qtyNeeded[id]}, have ${p.stock})`; }).join(' · ');
+            showToast('Stock check failed', msg, 'error');
+            setSavingBulk(false);
+            return;
+          }
+        }
+      }
+
       for (const orderData of validOrders) {
         const notesStr = `[via ${orderData.channel}]${orderData.notes ? '\n' + orderData.notes : ''}`;
         const orderTimestamp = orderData.orderDate

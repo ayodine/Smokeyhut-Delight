@@ -10,11 +10,17 @@ const fmt = (n) => '₦' + Number(n).toLocaleString();
  *  default           → original themed dark card (home bestsellers etc.)
  */
 function ProductCard({ product, variant }) {
-  const { addItem } = useCart();
+  const { addItem, items: cartItems } = useCart();
   const { showToast } = useToast();
 
   const handleAdd = (e) => {
     e.stopPropagation();
+    const stock = Number(product.stock ?? Infinity);
+    const inCart = cartItems.find(i => i.id === product.id)?.qty ?? 0;
+    if (inCart >= stock) {
+      showToast('Max quantity reached', `Only ${stock} available`, 'error');
+      return;
+    }
     addItem(product);
     showToast(`${product.name} added!`, 'Check your cart', 'success');
   };

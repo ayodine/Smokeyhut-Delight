@@ -102,7 +102,7 @@ export default function Cart() {
                       {item.qty === 1 ? <Trash2 size={13} /> : <Minus size={13} />}
                     </button>
                     <span style={{ fontWeight: 800, fontSize: '0.82rem', minWidth: 22, textAlign: 'center', color: '#111' }}>{item.qty}</span>
-                    <button onClick={() => updateQty(item.id, item.qty + 1)} style={{ width: 30, height: 30, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555' }}>
+                    <button onClick={() => updateQty(item.id, item.qty + 1)} disabled={item.qty >= Number(item.stock)} style={{ width: 30, height: 30, background: 'none', border: 'none', cursor: item.qty >= Number(item.stock) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555', opacity: item.qty >= Number(item.stock) ? 0.3 : 1 }}>
                       <Plus size={13} />
                     </button>
                   </div>

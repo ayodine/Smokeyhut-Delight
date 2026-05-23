@@ -39,7 +39,7 @@ export default function CartSidebar({ isOpen, onClose }) {
                 <div className="cart-qty">
                   <button className="qty-btn" onClick={() => updateQty(item.id, item.qty - 1)}>−</button>
                   <span className="qty-num">{item.qty}</span>
-                  <button className="qty-btn" onClick={() => updateQty(item.id, item.qty + 1)}>+</button>
+                  <button className="qty-btn" onClick={() => updateQty(item.id, item.qty + 1)} disabled={item.qty >= Number(item.stock)} style={item.qty >= Number(item.stock) ? { opacity: 0.3, cursor: 'not-allowed' } : undefined}>+</button>
                 </div>
               </div>
               <button className="cart-remove" onClick={() => removeItem(item.id)}><Trash2 size={18} color="var(--text-muted)" /></button>

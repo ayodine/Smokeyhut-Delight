@@ -210,12 +210,37 @@ export default function Checkout() {
 
 
 
+  const checkStock = async (itemsSnapshot) => {
+    const ids = itemsSnapshot.map(i => i.id).filter(Boolean);
+    if (!ids.length) return null;
+    const { data, error } = await publicSupabase
+      .from('products')
+      .select('id, name, stock')
+      .in('id', ids);
+    if (error || !data) return null; // fail open — don't block on a read error
+    const stockMap = Object.fromEntries(data.map(p => [String(p.id), p]));
+    return itemsSnapshot
+      .filter(i => i.id && stockMap[String(i.id)] && stockMap[String(i.id)].stock < i.qty)
+      .map(i => ({ ...i, available: stockMap[String(i.id)].stock }));
+  };
+
   const handleBankTransfer = async () => {
     if (!validateForm()) return;
 
     const itemsSnapshot = [...items];
     const amountSnapshot = amountToPayNow;
     setProcessing(true);
+
+    const stockFailures = await checkStock(itemsSnapshot);
+    if (stockFailures?.length) {
+      const msg = stockFailures
+        .map(i => i.available === 0 ? `${i.name} is out of stock` : `Only ${i.available} left of ${i.name}`)
+        .join(' · ');
+      showToast('Cannot place order', msg, 'error');
+      setProcessing(false);
+      return;
+    }
+
     let orderId;
     try {
       const payload = buildOrderPayload('bank_transfer');
