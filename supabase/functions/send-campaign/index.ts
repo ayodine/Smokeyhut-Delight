@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { SMTPClient } from "https://deno.land/x/denomailer/mod.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -30,11 +31,11 @@ serve(async (req) => {
       })
     }
 
-    const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
-    const FROM_EMAIL = Deno.env.get('FROM_EMAIL') ?? 'Smokeyhut Delight <noreply@smokeyhutdelight.com>'
+    const GMAIL_USER = Deno.env.get('GMAIL_USER') ?? 'Smokeyhut04@gmail.com'
+    const GMAIL_APP_PASSWORD = Deno.env.get('GMAIL_APP_PASSWORD') ?? ''
 
-    if (!RESEND_API_KEY) {
-      return new Response(JSON.stringify({ error: 'Email service not configured. Set RESEND_API_KEY in Supabase edge function secrets.' }), {
+    if (!GMAIL_APP_PASSWORD) {
+      return new Response(JSON.stringify({ error: 'Email SMTP not configured. Set GMAIL_APP_PASSWORD in Supabase secrets.' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
@@ -47,59 +48,85 @@ serve(async (req) => {
       })
     }
 
+    // Connect to Gmail SMTP server securely via TLS (port 465) using Denomailer
+    const client = new SMTPClient({
+      connection: {
+        hostname: "smtp.gmail.com",
+        port: 465,
+        tls: true,
+        auth: {
+          username: GMAIL_USER,
+          password: GMAIL_APP_PASSWORD,
+        },
+      },
+    });
+
     let sent = 0
     let failed = 0
 
-    // Resend batch API — max 100 per request, chunk into 50 to stay safe
-    const CHUNK_SIZE = 50
-    for (let i = 0; i < recipients.length; i += CHUNK_SIZE) {
-      const chunk = recipients.slice(i, i + CHUNK_SIZE)
-
-      const batch = chunk.map((r: Recipient) => {
+    // Send individual personalized emails sequentially
+    for (const r of recipients) {
+      try {
         const personalName = r.name || 'Valued Customer'
-        const html = body
+        const htmlContent = body
           .replace(/\{customer_name\}/g, personalName)
           .replace(/\n/g, '<br>')
 
-        return {
-          from: FROM_EMAIL,
+        const textContent = body.replace(/\{customer_name\}/g, personalName)
+
+        const htmlBody = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${subject}</title>
+</head>
+<body style="margin:0;padding:20px;background:#111;font-family:Arial,sans-serif">
+  <div style="max-width:560px;margin:0 auto;background:#1a1a1a;border-radius:12px;overflow:hidden;border:1px solid #2a2a2a">
+    <div style="background:#c0201f;padding:20px 32px;text-align:center">
+      <div style="display:inline-block;vertical-align:middle;margin-right:12px">
+        <img src="https://smokeyhut-delight.web.app/logo.svg" alt="Smokeyhut Logo" style="height:36px;display:block" />
+      </div>
+      <div style="display:inline-block;vertical-align:middle">
+        <span style="color:#fff;font-size:1.3rem;letter-spacing:0.03em;font-weight:900;font-family:Arial,sans-serif">Smokeyhut Delight</span>
+      </div>
+    </div>
+    <div style="padding:32px">
+      <h2 style="color:#fff;margin-top:0;margin-bottom:20px;font-size:1.35rem;font-weight:bold;font-family:Arial,sans-serif">${subject}</h2>
+      <div style="color:#bbb;font-size:15px;line-height:1.8;margin-bottom:20px">
+        ${htmlContent}
+      </div>
+    </div>
+    <div style="padding:16px 32px;background:#0d0d0d;text-align:center;font-size:0.75rem;color:#555;line-height:1.5;border-top:1px solid #222">
+      You are receiving this because you ordered from Smokeyhut Delight.<br>
+      Smokeyhut Delight &middot; Lagos, Nigeria &middot; © ${new Date().getFullYear()}
+    </div>
+  </div>
+</body>
+</html>`
+
+        await client.send({
+          from: `Smokeyhut Delight <${GMAIL_USER}>`,
           to: r.email,
-          subject,
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
-              <img src="https://smokeyhut-delight.web.app/logo.svg" alt="Smokeyhut" style="height: 40px; margin-bottom: 24px;" />
-              <div style="font-size: 15px; line-height: 1.7; color: #1a1a1a;">${html}</div>
-              <hr style="margin: 32px 0; border: none; border-top: 1px solid #eee;" />
-              <p style="font-size: 12px; color: #999;">You're receiving this because you've ordered from Smokeyhut Delight. © ${new Date().getFullYear()} Smokeyhut Delight.</p>
-            </div>
-          `,
-          text: body.replace(/\{customer_name\}/g, personalName),
-        }
-      })
+          subject: subject,
+          content: textContent,
+          html: htmlBody,
+        });
 
-      const res = await fetch('https://api.resend.com/emails/batch', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${RESEND_API_KEY}`,
-        },
-        body: JSON.stringify(batch),
-      })
-
-      if (res.ok) {
-        sent += chunk.length
-      } else {
-        const errBody = await res.text()
-        console.error('Resend batch error:', errBody)
-        failed += chunk.length
+        sent++
+      } catch (err) {
+        console.error(`Failed to send email to ${r.email}:`, err)
+        failed++
       }
     }
+
+    await client.close();
 
     return new Response(JSON.stringify({ sent, failed }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (err) {
-    console.error('send-campaign error:', err)
+    console.error('send-campaign SMTP error:', err)
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })

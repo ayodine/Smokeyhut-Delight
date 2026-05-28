@@ -18,7 +18,7 @@ const footBtn = {
   fontWeight: 700, padding: '4px 10px', borderRadius: 6,
 };
 
-export default function DashCalendar({ value, onChange, placeholder = 'Filter by date' }) {
+export default function DashCalendar({ value, onChange, placeholder = 'Filter by date', style, wrapperStyle }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -96,7 +96,7 @@ export default function DashCalendar({ value, onChange, placeholder = 'Filter by
   };
 
   return (
-    <div ref={wrapRef} style={{ position: 'relative', display: 'inline-block' }}>
+    <div ref={wrapRef} style={{ position: 'relative', display: wrapperStyle?.width === '100%' ? 'block' : 'inline-block', ...wrapperStyle }}>
       {/* Trigger */}
       <button
         ref={triggerRef}
@@ -108,15 +108,28 @@ export default function DashCalendar({ value, onChange, placeholder = 'Filter by
           background: value ? 'rgba(192,32,31,0.04)' : 'var(--black2)',
           color: value ? 'var(--red)' : 'var(--text-muted)',
           fontWeight: value ? 700 : 400,
+          width: wrapperStyle?.width === '100%' ? '100%' : undefined,
+          justifyContent: wrapperStyle?.width === '100%' ? 'flex-start' : undefined,
+          display: wrapperStyle?.width === '100%' ? 'flex' : undefined,
+          padding: wrapperStyle?.width === '100%' ? '12px 16px' : undefined,
+          fontSize: wrapperStyle?.width === '100%' ? '0.9rem' : undefined,
+          gap: wrapperStyle?.width === '100%' ? '10px' : undefined,
+          ...style,
         }}
       >
-        <Calendar size={14} style={{ flexShrink: 0 }} />
+        <Calendar size={wrapperStyle?.width === '100%' ? 16 : 14} style={{ flexShrink: 0 }} />
         <span>{displayValue || placeholder}</span>
         {value && (
           <span
             role="button"
             onClick={(e) => { e.stopPropagation(); onChange(''); }}
-            style={{ marginLeft: 4, display: 'flex', alignItems: 'center', color: 'var(--text-muted)', cursor: 'pointer' }}
+            style={{
+              marginLeft: wrapperStyle?.width === '100%' ? 'auto' : 4,
+              display: 'flex',
+              alignItems: 'center',
+              color: 'var(--text-muted)',
+              cursor: 'pointer'
+            }}
           >
             <X size={13} />
           </span>

@@ -43,8 +43,15 @@ export default function CustomSelect({ value, onChange, options, placeholder = "
         ref={triggerRef}
         className={`custom-select-trigger ${isOpen ? 'open' : ''}`}
         onClick={handleToggle}
+        style={{ height: '100%', boxSizing: 'border-box', display: 'flex', alignItems: 'center' }}
       >
-        <span style={{ color: selectedOption ? 'inherit' : 'var(--text-muted)' }}>
+        <span style={{
+          color: selectedOption ? 'inherit' : 'var(--text-muted)',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          marginRight: '8px'
+        }}>
           {displayLabel}
         </span>
         <ChevronDown size={14} className="custom-select-icon" />

@@ -198,6 +198,7 @@ export default function Orders() {
   const isAdmin = userRole === 'Admin';
   const canCreateOrder = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Orders:create');
   const canCancelOrder = isAdmin || (userPermissions || []).includes('Orders:cancel');
+  const canDeleteOrder = isAdmin || (userPermissions || []).includes('Orders:delete');
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
   const [storeList, setStoreList] = useState([]);
@@ -245,6 +246,12 @@ export default function Orders() {
   useEffect(() => {
     setSelectedTrashIds([]);
   }, [trashView]);
+
+  useEffect(() => {
+    if (trashView && !canDeleteOrder) {
+      setTrashView(false);
+    }
+  }, [trashView, canDeleteOrder]);
 
   const [realtimeStatus, setRealtimeStatus] = useState('connecting'); // 'connecting' | 'ok' | 'error'
   const audioCtxRef = useRef(null);
@@ -397,6 +404,7 @@ export default function Orders() {
   };
 
   const deleteOrder = (id) => {
+    if (!canDeleteOrder) return showToast('Permission Denied', 'You do not have permission to delete orders.', 'error');
     setConfirmAction({
       title: 'Move to Trash?',
       message: 'You can recover this order later from the Trash.',
@@ -416,6 +424,7 @@ export default function Orders() {
   };
 
   const restoreOrder = async (id) => {
+    if (!canDeleteOrder) return showToast('Permission Denied', 'You do not have permission to restore orders.', 'error');
     const { error } = await supabase.from('orders').update({ deleted_at: null }).eq('id', id);
     if (!error) {
       const moved = deletedOrders.find(o => o.id === id);
@@ -426,6 +435,7 @@ export default function Orders() {
   };
 
   const permanentDelete = (id) => {
+    if (!canDeleteOrder) return showToast('Permission Denied', 'You do not have permission to delete orders.', 'error');
     setConfirmAction({
       title: 'Permanently Delete?',
       message: 'This action cannot be undone.',
@@ -954,27 +964,29 @@ export default function Orders() {
                 color: 'var(--text-muted)', fontFamily: "'DM Sans',sans-serif",
               }}
             >🔔</button>
-            <button
-              onClick={() => setTrashView(v => !v)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px',
-                fontSize: '0.85rem', whiteSpace: 'nowrap', borderRadius: 8, cursor: 'pointer',
-                border: `1px solid ${trashView ? 'var(--red)' : 'var(--border-subtle)'}`,
-                background: trashView ? 'var(--red)' : 'var(--white)',
-                color: trashView ? '#fff' : 'var(--text)', fontWeight: 700,
-                fontFamily: "'DM Sans',sans-serif", position: 'relative',
-              }}
-            >
-              <Trash2 size={15} /> Trash
-              {deletedOrders.length > 0 && (
-                <span style={{
-                  position: 'absolute', top: -6, right: -6,
-                  background: '#ef4444', color: '#fff', borderRadius: '50%',
-                  width: 18, height: 18, fontSize: '0.65rem', fontWeight: 800,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>{deletedOrders.length}</span>
-              )}
-            </button>
+            {canDeleteOrder && (
+              <button
+                onClick={() => setTrashView(v => !v)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px',
+                  fontSize: '0.85rem', whiteSpace: 'nowrap', borderRadius: 8, cursor: 'pointer',
+                  border: `1px solid ${trashView ? 'var(--red)' : 'var(--border-subtle)'}`,
+                  background: trashView ? 'var(--red)' : 'var(--white)',
+                  color: trashView ? '#fff' : 'var(--text)', fontWeight: 700,
+                  fontFamily: "'DM Sans',sans-serif", position: 'relative',
+                }}
+              >
+                <Trash2 size={15} /> Trash
+                {deletedOrders.length > 0 && (
+                  <span style={{
+                    position: 'absolute', top: -6, right: -6,
+                    background: '#ef4444', color: '#fff', borderRadius: '50%',
+                    width: 18, height: 18, fontSize: '0.65rem', fontWeight: 800,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>{deletedOrders.length}</span>
+                )}
+              </button>
+            )}
             {canCreateOrder && !trashView && (
               <>
                 <button
@@ -1379,7 +1391,7 @@ export default function Orders() {
                 <button onClick={() => generateInvoice(sel)} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--white)', border: '1px solid var(--border-subtle)', padding: '8px 16px', borderRadius: 8, fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem' }}>
                   <FileText size={15} /> Invoice
                 </button>
-                {isAdmin && (
+                {canDeleteOrder && (
                   <button onClick={() => { setExpandedId(null); deleteOrder(sel.id); }} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#fee2e2', color: '#991b1b', border: 'none', padding: '8px 16px', borderRadius: 8, fontWeight: 700, cursor: 'pointer', marginLeft: 'auto', fontSize: '0.85rem' }}>
                     <Trash2 size={15} /> Delete
                   </button>
@@ -1437,7 +1449,7 @@ export default function Orders() {
           <div className="form-row" style={{ marginBottom: 0 }}>
             <div className="form-group">
               <label>Order Date</label>
-              <DashCalendar value={newOrder.orderDate} onChange={setField('orderDate')} placeholder="Select date" />
+              <DashCalendar value={newOrder.orderDate} onChange={setField('orderDate')} placeholder="Select date" wrapperStyle={{ width: '100%' }} />
             </div>
             <div className="form-group">
               <label>Order Time</label>

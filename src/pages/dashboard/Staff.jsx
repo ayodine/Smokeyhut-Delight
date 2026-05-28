@@ -454,7 +454,9 @@ export default function Staff() {
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                           {pageActions.map(action => {
                             const checked = hasPerm(permissions, page, action);
-                            const label = extras.find(e => e.key === action)?.label ?? ACTION_LABELS[action];
+                            const label = (page === 'Orders' && action === 'delete')
+                              ? 'Trash / Delete'
+                              : (extras.find(e => e.key === action)?.label ?? ACTION_LABELS[action]);
                             return (
                               <button
                                 key={action}
