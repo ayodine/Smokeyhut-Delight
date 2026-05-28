@@ -577,7 +577,7 @@ export default function Orders() {
   };
 
   const itemsSubtotal = newOrder.items.reduce((s, i) => s + (Number(i.qty) * Number(i.price) || 0), 0);
-  const newOrderTotal = itemsSubtotal + Number(newOrder.deliveryFee || 0);
+  const newOrderTotal = itemsSubtotal;
 
   const handleSaveNewOrder = async () => {
     if (!newOrder.name.trim() || !newOrder.phone.trim()) return;
@@ -694,7 +694,7 @@ export default function Orders() {
 
         const validItems = orderData.items.filter(i => i.name.trim() && Number(i.price) > 0);
         const itemsSubtotal = validItems.reduce((s, i) => s + (Number(i.qty) * Number(i.price) || 0), 0);
-        const total = itemsSubtotal + Number(orderData.deliveryFee || 0);
+        const total = itemsSubtotal;
 
         const { data: inserted, error: orderError } = await supabase.from('orders').insert({
           customer_name: orderData.name.trim(),
@@ -1579,7 +1579,7 @@ export default function Orders() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             {bulkOrders.map((bo, oIdx) => {
               const subtotal = bo.items.reduce((s, i) => s + (Number(i.qty) * Number(i.price) || 0), 0);
-              const total = subtotal + Number(bo.deliveryFee || 0);
+              const total = subtotal;
               return (
                 <div key={oIdx} style={{ background: 'var(--black2)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 20, position: 'relative' }}>
                   {bulkOrders.length > 1 && (
