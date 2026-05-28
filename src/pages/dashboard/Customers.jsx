@@ -18,9 +18,9 @@ We have an exciting offer just for you! This weekend only, enjoy 20% off all ord
 
 Use code SAVE20 at checkout.
 
-Shop now at smokeyhut.com
+Shop now at smokeyhutdelight.com
 
-— The Smokeyhut Team`;
+— The Smokeyhut Delight Team`;
 
 const AUDIENCE_OPTIONS = [
   { value: 'all',                  label: 'All customers with email' },
@@ -758,7 +758,7 @@ export default function Customers() {
                 </label>
                 <textarea
                   rows={12}
-                  placeholder={`Hi {customer_name},\n\nWe have an exciting offer just for you! This weekend only, enjoy 20% off all orders.\n\nUse code SAVE20 at checkout.\n\nShop now at smokeyhut.com\n\n— The Smokeyhut Team`}
+                  placeholder={`Hi {customer_name},\n\nWe have an exciting offer just for you! This weekend only, enjoy 20% off all orders.\n\nUse code SAVE20 at checkout.\n\nShop now at smokeyhutdelight.com\n\n— The Smokeyhut Delight Team`}
                   value={form.body}
                   onChange={e => setForm(f => ({ ...f, body: e.target.value }))}
                   style={{ resize: 'vertical', minHeight: '320px' }}
