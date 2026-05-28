@@ -475,6 +475,7 @@ export default function Orders() {
   };
 
   const handleBulkMoveToTrash = () => {
+    if (!canDeleteOrder) return showToast('Permission Denied', 'You do not have permission to delete orders.', 'error');
     if (selectedIds.length === 0) return;
     setConfirmAction({
       title: 'Move Selected to Trash?',
@@ -498,6 +499,7 @@ export default function Orders() {
   };
 
   const handleBulkRecover = async () => {
+    if (!canDeleteOrder) return showToast('Permission Denied', 'You do not have permission to restore orders.', 'error');
     if (selectedTrashIds.length === 0) return;
     try {
       setLoading(true);
@@ -520,6 +522,7 @@ export default function Orders() {
   };
 
   const handleBulkPermanentDelete = () => {
+    if (!canDeleteOrder) return showToast('Permission Denied', 'You do not have permission to delete orders.', 'error');
     if (selectedTrashIds.length === 0) return;
     setConfirmAction({
       title: 'Delete Selected Forever?',
@@ -1694,20 +1697,22 @@ export default function Orders() {
             label: st,
             onClick: () => handleBulkStatusUpdate(st)
           })),
-          { type: 'delete', label: 'Trash', onClick: handleBulkMoveToTrash }
+          ...(canDeleteOrder ? [{ type: 'delete', label: 'Trash', onClick: handleBulkMoveToTrash }] : [])
         ]}
       />
 
       {/* Floating Bulk Actions Bar (Trash View) */}
-      <BulkActionBar 
-        selectedCount={selectedTrashIds.length} 
-        onDeselectAll={() => setSelectedTrashIds([])}
-        isTrashView={true}
-        actions={[
-          { type: 'recover', label: 'Recover', onClick: handleBulkRecover },
-          { type: 'delete', label: 'Delete Forever', onClick: handleBulkPermanentDelete }
-        ]}
-      />
+      {canDeleteOrder && (
+        <BulkActionBar 
+          selectedCount={selectedTrashIds.length} 
+          onDeselectAll={() => setSelectedTrashIds([])}
+          isTrashView={true}
+          actions={[
+            { type: 'recover', label: 'Recover', onClick: handleBulkRecover },
+            { type: 'delete', label: 'Delete Forever', onClick: handleBulkPermanentDelete }
+          ]}
+        />
+      )}
 
       <ConfirmModal 
         isOpen={!!confirmAction} 
