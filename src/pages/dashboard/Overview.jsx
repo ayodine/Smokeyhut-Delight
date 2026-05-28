@@ -120,8 +120,8 @@ export default function Overview() {
     } else {
       const rows = kpiFallbackRes.data || [];
       setKpis({
-        revenue:           rows.filter(o => o.status !== 'cancelled').reduce((s, o) => s + Number(o.total || 0), 0),
-        order_count:       rows.length,
+        revenue:           rows.filter(o => ['shipped', 'out_for_delivery', 'arrived', 'delivered'].includes(o.status)).reduce((s, o) => s + Number(o.total || 0), 0),
+        order_count:       rows.filter(o => ['shipped', 'out_for_delivery', 'arrived', 'delivered'].includes(o.status)).length,
         pending_shipments: rows.filter(o => ['pending', 'processing'].includes(o.status)).length,
       });
     }
@@ -161,8 +161,8 @@ export default function Overview() {
     } else {
       const rows = kpiFallbackRes.data || [];
       setKpis({
-        revenue:           rows.filter(o => o.status !== 'cancelled').reduce((s, o) => s + Number(o.total || 0), 0),
-        order_count:       rows.length,
+        revenue:           rows.filter(o => ['shipped', 'out_for_delivery', 'arrived', 'delivered'].includes(o.status)).reduce((s, o) => s + Number(o.total || 0), 0),
+        order_count:       rows.filter(o => ['shipped', 'out_for_delivery', 'arrived', 'delivered'].includes(o.status)).length,
         pending_shipments: rows.filter(o => ['pending', 'processing'].includes(o.status)).length,
       });
     }

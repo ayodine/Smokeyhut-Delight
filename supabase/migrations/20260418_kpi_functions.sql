@@ -64,8 +64,8 @@ RETURNS json
 LANGUAGE sql STABLE SECURITY DEFINER
 AS $$
   SELECT json_build_object(
-    'revenue',           COALESCE(SUM(total) FILTER (WHERE status != 'cancelled'), 0),
-    'order_count',       COUNT(*),
+    'revenue',           COALESCE(SUM(total) FILTER (WHERE status IN ('shipped', 'out_for_delivery', 'arrived', 'delivered')), 0),
+    'order_count',       COUNT(*) FILTER (WHERE status IN ('shipped', 'out_for_delivery', 'arrived', 'delivered')),
     'pending_shipments', COUNT(*) FILTER (WHERE status IN ('pending', 'processing'))
   )
   FROM orders
