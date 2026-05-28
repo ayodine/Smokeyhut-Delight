@@ -8,8 +8,8 @@ const corsHeaders = {
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
 const FROM_EMAIL     = Deno.env.get('FROM_EMAIL') ?? 'Smokeyhut Delight <orders@smokeyhutdelight.com>';
 
-// Statuses where customer + ADMIN_EMAIL + ADMIN_EMAIL_2 are notified
-const DELIVERY_STATUSES = new Set(['shipped', 'delivered']);
+// Statuses where customer is notified
+const DELIVERY_STATUSES = new Set(['shipped']);
 
 // Status copy for order progress emails
 const STATUS_INFO: Record<string, { subject: string; heading: string; body: string }> = {
