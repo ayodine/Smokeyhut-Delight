@@ -24,9 +24,10 @@ Shop now at smokeyhutdelight.com
 
 const AUDIENCE_OPTIONS = [
   { value: 'all',                  label: 'All customers with email' },
-  { value: 'vip_customers',        label: 'VIP Customers (₦50,000+ spent)' },
+  { value: 'vip_customers',        label: 'VIP Customers (₦200,000+ spent)' },
   { value: 'high_aov',             label: 'Big Basket Buyers (AOV ₦15,000+)' },
   { value: 'loyal_buyers',         label: 'Loyal Repeat Buyers (3+ orders)' },
+  { value: 'top_20_monthly',       label: 'Top 20 Customers of the Month (by spent)' },
   { value: 'weekend_lovers',       label: 'Weekend Grill Lovers (Friday–Sunday)' },
   { value: 'slipped_90',           label: 'Win-Back: Slipped Customers (No orders in 90+ days)' },
   { value: 'inactive_30',          label: 'Customers with no purchase in the last 30 days' },
@@ -73,7 +74,14 @@ export default function Customers() {
   const [form, setForm] = useState({ name: '', subject: '', body: DEFAULT_CAMPAIGN_BODY, audience: 'all', dateFrom: '', dateTo: '' });
   const [sendResult, setSendResult] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
+  const [excludedEmails, setExcludedEmails] = useState(new Set());
+  const [recipientSearch, setRecipientSearch] = useState('');
   const { showToast } = useToast();
+
+  useEffect(() => {
+    setExcludedEmails(new Set());
+    setRecipientSearch('');
+  }, [form.audience, form.dateFrom, form.dateTo]);
 
   useEffect(() => { fetchData(); }, []);
   useEffect(() => { if (tab === 'campaigns') fetchCampaigns(); }, [tab]);
@@ -116,10 +124,17 @@ export default function Customers() {
         const key = o.customer_phone || o.customer_email || o.customer_name;
         if (!key) return;
         if (!map[key]) {
-          map[key] = { id: key, name: o.customer_name, email: o.customer_email, phone: o.customer_phone, orders: 0, totalSpent: 0, lastOrder: null, hasPendingOrder: false, hasCancelledOrder: false, weekendOrders: 0 };
+          map[key] = { id: key, name: o.customer_name, email: o.customer_email, phone: o.customer_phone, orders: 0, totalSpent: 0, lastOrder: null, hasPendingOrder: false, hasCancelledOrder: false, weekendOrders: 0, monthlySpent: 0 };
         }
         if (o.status !== 'cancelled') {
           map[key].totalSpent += Number(o.total || 0);
+          
+          // Track current calendar month spent for Top 20 customers of the month
+          const orderDate = new Date(o.created_at);
+          const now = new Date();
+          if (orderDate.getMonth() === now.getMonth() && orderDate.getFullYear() === now.getFullYear()) {
+            map[key].monthlySpent += Number(o.total || 0);
+          }
         } else {
           map[key].hasCancelledOrder = true;
         }
@@ -242,6 +257,15 @@ export default function Customers() {
   const getAudience = (filter, dateFrom, dateTo) => {
     let list = allCustomers.filter(c => c.email && c.email.trim() !== '');
     
+    // Deduplicate by email address automatically so each unique email only receives one campaign email
+    const seenEmails = new Set();
+    list = list.filter(c => {
+      const emailLower = c.email.trim().toLowerCase();
+      if (seenEmails.has(emailLower)) return false;
+      seenEmails.add(emailLower);
+      return true;
+    });
+    
     // Apply Date range Filter (except for slipped_90, inactive_30, inactive_60 which represent inactive customers)
     const isInactiveSegment = ['slipped_90', 'inactive_30', 'inactive_60'].includes(filter);
     if (!isInactiveSegment) {
@@ -254,13 +278,18 @@ export default function Customers() {
     }
     
     if (filter === 'vip_customers') {
-      list = list.filter(c => c.totalSpent >= 50000);
+      list = list.filter(c => c.totalSpent >= 200000);
     }
     else if (filter === 'high_aov') {
       list = list.filter(c => c.orders > 0 && (c.totalSpent / c.orders) >= 15000);
     }
     else if (filter === 'loyal_buyers') {
       list = list.filter(c => c.orders >= 3);
+    }
+    else if (filter === 'top_20_monthly') {
+      const sorted = [...list].sort((a, b) => (b.monthlySpent || 0) - (a.monthlySpent || 0));
+      const topIds = new Set(sorted.slice(0, 20).map(c => c.id));
+      list = list.filter(c => topIds.has(c.id));
     }
     else if (filter === 'weekend_lovers') {
       list = list.filter(c => c.weekendOrders && (c.weekendOrders / c.orders) >= 0.5);
@@ -296,7 +325,8 @@ export default function Customers() {
     return list;
   };
 
-  const audienceList = getAudience(form.audience, form.dateFrom, form.dateTo);
+  const fullAudienceList = getAudience(form.audience, form.dateFrom, form.dateTo);
+  const audienceList = fullAudienceList.filter(c => !excludedEmails.has(c.email.trim().toLowerCase()));
   const noEmailCount = customers.filter(c => !c.email).length;
 
   // ── Export ──────────────────────────────────────────────────────────────
@@ -808,6 +838,142 @@ export default function Customers() {
                       : <><Send size={15} /> Send Campaign</>
                     }
                   </button>
+                </div>
+              </div>
+
+              {/* RECIPIENT MAILING LIST CARD */}
+              <div className="dash-card" style={{ margin: '24px 0 0 0' }}>
+                <div className="dash-card-header" style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                  <div className="dash-card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Users size={18} color="var(--red)" />
+                    Mailing List ({audienceList.length} of {fullAudienceList.length} active)
+                  </div>
+                  {excludedEmails.size > 0 && (
+                    <button
+                      onClick={() => setExcludedEmails(new Set())}
+                      style={{
+                        background: 'none', border: 'none', color: 'var(--red)',
+                        fontSize: '0.78rem', fontWeight: 800, cursor: 'pointer',
+                        padding: 0, textTransform: 'uppercase', letterSpacing: '0.05em'
+                      }}
+                    >
+                      Reset Exclusions ({excludedEmails.size})
+                    </button>
+                  )}
+                </div>
+
+                {/* Search input */}
+                <div style={{ position: 'relative', marginBottom: 16 }}>
+                  <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                  <input
+                    type="text"
+                    placeholder="Search list by name or email..."
+                    value={recipientSearch}
+                    onChange={e => setRecipientSearch(e.target.value)}
+                    style={{
+                      width: '100%', boxSizing: 'border-box',
+                      padding: '10px 12px 10px 36px', fontSize: '0.85rem',
+                      borderRadius: 8, border: '1px solid var(--border-subtle)',
+                      background: 'var(--white)', color: 'var(--text)',
+                      fontFamily: 'inherit', outline: 'none'
+                    }}
+                  />
+                </div>
+
+                {/* Scrollable list */}
+                <div style={{
+                  maxHeight: '280px', overflowY: 'auto',
+                  display: 'flex', flexDirection: 'column', gap: 8,
+                  paddingRight: 4
+                }}>
+                  {(() => {
+                    const searched = fullAudienceList.filter(c => 
+                      c.name?.toLowerCase().includes(recipientSearch.toLowerCase()) || 
+                      c.email?.toLowerCase().includes(recipientSearch.toLowerCase())
+                    );
+
+                    if (fullAudienceList.length === 0) {
+                      return (
+                        <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                          No recipients in the selected audience segment.
+                        </div>
+                      );
+                    }
+
+                    if (searched.length === 0) {
+                      return (
+                        <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                          No match found for "{recipientSearch}"
+                        </div>
+                      );
+                    }
+
+                    return searched.map(c => {
+                      const emailKey = c.email.trim().toLowerCase();
+                      const isExcluded = excludedEmails.has(emailKey);
+                      
+                      return (
+                        <div
+                          key={c.id}
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            padding: '10px 12px', background: isExcluded ? 'rgba(0,0,0,0.2)' : 'var(--black2)',
+                            borderRadius: 8, border: '1px solid var(--border-subtle)',
+                            opacity: isExcluded ? 0.45 : 1, transition: 'all 0.15s'
+                          }}
+                        >
+                          <div style={{ minWidth: 0, flex: 1, paddingRight: 12 }}>
+                            <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {c.name || 'Anonymous Customer'}
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
+                              {c.email}
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--red)', fontWeight: 600, marginTop: 4 }}>
+                              {form.audience === 'top_20_monthly' 
+                                ? `₦${Number(c.monthlySpent || 0).toLocaleString()} spent this month` 
+                                : `₦${Number(c.totalSpent || 0).toLocaleString()} total spent · ${c.orders} order${c.orders !== 1 ? 's' : ''}`
+                              }
+                            </div>
+                          </div>
+
+                          <div>
+                            {isExcluded ? (
+                              <button
+                                onClick={() => {
+                                  const next = new Set(excludedEmails);
+                                  next.delete(emailKey);
+                                  setExcludedEmails(next);
+                                }}
+                                style={{
+                                  padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)',
+                                  background: 'var(--white)', color: 'var(--text)',
+                                  fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer'
+                                }}
+                              >
+                                Restore
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  const next = new Set(excludedEmails);
+                                  next.add(emailKey);
+                                  setExcludedEmails(next);
+                                }}
+                                style={{
+                                  padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(220,38,38,0.2)',
+                                  background: 'rgba(220,38,38,0.05)', color: '#ef4444',
+                                  fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer'
+                                }}
+                              >
+                                Exclude
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
             </div>
