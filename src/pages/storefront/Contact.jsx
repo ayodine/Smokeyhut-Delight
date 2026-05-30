@@ -73,7 +73,7 @@ export default function Contact() {
                 <div className="info-icon"><Clock size={22} color="var(--red)" /></div>
                 <div>
                   <div className="info-title">Opening Hours</div>
-                  <div className="info-text">Mon – Sat: 8am – 6pm<br />Sunday: 10am – 4pm</div>
+                  <div className="info-text">Mon – Sat: 8am – 6pm<br />Sunday: 10am – 5pm</div>
                 </div>
               </div>
               <div className="info-card">

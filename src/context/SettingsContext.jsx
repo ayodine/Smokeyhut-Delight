@@ -9,7 +9,7 @@ const defaultSettings = {
   email: 'admin@smokeyhut.com',
   phone: '+234 801 234 5678',
   weekdayHours: '8:00am – 6:00pm',
-  sundayHours: '10:00am – 4:00pm',
+  sundayHours: '10:00am – 5:00pm',
   notifyOrders: true,
   notifyDelivery: true,
   notifyPayments: false,

@@ -16,7 +16,7 @@ import {
 const SUPABASE_URL        = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY   = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const WA_NUMBER           = '2348141748281';
-const VAT                 = 100;
+const VAT                 = 200;
 const fmt = (n) => '₦' + Number(n).toLocaleString();
 
 async function notify(type, order) {

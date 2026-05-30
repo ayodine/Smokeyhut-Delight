@@ -72,7 +72,7 @@ export default function OrderingGuidePopup() {
                 <span style={{ fontWeight: 700, color: 'var(--text)' }}>Mon – Sat</span><span>8:00am – 6:00pm</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontWeight: 700, color: 'var(--text)' }}>Sunday</span><span>10:00am – 4:00pm</span>
+                <span style={{ fontWeight: 700, color: 'var(--text)' }}>Sunday</span><span>10:00am – 5:00pm</span>
               </div>
             </div>
             <p style={{ marginTop: 12, fontSize: '0.82rem', color: 'var(--yellow)', fontWeight: 600 }}>Orders placed after closing will be delivered the next day.</p>

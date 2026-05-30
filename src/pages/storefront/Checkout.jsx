@@ -94,7 +94,7 @@ export default function Checkout() {
     }
   }, [locationQuery, zones]);
 
-  const VAT = 100;
+  const VAT = 200;
   const isPickup = deliveryType === 'pickup';
   const allFreeShipping = items.length > 0 && items.every(i => i.free_shipping === true);
   const deliveryFee = isPickup ? 0 : (allFreeShipping ? 0 : (selectedMatch?.zone.price ?? 0));

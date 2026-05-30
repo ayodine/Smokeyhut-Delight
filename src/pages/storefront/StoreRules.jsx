@@ -3,7 +3,7 @@ import { Clock, Package, ClipboardList, Truck, CheckCircle, Map } from 'lucide-r
 import { useSEO } from '../../hooks/useSEO';
 
 const regs = [
-  { icon: Clock, title: 'Opening Hours', items: ['Monday – Saturday: 8:00am – 6:00pm', 'Sunday: 10:00am – 4:00pm', 'Orders after closing delivered next day'] },
+  { icon: Clock, title: 'Opening Hours', items: ['Monday – Saturday: 8:00am – 6:00pm', 'Sunday: 10:00am – 5:00pm', 'Orders after closing delivered next day'] },
   { icon: Package, title: 'Order Processing', items: ['First-batch orders until 10:00am', 'Dispatch begins from 10:30am', 'Delivery: 4–5 hours depending on location'] },
   { icon: ClipboardList, title: 'Before You Order', items: ['Provide accurate shipping details and active phone', 'Select: pickup or delivery', 'No extra order customization available', 'Extra packaging: ₦1,000 per pack'] },
   { icon: Truck, title: 'Delivery Policy', items: ['Rider waits maximum 10 minutes', 'Unreachable = rescheduled at full delivery cost', 'Ensure availability to receive your order'] },

@@ -4,7 +4,7 @@ export const mockShipments = [];
 export const mockPayments = [];
 export const mockCustomers = [];
 export const faqs = [
-  { q: "What time can I order?", a: "We accept orders Monday–Saturday from 8:00am to 6:00pm, and Sunday from 10:00am to 4:00pm. Orders placed after closing hours will be delivered the next available day." },
+  { q: "What time can I order?", a: "We accept orders Monday–Saturday from 8:00am to 6:00pm, and Sunday from 10:00am to 5:00pm. Orders placed after closing hours will be delivered the next available day." },
   { q: "When will my order be dispatched?", a: "First-batch orders are processed until 10:00am and dispatch begins at 10:30am. After that, orders are processed throughout the day within our opening hours." },
   { q: "How long does delivery take?", a: "Standard delivery takes 4–5 hours depending on your location. Extended areas such as Lasu, Ayobo, Alagbado, Akesan, Ojo, Akute, Alagbole, Ijegun, and Ibeju-Lekki may take up to 24 hours." },
   { q: "Can I pick up my order?", a: "Yes! Pickup is available at our location: 13 McNeil St, Yaba, Lagos. Select 'Pickup' when checking out." },

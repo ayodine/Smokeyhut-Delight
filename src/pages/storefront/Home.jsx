@@ -17,7 +17,7 @@ function Countdown() {
       const nowMins = lagosNow.getHours() * 60 + lagosNow.getMinutes();
       const sunday = lagosNow.getDay() === 0;
       const openHour = sunday ? 10 : 8;
-      const closeHour = sunday ? 16 : 18;
+      const closeHour = sunday ? 17 : 18;
       const open = nowMins >= openHour * 60 && nowMins < closeHour * 60;
       setIsOpen(open);
       setIsSunday(sunday);
@@ -76,7 +76,7 @@ function Countdown() {
 
           <p className="status-tagline">
             {isOpen
-              ? <><Flame size={13} style={{ display:'inline', marginRight:5, verticalAlign:'middle' }} />Order now — hot &amp; smoky until {isSunday ? '4:00 pm' : '6:00 pm'}</>
+              ? <><Flame size={13} style={{ display:'inline', marginRight:5, verticalAlign:'middle' }} />Order now — hot &amp; smoky until {isSunday ? '5:00 pm' : '6:00 pm'}</>
               : <><Truck size={13} style={{ display:'inline', marginRight:5, verticalAlign:'middle' }} />{isSunday ? 'Ordering opens at 10:00 am on Sundays' : 'Ordering opens daily at 11:00 am'}</>
             }
           </p>
@@ -95,7 +95,7 @@ function Countdown() {
             </div>
             <div className="hours-row">
               <span className="hours-day">Sunday</span>
-              <span className="hours-time">10:00 am – 4:00 pm</span>
+              <span className="hours-time">10:00 am – 5:00 pm</span>
             </div>
             <div className="hours-divider" />
             <div className="hours-row hours-delivery">
@@ -134,7 +134,7 @@ const features = [
 export default function Home() {
   useSEO({
     title: 'Smokeyhut Delight – Best Firewood Grilled Guineafowl in Lagos',
-    description: "Lagos's #1 firewood-grilled guineafowl. Order fresh, smoky guineafowl online for same-day delivery across Lagos. Open Mon–Sat 8am–6pm, Sun 10am–4pm.",
+    description: "Lagos's #1 firewood-grilled guineafowl. Order fresh, smoky guineafowl online for same-day delivery across Lagos. Open Mon–Sat 8am–6pm, Sun 10am–5pm.",
     path: '/',
   });
 

@@ -19,7 +19,7 @@ export default function Cart() {
 
   const cartIds = items.map(i => i.id);
   const upsell = products.filter(p => !cartIds.includes(p.id)).slice(0, 4);
-  const VAT = 100;
+  const VAT = 200;
 
   /* ── Empty state ── */
   if (items.length === 0) {
