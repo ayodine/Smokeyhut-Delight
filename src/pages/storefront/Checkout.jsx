@@ -488,7 +488,7 @@ export default function Checkout() {
               ['Subtotal (food)', fmt(total)],
               couponDiscount > 0 ? [`Discount (${appliedCoupon?.code})`, `−${fmt(couponDiscount)}`] : null,
               !isPickup && deliveryFee > 0 ? ['Delivery (pay rider)', fmt(deliveryFee)] : null,
-              ['Service fee', fmt(VAT)],
+              ['VAT', fmt(VAT)],
             ].filter(Boolean).map(([label, value]) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: '0.85rem' }}>
                 <span style={{ color: '#888' }}>{label}</span>

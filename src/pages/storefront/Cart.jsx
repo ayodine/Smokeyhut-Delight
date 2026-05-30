@@ -130,7 +130,7 @@ export default function Cart() {
               <span style={{ fontWeight: 700, color: '#111' }}>{fmt(total)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5, fontSize: '0.85rem' }}>
-              <span style={{ color: '#888' }}>Service fee</span>
+              <span style={{ color: '#888' }}>VAT</span>
               <span style={{ fontWeight: 700, color: '#111' }}>{fmt(VAT)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5, fontSize: '0.82rem' }}>
