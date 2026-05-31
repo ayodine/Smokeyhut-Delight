@@ -1,5 +1,6 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { AlertCircle, X } from 'lucide-react';
 
 // Prefetch products as early as possible
 import { prefetchProducts } from './lib/productsCache';
@@ -108,6 +109,82 @@ function StorefrontLayout() {
   );
 }
 
+// Emergency notification component (auto-dismissible, auto-expires today at 5:00 PM Lagos Time)
+function EmergencyNotice() {
+  const location = useLocation();
+  const [dismissed, setDismissed] = useState(() => {
+    return localStorage.getItem('smokey_emergency_dismissed_20260531') === 'true';
+  });
+  const [active, setActive] = useState(false);
+
+  useEffect(() => {
+    const checkExpiry = () => {
+      // Lagos timezone UTC+1. 5:00 PM is 17:00:00
+      const expiry = new Date('2026-05-31T17:00:00+01:00').getTime();
+      setActive(Date.now() < expiry);
+    };
+    checkExpiry();
+    const interval = setInterval(checkExpiry, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (dismissed || !active || location.pathname.startsWith('/admin')) {
+    return null;
+  }
+
+  const handleDismiss = () => {
+    setDismissed(true);
+    localStorage.setItem('smokey_emergency_dismissed_20260531', 'true');
+  };
+
+  return (
+    <div style={{
+      background: 'linear-gradient(90deg, #b91c1c, #991b1b)',
+      color: '#fff',
+      padding: '11px 24px',
+      fontSize: '0.85rem',
+      fontWeight: 600,
+      textAlign: 'center',
+      position: 'relative',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '8px',
+      zIndex: 99999,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+      fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+      lineHeight: 1.4
+    }}>
+      <AlertCircle size={15} style={{ flexShrink: 0, color: '#fca5a5' }} />
+      <span style={{ flexGrow: 1, paddingRight: '14px' }}>
+        Important Notice: Due to operational scheduling, all new orders will be delivered with the first delivery run tomorrow.
+      </span>
+      <button 
+        onClick={handleDismiss}
+        style={{
+          background: 'none',
+          border: 'none',
+          color: '#fff',
+          cursor: 'pointer',
+          padding: '4px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: 0.75,
+          transition: 'opacity 0.2s',
+          position: 'absolute',
+          right: '12px'
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
+        onMouseLeave={(e) => e.currentTarget.style.opacity = 0.75}
+        aria-label="Dismiss notice"
+      >
+        <X size={15} />
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -117,6 +194,7 @@ export default function App() {
             <ToastProvider>
               <ScrollToTop />
               <StoreHostRedirect />
+              <EmergencyNotice />
               <Routes>
                 {/* Admin (lazy-loaded) */}
                 <Route path="/admin/login" element={<Suspense fallback={<AdminLoader />}><Login /></Suspense>} />
