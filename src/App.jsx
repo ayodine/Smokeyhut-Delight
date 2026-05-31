@@ -109,11 +109,11 @@ function StorefrontLayout() {
   );
 }
 
-// Emergency notification component (auto-dismissible, auto-expires today at 5:00 PM Lagos Time)
-function EmergencyNotice() {
+// Emergency notification modal component (auto-dismissible, auto-expires today at 5:00 PM Lagos Time)
+function EmergencyNoticeModal() {
   const location = useLocation();
   const [dismissed, setDismissed] = useState(() => {
-    return localStorage.getItem('smokey_emergency_dismissed_20260531') === 'true';
+    return sessionStorage.getItem('smokey_emergency_dismissed_20260531') === 'true';
   });
   const [active, setActive] = useState(false);
 
@@ -134,54 +134,144 @@ function EmergencyNotice() {
 
   const handleDismiss = () => {
     setDismissed(true);
-    localStorage.setItem('smokey_emergency_dismissed_20260531', 'true');
+    sessionStorage.setItem('smokey_emergency_dismissed_20260531', 'true');
   };
 
   return (
-    <div style={{
-      background: 'linear-gradient(90deg, #b91c1c, #991b1b)',
-      color: '#fff',
-      padding: '11px 24px',
-      fontSize: '0.85rem',
-      fontWeight: 600,
-      textAlign: 'center',
-      position: 'relative',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: '8px',
-      zIndex: 99999,
-      boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
-      fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
-      lineHeight: 1.4
-    }}>
-      <AlertCircle size={15} style={{ flexShrink: 0, color: '#fca5a5' }} />
-      <span style={{ flexGrow: 1, paddingRight: '14px' }}>
-        Important Notice: Due to operational scheduling, all new orders will be delivered with the first delivery run tomorrow.
-      </span>
-      <button 
+    <>
+      {/* Overlay backdrop */}
+      <div 
         onClick={handleDismiss}
+        style={{ 
+          position: 'fixed', 
+          inset: 0, 
+          zIndex: 99999, 
+          background: 'rgba(0,0,0,0.85)', 
+          backdropFilter: 'blur(5px)',
+          transition: 'all 0.3s ease'
+        }} 
+      />
+      {/* Modal box */}
+      <div 
         style={{
-          background: 'none',
-          border: 'none',
-          color: '#fff',
-          cursor: 'pointer',
-          padding: '4px',
+          position: 'fixed', 
+          top: '50%', 
+          left: '50%', 
+          transform: 'translate(-50%, -50%)',
+          zIndex: 100000, 
+          background: 'var(--card-bg, #1a1a1a)', 
+          width: '90%', 
+          maxWidth: 460,
+          borderRadius: 20, 
+          padding: '36px 28px',
+          boxShadow: '0 24px 60px rgba(0,0,0,0.5)', 
+          color: 'var(--text, #fff)',
+          border: '1px solid var(--border-subtle, #333)',
+          fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+          textAlign: 'center',
+          animation: 'fadeInScale 0.3s ease-out'
+        }}
+      >
+        {/* Close "X" Button */}
+        <button 
+          onClick={handleDismiss} 
+          style={{ 
+            position: 'absolute', 
+            top: 20, 
+            right: 20, 
+            background: 'rgba(255, 255, 255, 0.05)', 
+            border: 'none', 
+            color: 'var(--text-muted, #888)', 
+            width: 36, 
+            height: 36, 
+            borderRadius: '50%', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            cursor: 'pointer',
+            transition: 'background 0.2s, color 0.2s'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+            e.currentTarget.style.color = '#fff';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+            e.currentTarget.style.color = 'var(--text-muted, #888)';
+          }}
+        >
+          <X size={20} />
+        </button>
+
+        {/* Warning Icon Badge */}
+        <div style={{
+          width: 60,
+          height: 60,
+          borderRadius: '50%',
+          background: 'rgba(239, 68, 68, 0.1)',
+          color: '#ef4444',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          opacity: 0.75,
-          transition: 'opacity 0.2s',
-          position: 'absolute',
-          right: '12px'
-        }}
-        onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
-        onMouseLeave={(e) => e.currentTarget.style.opacity = 0.75}
-        aria-label="Dismiss notice"
-      >
-        <X size={15} />
-      </button>
-    </div>
+          margin: '0 auto 20px',
+          border: '1px solid rgba(239, 68, 68, 0.2)'
+        }}>
+          <AlertCircle size={28} />
+        </div>
+
+        {/* Title */}
+        <h3 style={{ 
+          margin: '0 0 12px 0', 
+          fontSize: '1.4rem', 
+          fontWeight: 800, 
+          fontFamily: "'Mona Sans', sans-serif" 
+        }}>
+          Important Notice
+        </h3>
+
+        {/* Message */}
+        <p style={{ 
+          margin: '0 0 28px 0', 
+          fontSize: '0.92rem', 
+          color: 'var(--text-muted, #aaa)', 
+          lineHeight: 1.6,
+          fontWeight: 500
+        }}>
+          Due to operational scheduling, all new orders will be delivered with the first delivery run tomorrow.
+        </p>
+
+        {/* Action Button */}
+        <button 
+          onClick={handleDismiss}
+          style={{ 
+            width: '100%',
+            padding: '14px 28px', 
+            borderRadius: 12, 
+            border: 'none', 
+            background: 'var(--red, #c0201f)', 
+            color: '#fff', 
+            fontWeight: 800, 
+            fontSize: '0.95rem',
+            cursor: 'pointer', 
+            fontFamily: "'DM Sans', sans-serif",
+            boxShadow: '0 4px 16px rgba(192, 32, 31, 0.3)',
+            transition: 'transform 0.2s, background 0.2s, boxShadow 0.2s'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = '#d92c2b';
+            e.currentTarget.style.transform = 'translateY(-2px)';
+            e.currentTarget.style.boxShadow = '0 6px 20px rgba(192, 32, 31, 0.4)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'var(--red, #c0201f)';
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 4px 16px rgba(192, 32, 31, 0.3)';
+          }}
+        >
+          I Understand
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -194,7 +284,7 @@ export default function App() {
             <ToastProvider>
               <ScrollToTop />
               <StoreHostRedirect />
-              <EmergencyNotice />
+              <EmergencyNoticeModal />
               <Routes>
                 {/* Admin (lazy-loaded) */}
                 <Route path="/admin/login" element={<Suspense fallback={<AdminLoader />}><Login /></Suspense>} />
