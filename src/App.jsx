@@ -229,7 +229,6 @@ function EmergencyNoticeModal() {
           Important Notice
         </h3>
 
-        {/* Message */}
         <p style={{ 
           margin: '0 0 28px 0', 
           fontSize: '0.92rem', 
@@ -237,7 +236,7 @@ function EmergencyNoticeModal() {
           lineHeight: 1.6,
           fontWeight: 500
         }}>
-          Due to operational scheduling, all new orders will be delivered with the first delivery run tomorrow.
+          Due to operational scheduling, all new orders will be delivered with the first batch tomorrow.
         </p>
 
         {/* Action Button */}
