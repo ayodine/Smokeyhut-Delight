@@ -112,9 +112,7 @@ function StorefrontLayout() {
 // Emergency notification modal component (auto-dismissible, auto-expires today at 5:00 PM Lagos Time)
 function EmergencyNoticeModal() {
   const location = useLocation();
-  const [dismissed, setDismissed] = useState(() => {
-    return sessionStorage.getItem('smokey_emergency_dismissed_20260531') === 'true';
-  });
+  const [dismissed, setDismissed] = useState(false);
   const [active, setActive] = useState(false);
 
   useEffect(() => {
@@ -134,7 +132,6 @@ function EmergencyNoticeModal() {
 
   const handleDismiss = () => {
     setDismissed(true);
-    sessionStorage.setItem('smokey_emergency_dismissed_20260531', 'true');
   };
 
   return (
