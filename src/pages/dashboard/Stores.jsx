@@ -8,15 +8,24 @@ import ConfirmModal from '../../components/ConfirmModal';
 const fmt = (n) => '₦' + n.toLocaleString();
 
 export default function Stores() {
-  const { userRole } = useAuth();
+  const { userRole, userPermissions } = useAuth();
   const isAdmin = userRole === 'Admin';
+  const canManage = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Stores:manage');
+  const canDelete = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Stores:delete');
   const [storeList, setStoreList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', address: '', phone: '', zones: '' });
+  const [form, setForm] = useState({
+    name: '',
+    address: '',
+    phone: '',
+    zones: '',
+    weekdayHours: '8:00am - 6:00pm',
+    sundayHours: '10:00am - 5:00pm'
+  });
   const [confirmAction, setConfirmAction] = useState(null);
 
   useEffect(() => {
@@ -72,7 +81,10 @@ export default function Stores() {
       address: form.address,
       phone: form.phone,
       zones: zonesArray,
-      hours: { weekday: '8:00am - 6:00pm', sunday: 'Closed' }
+      hours: {
+        weekday: form.weekdayHours || '8:00am - 6:00pm',
+        sunday: form.sundayHours || '10:00am - 5:00pm'
+      }
     };
 
     if (editing) {
@@ -112,9 +124,22 @@ export default function Stores() {
     <div>
       <div className="dash-card-header" style={{ marginBottom: 24 }}>
         <div className="dash-card-title" style={{ fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif", fontSize: '1.4rem' }}>Store Management</div>
-        <button className="btn-primary" style={{ padding: '8px 16px', fontSize: '0.88rem' }} onClick={() => { setEditing(null); setForm({ name: '', address: '', phone: '', zones: '' }); setShowModal(true); }}>
-          + Add Store
-        </button>
+        {canManage && (
+          <button className="btn-primary" style={{ padding: '8px 16px', fontSize: '0.88rem' }} onClick={() => {
+            setEditing(null);
+            setForm({
+              name: '',
+              address: '',
+              phone: '',
+              zones: '',
+              weekdayHours: '8:00am - 6:00pm',
+              sundayHours: '10:00am - 5:00pm'
+            });
+            setShowModal(true);
+          }}>
+            + Add Store
+          </button>
+        )}
       </div>
 
       <div className="store-cards">
@@ -131,7 +156,12 @@ export default function Stores() {
                     <MapPin size={12} /> {store.address}
                   </div>
                 </div>
-                <button className={`store-toggle ${store.is_active ? 'active' : 'inactive'}`} onClick={() => toggleStore(store.id, store.is_active)} aria-label={`Toggle ${store.name}`} />
+                <button 
+                  className={`store-toggle ${store.is_active ? 'active' : 'inactive'}`} 
+                  onClick={() => canManage && toggleStore(store.id, store.is_active)} 
+                  style={{ cursor: canManage ? 'pointer' : 'not-allowed' }}
+                  aria-label={`Toggle ${store.name}`} 
+                />
               </div>
 
               <div style={{ fontSize: '0.82rem', color: store.is_active ? '#22c55e' : 'var(--text-muted)', fontWeight: 700, marginBottom: 16 }}>
@@ -172,22 +202,37 @@ export default function Stores() {
                 <div style={{ lineHeight: 1.5 }}>{zones.length > 0 ? zones.join(', ') : 'None assigned'}</div>
               </div>
 
-              <div style={{ display: 'flex', gap: 12, borderTop: '1px solid var(--border-subtle)', paddingTop: 20 }}>
-                <button style={{ flex: 1, padding: '10px', borderRadius: 10, background: 'var(--black2)', border: 'none', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--text)', transition: 'all 0.2s' }} 
-                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--gray-light)' }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'var(--black2)' }}
-                  onClick={() => { setEditing(store.id); setForm({ name: store.name, address: store.address, phone: store.phone, zones: zones.join(', ') }); setShowModal(true); }}>
-                  <Edit2 size={16} /> Edit
-                </button>
-                {isAdmin && (
-                  <button style={{ flex: 1, padding: '10px', borderRadius: 10, background: '#fee2e2', color: '#991b1b', border: 'none', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, transition: 'all 0.2s' }} 
-                    onMouseEnter={e => { e.currentTarget.style.background = '#fca5a5' }}
-                    onMouseLeave={e => { e.currentTarget.style.background = '#fee2e2' }}
-                    onClick={() => handleDelete(store)}>
-                    <Trash2 size={16} /> Delete
-                  </button>
-                )}
-              </div>
+              {(canManage || canDelete) && (
+                <div style={{ display: 'flex', gap: 12, borderTop: '1px solid var(--border-subtle)', paddingTop: 20 }}>
+                  {canManage && (
+                    <button style={{ flex: 1, padding: '10px', borderRadius: 10, background: 'var(--black2)', border: 'none', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--text)', transition: 'all 0.2s' }} 
+                      onMouseEnter={e => { e.currentTarget.style.background = 'var(--gray-light)' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'var(--black2)' }}
+                      onClick={() => {
+                        setEditing(store.id);
+                        setForm({
+                          name: store.name,
+                          address: store.address,
+                          phone: store.phone,
+                          zones: zones.join(', '),
+                          weekdayHours: hours.weekday || '8:00am - 6:00pm',
+                          sundayHours: hours.sunday || '10:00am - 5:00pm'
+                        });
+                        setShowModal(true);
+                      }}>
+                      <Edit2 size={16} /> Edit
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button style={{ flex: 1, padding: '10px', borderRadius: 10, background: '#fee2e2', color: '#991b1b', border: 'none', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, transition: 'all 0.2s' }} 
+                      onMouseEnter={e => { e.currentTarget.style.background = '#fca5a5' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = '#fee2e2' }}
+                      onClick={() => handleDelete(store)}>
+                      <Trash2 size={16} /> Delete
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
@@ -210,6 +255,10 @@ export default function Stores() {
             <div className="form-group"><label>Address</label><input value={form.address} onChange={e => setForm({...form, address: e.target.value})} placeholder="123 Main St..." /></div>
             <div className="form-group"><label>Phone Number</label><input value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} placeholder="080..." /></div>
             <div className="form-group"><label>Delivery Zones (comma separated)</label><input value={form.zones} onChange={e => setForm({...form, zones: e.target.value})} placeholder="Ikeja, Maryland, Oshodi" /></div>
+            <div className="form-row" style={{ display: 'flex', gap: 12 }}>
+              <div className="form-group" style={{ flex: 1 }}><label>Mon–Sat Hours</label><input value={form.weekdayHours} onChange={e => setForm({...form, weekdayHours: e.target.value})} placeholder="8:00am - 6:00pm" /></div>
+              <div className="form-group" style={{ flex: 1 }}><label>Sunday Hours</label><input value={form.sundayHours} onChange={e => setForm({...form, sundayHours: e.target.value})} placeholder="10:00am - 5:00pm" /></div>
+            </div>
 
             <div style={{ display: 'flex', gap: 12, marginTop: 32 }}>
               <button onClick={() => setShowModal(false)} className="btn-secondary" style={{ flex: 1 }}>

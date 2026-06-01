@@ -11,10 +11,11 @@ import ConfirmModal from '../../components/ConfirmModal';
 import BulkActionBar from '../../components/BulkActionBar';
 
 const fmt = (n) => '₦' + n.toLocaleString();
-
 export default function Products() {
-  const { userRole } = useAuth();
+  const { userRole, userPermissions } = useAuth();
   const isAdmin = userRole === 'Admin';
+  const canManage = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Products:manage');
+  const canDelete = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Products:delete');
   const [productList, setProductList] = useState([]);
   const [catList, setCatList] = useState([]);
   const [orderItems, setOrderItems] = useState([]);
@@ -280,7 +281,7 @@ export default function Products() {
           <button className="btn-secondary" onClick={() => setShowCatModal(true)} style={{ padding: '10px 16px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6 }}>
             <FolderKanban size={16} /> Categories
           </button>
-          <button className="btn-primary" onClick={openAdd} style={{ padding: '10px 20px', fontSize: '0.85rem' }}>+ Add Product</button>
+          {canManage && <button className="btn-primary" onClick={openAdd} style={{ padding: '10px 20px', fontSize: '0.85rem' }}>+ Add Product</button>}
         </div>
       </div>
 
@@ -349,21 +350,23 @@ export default function Products() {
         <div className="dash-table-wrapper">
           <table className="dash-table">
             <thead><tr>
-              <th style={{ width: 44, textAlign: 'center' }}>
-                <input
-                  type="checkbox"
-                  checked={pagedProducts.length > 0 && pagedProducts.every(p => selectedIds.includes(p.id))}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setSelectedIds([...new Set([...selectedIds, ...pagedProducts.map(p => p.id)])]);
-                    } else {
-                      setSelectedIds(selectedIds.filter(id => !pagedProducts.find(p => p.id === id)));
-                    }
-                  }}
-                  style={{ cursor: 'pointer', accentColor: 'var(--red)' }}
-                />
-              </th>
-              <th>Image</th><th>Name</th><th>Category</th><th>Price</th><th>Stock</th><th>Badge</th><th>Actions</th>
+              {canDelete && (
+                <th style={{ width: 44, textAlign: 'center' }}>
+                  <input
+                    type="checkbox"
+                    checked={pagedProducts.length > 0 && pagedProducts.every(p => selectedIds.includes(p.id))}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedIds([...new Set([...selectedIds, ...pagedProducts.map(p => p.id)])]);
+                      } else {
+                        setSelectedIds(selectedIds.filter(id => !pagedProducts.find(p => p.id === id)));
+                      }
+                    }}
+                    style={{ cursor: 'pointer', accentColor: 'var(--red)' }}
+                  />
+                </th>
+              )}
+              <th>Image</th><th>Name</th><th>Category</th><th>Price</th><th>Stock</th><th>Badge</th>{(canManage || canDelete) && <th>Actions</th>}
             </tr></thead>
             <tbody>
               {pagedProducts.map(p => {
@@ -386,17 +389,19 @@ export default function Products() {
 
                 return (
                   <tr key={p.id} style={finalStyle}>
-                    <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={(e) => {
-                          if (e.target.checked) setSelectedIds([...selectedIds, p.id]);
-                          else setSelectedIds(selectedIds.filter(id => id !== p.id));
-                        }}
-                        style={{ cursor: 'pointer', accentColor: 'var(--red)' }}
-                      />
-                    </td>
+                    {canDelete && (
+                      <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) setSelectedIds([...selectedIds, p.id]);
+                            else setSelectedIds(selectedIds.filter(id => id !== p.id));
+                          }}
+                          style={{ cursor: 'pointer', accentColor: 'var(--red)' }}
+                        />
+                      </td>
+                    )}
                     <td style={{ textAlign: 'center' }}>
                       {isEmoji ? (
                         <div style={{ fontSize: '1.8rem' }}>{imgSource}</div>
@@ -424,24 +429,28 @@ export default function Products() {
                         {!p.badge && !p.free_shipping && '—'}
                       </div>
                     </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button onClick={() => openEdit(p)} className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.78rem', gap: 4 }}>
-                          <Edit2 size={12} /> Edit
-                        </button>
-                        {isAdmin && (
-                          <button onClick={() => handleDelete(p.id)} style={{ background: '#fee2e2', border: 'none', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <Trash2 size={12} /> Delete
-                          </button>
-                        )}
-                      </div>
-                    </td>
+                    {(canManage || canDelete) && (
+                      <td>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          {canManage && (
+                            <button onClick={() => openEdit(p)} className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.78rem', gap: 4 }}>
+                              <Edit2 size={12} /> Edit
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button onClick={() => handleDelete(p.id)} style={{ background: '#fee2e2', border: 'none', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <Trash2 size={12} /> Delete
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
               {productList.length === 0 && (
                 <tr>
-                   <td colSpan="7" style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>No products found. Add your first item!</td>
+                   <td colSpan={canDelete ? (canManage || canDelete ? 8 : 7) : (canManage || canDelete ? 7 : 6)} style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>No products found. Add your first item!</td>
                 </tr>
               )}
             </tbody>
@@ -491,8 +500,19 @@ export default function Products() {
               <div className="form-group">
                 <label>Stock</label>
                 <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--border-subtle)', borderRadius: 8, overflow: 'hidden', background: 'var(--white)', height: 38 }}>
-                  <button type="button" onClick={() => set('stock')({ target: { value: Math.max(0, Number(form.stock) - 1) } })} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 12px', fontSize: '1.1rem', fontWeight: 700, color: 'var(--text)', lineHeight: 1, flexShrink: 0 }}>−</button>
-                  <span style={{ flex: 1, textAlign: 'center', fontWeight: 700, fontSize: '0.95rem' }}>{form.stock === '' ? '—' : form.stock}</span>
+                  <button type="button" onClick={() => set('stock')({ target: { value: Math.max(0, Number(form.stock || 0) - 1) } })} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 12px', fontSize: '1.1rem', fontWeight: 700, color: 'var(--text)', lineHeight: 1, flexShrink: 0 }}>−</button>
+                  <input
+                    type="number"
+                    value={form.stock}
+                    onChange={set('stock')}
+                    placeholder="0"
+                    style={{
+                      flex: 1, width: '100%', border: 'none', background: 'none',
+                      textAlign: 'center', fontWeight: 700, fontSize: '0.95rem',
+                      outline: 'none', padding: 0, color: 'var(--text)',
+                      fontFamily: 'inherit'
+                    }}
+                  />
                   <button type="button" onClick={() => set('stock')({ target: { value: Number(form.stock || 0) + 1 } })} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 12px', fontSize: '1.1rem', fontWeight: 700, color: 'var(--text)', lineHeight: 1, flexShrink: 0 }}>+</button>
                 </div>
               </div>

@@ -67,7 +67,10 @@ function fmtDt(iso) {
 }
 
 export default function Inventory() {
-  const { user } = useAuth();
+  const { user, userRole, userPermissions } = useAuth();
+  const isAdmin = userRole === 'Admin';
+  const canManage = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Inventory:manage');
+  const canDelete = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Inventory:delete');
   const { showToast } = useToast();
   const [confirmAction, setConfirmAction] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
@@ -342,13 +345,13 @@ export default function Inventory() {
           Inventory
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          {tab === 'catalog' && (
+          {canManage && tab === 'catalog' && (
             <button className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', fontSize: '0.85rem' }}
               onClick={() => { setItemForm(EMPTY_ITEM); setEditingItemId(null); setShowItemModal(true); }}>
               <Plus size={16} /> Add Item
             </button>
           )}
-          {(tab === 'stock' || tab === 'movements') && (
+          {canManage && (tab === 'stock' || tab === 'movements') && (
             <button className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', fontSize: '0.85rem' }}
               onClick={() => openMovModal()}>
               <Plus size={16} /> Record Movement
@@ -473,16 +476,18 @@ export default function Inventory() {
                           <td style={{ textAlign: 'right', color: 'var(--text-muted)', fontSize: '0.83rem' }}>{fmt(item.unit_cost)}</td>
                           <td style={{ textAlign: 'right', fontSize: '0.85rem' }}>{fmt(Math.max(0, stock) * num(item.unit_cost))}</td>
                           <td onClick={e => e.stopPropagation()}>
-                            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                              <button title="Add Stock" onClick={() => openMovModal({ item_id: item.id, type: 'IN' })}
-                                style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)', color: '#16a34a', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
-                                <ArrowUp size={12} /> IN
-                              </button>
-                              <button title="Record Usage" onClick={() => openMovModal({ item_id: item.id, type: 'OUT' })}
-                                style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.08)', color: '#dc2626', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
-                                <ArrowDown size={12} /> OUT
-                              </button>
-                            </div>
+                            {canManage && (
+                              <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                                <button title="Add Stock" onClick={() => openMovModal({ item_id: item.id, type: 'IN' })}
+                                  style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)', color: '#16a34a', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
+                                  <ArrowUp size={12} /> IN
+                                </button>
+                                <button title="Record Usage" onClick={() => openMovModal({ item_id: item.id, type: 'OUT' })}
+                                  style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.08)', color: '#dc2626', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
+                                  <ArrowDown size={12} /> OUT
+                                </button>
+                              </div>
+                            )}
                           </td>
                         </tr>
                       );
@@ -676,22 +681,24 @@ export default function Inventory() {
               <table className="dash-table">
                 <thead>
                   <tr>
-                    <th style={{ width: 44, textAlign: 'center' }}>
-                      <input
-                        type="checkbox"
-                        checked={groupItems.length > 0 && groupItems.every(p => selectedIds.includes(p.id))}
-                        onChange={(e) => {
-                          if (e.target.checked) setSelectedIds(groupItems.map(p => p.id));
-                          else setSelectedIds([]);
-                        }}
-                        style={{ cursor: 'pointer', accentColor: 'var(--red)' }}
-                      />
-                    </th>
+                    {canDelete && (
+                      <th style={{ width: 44, textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={groupItems.length > 0 && groupItems.every(p => selectedIds.includes(p.id))}
+                          onChange={(e) => {
+                            if (e.target.checked) setSelectedIds(groupItems.map(p => p.id));
+                            else setSelectedIds([]);
+                          }}
+                          style={{ cursor: 'pointer', accentColor: 'var(--red)' }}
+                        />
+                      </th>
+                    )}
                     <th>Name</th>
                     <th>Unit</th>
                     <th style={{ textAlign: 'right' }}>Unit Cost</th>
                     <th style={{ textAlign: 'right' }}>Low Stock Alert</th>
-                    <th style={{ width: 80 }}></th>
+                    {(canManage || canDelete) && <th style={{ width: 80 }}></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -700,33 +707,41 @@ export default function Inventory() {
                     const rowStyle = isSelected ? { background: 'rgba(192, 32, 31, 0.06)', borderLeft: '3px solid var(--red)' } : {};
                     return (
                     <tr key={item.id} style={rowStyle}>
-                      <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={(e) => {
-                            if (e.target.checked) setSelectedIds([...selectedIds, item.id]);
-                            else setSelectedIds(selectedIds.filter(id => id !== item.id));
-                          }}
-                          style={{ cursor: 'pointer', accentColor: 'var(--red)' }}
-                        />
-                      </td>
+                      {canDelete && (
+                        <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              if (e.target.checked) setSelectedIds([...selectedIds, item.id]);
+                              else setSelectedIds(selectedIds.filter(id => id !== item.id));
+                            }}
+                            style={{ cursor: 'pointer', accentColor: 'var(--red)' }}
+                          />
+                        </td>
+                      )}
                       <td style={{ fontWeight: 600 }}>{item.name}</td>
                       <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{item.unit}</td>
                       <td style={{ textAlign: 'right' }}>{fmt(item.unit_cost)}</td>
                       <td style={{ textAlign: 'right', color: 'var(--text-muted)', fontSize: '0.85rem' }}>≤ {item.low_stock_threshold} {item.unit}</td>
-                      <td>
-                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                          <button onClick={() => { setItemForm({ name: item.name, unit: item.unit, unit_cost: item.unit_cost, low_stock_threshold: item.low_stock_threshold }); setEditingItemId(item.id); setShowItemModal(true); }}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}>
-                            <Edit2 size={14} />
-                          </button>
-                          <button onClick={() => deleteItem(item.id)} disabled={deletingItem === item.id}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 4 }}>
-                            {deletingItem === item.id ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />}
-                          </button>
-                        </div>
-                      </td>
+                      {(canManage || canDelete) && (
+                        <td>
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                            {canManage && (
+                              <button onClick={() => { setItemForm({ name: item.name, unit: item.unit, unit_cost: item.unit_cost, low_stock_threshold: item.low_stock_threshold }); setEditingItemId(item.id); setShowItemModal(true); }}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}>
+                                <Edit2 size={14} />
+                              </button>
+                            )}
+                            {canDelete && (
+                              <button onClick={() => deleteItem(item.id)} disabled={deletingItem === item.id}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 4 }}>
+                                {deletingItem === item.id ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
                     </tr>
                     );
                   })}
@@ -737,7 +752,7 @@ export default function Inventory() {
         </div>
       )}
 
-      {tab === 'catalog' && (
+      {canDelete && tab === 'catalog' && (
         <BulkActionBar 
           selectedCount={selectedIds.length} 
           onDeselectAll={() => setSelectedIds([])}

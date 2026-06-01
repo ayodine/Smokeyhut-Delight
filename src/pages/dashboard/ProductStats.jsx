@@ -15,7 +15,7 @@ const PERIODS = [
   { key: 'all',    label: 'All Time' },
 ];
 
-function getPeriodParams(key, customDateStr) {
+function getPeriodParams(key, customDate) {
   const now = new Date();
   if (key === 'today') {
     const d = new Date(now); d.setHours(0, 0, 0, 0); return { start: d.toISOString(), end: null };
@@ -29,12 +29,61 @@ function getPeriodParams(key, customDateStr) {
   if (key === 'month') {
     return { start: new Date(now.getFullYear(), now.getMonth(), 1).toISOString(), end: null };
   }
-  if (key === 'custom' && customDateStr) {
-    const s = new Date(customDateStr); s.setHours(0, 0, 0, 0);
-    const e = new Date(customDateStr); e.setHours(23, 59, 59, 999);
-    return { start: s.toISOString(), end: e.toISOString() };
+  if (key === 'custom' && customDate) {
+    const s = customDate.start ? new Date(`${customDate.start}T00:00:00`) : null;
+    const e = customDate.end ? new Date(`${customDate.end}T23:59:59.999`) : null;
+    return { start: s ? s.toISOString() : null, end: e ? e.toISOString() : null };
   }
   return { start: null, end: null };
+}
+
+function normalizeProductName(name) {
+  if (!name) return '';
+  let normalized = name.trim();
+  
+  // Match any variation of "chopped" (with/without parentheses, with/without spaces) at the end
+  const choppedRegex = /\s*\(?\s*CHOPPED\s*\)?\s*$/i;
+  
+  if (choppedRegex.test(normalized)) {
+    normalized = normalized.replace(choppedRegex, '').trim() + ' (CHOPPED)';
+  }
+  
+  return normalized;
+}
+
+function mergeProductRows(rows) {
+  if (!rows || rows.length === 0) return rows;
+  const map = {};
+  rows.forEach(r => {
+    const normName = normalizeProductName(r.name || '');
+    if (!map[normName]) {
+      map[normName] = { ...r, name: normName, value: 0 };
+    }
+    map[normName].value += Number(r.value || 0);
+  });
+  const merged = Object.values(map);
+  merged.sort((a, b) => b.value - a.value);
+  return merged;
+}
+
+function mergeDrillDownProductRows(rows, type) {
+  if (!rows || rows.length === 0) return rows;
+  const map = {};
+  rows.forEach(r => {
+    const normName = normalizeProductName(r.name || '');
+    if (!map[normName]) {
+      map[normName] = { ...r, name: normName, revenue: 0, units: 0 };
+    }
+    map[normName].revenue += Number(r.revenue || 0);
+    map[normName].units += Number(r.units || 0);
+  });
+  const merged = Object.values(map);
+  if (type === 'products') {
+    merged.sort((a, b) => b.revenue - a.revenue);
+  } else if (type === 'products_units') {
+    merged.sort((a, b) => b.units - a.units);
+  }
+  return merged;
 }
 
 const RANK_STYLE = {
@@ -298,7 +347,7 @@ function CustomerModal({ customer, onClose }) {
 export default function Stats() {
   const { selectedStore } = useOutletContext() || {};
   const [period, setPeriod]     = useState('month');
-  const [customDate, setCustomDate] = useState('');
+  const [customDate, setCustomDate] = useState({ start: null, end: null });
   const [kpis,   setKpis]       = useState(null);
   const [lists,  setLists]      = useState(null);
   const [kpiErr, setKpiErr]     = useState(false);
@@ -317,6 +366,10 @@ export default function Stats() {
   const storeParam = selectedStore && selectedStore !== 'all' ? Number(selectedStore) : null;
 
   useEffect(() => {
+    // Only fetch if date filter selection is complete (both start and end are set, or both are null)
+    const isCustomDateIncomplete = customDate && customDate.start && !customDate.end;
+    if (isCustomDateIncomplete) return;
+
     let cancelled = false;
     const run = async () => {
       setLoading(true);
@@ -331,7 +384,18 @@ export default function Stats() {
       ]);
       if (cancelled) return;
       if (kpisRes.error)  setKpiErr(true);  else setKpis(kpisRes.data);
-      if (listsRes.error) setListErr(true); else setLists(listsRes.data);
+      if (listsRes.error) {
+        setListErr(true);
+      } else {
+        const data = listsRes.data || {};
+        const processed = {
+          ...data,
+          top_by_revenue: mergeProductRows(data.top_by_revenue),
+          top_by_units: mergeProductRows(data.top_by_units),
+          top_qty_per_order: mergeProductRows(data.top_qty_per_order),
+        };
+        setLists(processed);
+      }
       setLoading(false);
     };
     run();
@@ -348,7 +412,8 @@ export default function Stats() {
 
     if (type === 'products' || type === 'products_units') {
       const { data } = await supabase.rpc('get_stats_all_products', { p_store_id: storeParam, p_start: startParam, p_end: endParam });
-      setDrillDown(d => d ? { ...d, rows: data || [], loading: false } : d);
+      const mergedRows = mergeDrillDownProductRows(data || [], type);
+      setDrillDown(d => d ? { ...d, rows: mergedRows, loading: false } : d);
     } else if (type === 'customers') {
       const { data } = await supabase.rpc('get_stats_all_customers', { p_store_id: storeParam, p_start: startParam, p_end: endParam });
       setDrillDown(d => d ? { ...d, rows: data || [], loading: false } : d);
@@ -396,16 +461,17 @@ export default function Stats() {
               <button
                 key={p.key}
                 className={`dash-filter-btn${period === p.key ? ' active' : ''}`}
-                onClick={() => { setPeriod(p.key); setCustomDate(''); }}
+                onClick={() => { setPeriod(p.key); setCustomDate({ start: null, end: null }); }}
               >
                 {p.label}
               </button>
             ))}
           </div>
           <DashCalendar
+            range={true}
             value={customDate}
-            onChange={v => { setCustomDate(v); setPeriod(v ? 'custom' : 'month'); }}
-            placeholder="Pick a date"
+            onChange={v => { setCustomDate(v); setPeriod(v && (v.start || v.end) ? 'custom' : 'month'); }}
+            placeholder="Pick a date range"
           />
         </div>
       </div>

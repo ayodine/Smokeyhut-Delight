@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { SMTPClient } from "https://deno.land/x/denomailer/mod.ts"
+import mailer from "jsr:@neabyte/deno-mailer"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -31,6 +31,12 @@ serve(async (req) => {
       })
     }
 
+    // Service-role client used to write campaign_logs (bypasses RLS)
+    const serviceClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    )
+
     const GMAIL_USER = Deno.env.get('GMAIL_USER') ?? 'Smokeyhut04@gmail.com'
     const GMAIL_APP_PASSWORD = Deno.env.get('GMAIL_APP_PASSWORD') ?? ''
 
@@ -40,7 +46,12 @@ serve(async (req) => {
       })
     }
 
-    const { subject, body, recipients }: { subject: string; body: string; recipients: Recipient[] } = await req.json()
+    const { subject, body, recipients, campaign_id }: {
+      subject: string
+      body: string
+      recipients: Recipient[]
+      campaign_id?: string
+    } = await req.json()
 
     if (!subject || !body || !recipients?.length) {
       return new Response(JSON.stringify({ error: 'subject, body, and recipients are required' }), {
@@ -48,24 +59,26 @@ serve(async (req) => {
       })
     }
 
-    // Connect to Gmail SMTP server securely via TLS (port 465) using Denomailer
-    const client = new SMTPClient({
-      connection: {
-        hostname: "smtp.gmail.com",
-        port: 465,
-        tls: true,
-        auth: {
-          username: GMAIL_USER,
-          password: GMAIL_APP_PASSWORD,
-        },
+    // Connect to Gmail SMTP server securely via TLS (port 465) using deno-mailer
+    const client = mailer.transporter({
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true,
+      auth: {
+        type: "password",
+        user: GMAIL_USER,
+        pass: GMAIL_APP_PASSWORD,
       },
     });
 
     let sent = 0
     let failed = 0
 
-    // Send individual personalized emails sequentially
+    // Send individual personalized emails sequentially and log each attempt
     for (const r of recipients) {
+      let success = false
+      let errorMsg: string | undefined
+
       try {
         const personalName = r.name || 'Valued Customer'
         const htmlContent = body
@@ -109,18 +122,34 @@ serve(async (req) => {
           from: `Smokeyhut Delight <${GMAIL_USER}>`,
           to: r.email,
           subject: subject,
-          content: textContent,
+          text: textContent,
           html: htmlBody,
         });
 
         sent++
+        success = true
       } catch (err) {
         console.error(`Failed to send email to ${r.email}:`, err)
+        errorMsg = err?.message || 'Unknown error'
         failed++
       }
-    }
 
-    await client.close();
+      // Log this individual send attempt if a campaign_id was provided
+      if (campaign_id) {
+        try {
+          await serviceClient.from('campaign_logs').insert({
+            campaign_id,
+            email: r.email,
+            name: r.name || null,
+            status: success ? 'sent' : 'failed',
+            error: errorMsg ?? null,
+          })
+        } catch (logErr) {
+          // Never let logging failure break the send loop
+          console.error('Failed to write campaign log:', logErr)
+        }
+      }
+    }
 
     return new Response(JSON.stringify({ sent, failed }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

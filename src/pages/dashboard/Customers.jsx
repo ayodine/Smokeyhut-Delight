@@ -27,7 +27,7 @@ const AUDIENCE_OPTIONS = [
   { value: 'vip_customers',        label: 'VIP Customers (₦200,000+ spent)' },
   { value: 'high_aov',             label: 'Big Basket Buyers (AOV ₦15,000+)' },
   { value: 'loyal_buyers',         label: 'Loyal Repeat Buyers (3+ orders)' },
-  { value: 'top_20_monthly',       label: 'Top 20 Customers of the Month (by spent)' },
+  { value: 'top_20_monthly',       label: 'Top 20 Customers' },
   { value: 'weekend_lovers',       label: 'Weekend Grill Lovers (Friday–Sunday)' },
   { value: 'slipped_90',           label: 'Win-Back: Slipped Customers (No orders in 90+ days)' },
   { value: 'inactive_30',          label: 'Customers with no purchase in the last 30 days' },
@@ -52,8 +52,10 @@ const SORT_DIR_OPTIONS = [
 const SVG_ARROW = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`;
 
 export default function Customers() {
-  const { userRole } = useAuth();
+  const { userRole, userPermissions } = useAuth();
   const isAdmin = userRole === 'Admin';
+  const canManage = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Customers:manage');
+  const canDelete = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Customers:delete');
 
   const [tab, setTab] = useState('directory');
   const [allCustomers, setAllCustomers] = useState([]);
@@ -71,17 +73,25 @@ export default function Customers() {
   const [campsLoading, setCampsLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendingTest, setSendingTest] = useState(false);
-  const [form, setForm] = useState({ name: '', subject: '', body: DEFAULT_CAMPAIGN_BODY, audience: 'all', dateFrom: '', dateTo: '' });
+  const [form, setForm] = useState({ name: '', subject: '', body: DEFAULT_CAMPAIGN_BODY, audience: 'all', dateFilter: { start: null, end: null } });
   const [sendResult, setSendResult] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
   const [excludedEmails, setExcludedEmails] = useState(new Set());
   const [recipientSearch, setRecipientSearch] = useState('');
+  // Campaign detail / logs
+  const [detailCampaign, setDetailCampaign] = useState(null);
+  const [campaignLogs, setCampaignLogs] = useState([]);
+  const [logsLoading, setLogsLoading] = useState(false);
   const { showToast } = useToast();
 
   useEffect(() => {
+    // Only run if range selection is complete or cleared
+    const isFilterIncomplete = form.dateFilter && form.dateFilter.start && !form.dateFilter.end;
+    if (isFilterIncomplete) return;
+
     setExcludedEmails(new Set());
     setRecipientSearch('');
-  }, [form.audience, form.dateFrom, form.dateTo]);
+  }, [form.audience, form.dateFilter]);
 
   useEffect(() => { fetchData(); }, []);
   useEffect(() => { if (tab === 'campaigns') fetchCampaigns(); }, [tab]);
@@ -254,7 +264,7 @@ export default function Customers() {
 
   const pagedCustomers = sortedCustomers.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
-  const getAudience = (filter, dateFrom, dateTo) => {
+  const getAudience = (filter, dateFilter) => {
     let list = allCustomers.filter(c => c.email && c.email.trim() !== '');
     
     // Deduplicate by email address automatically so each unique email only receives one campaign email
@@ -266,14 +276,15 @@ export default function Customers() {
       return true;
     });
     
-    // Apply Date range Filter (except for slipped_90, inactive_30, inactive_60 which represent inactive customers)
-    const isInactiveSegment = ['slipped_90', 'inactive_30', 'inactive_60'].includes(filter);
-    if (!isInactiveSegment) {
-      if (dateFrom) {
-        list = list.filter(c => c.lastOrder && new Date(c.lastOrder).toLocaleDateString('en-CA') >= dateFrom);
+    // Apply Date range Filter (except for slipped_90, inactive_30, inactive_60, top_20_monthly which represent special logic)
+    const isSpecialSegment = ['slipped_90', 'inactive_30', 'inactive_60', 'top_20_monthly'].includes(filter);
+    if (!isSpecialSegment && dateFilter) {
+      const { start, end } = dateFilter;
+      if (start) {
+        list = list.filter(c => c.lastOrder && new Date(c.lastOrder).toLocaleDateString('en-CA') >= start);
       }
-      if (dateTo) {
-        list = list.filter(c => c.lastOrder && new Date(c.lastOrder).toLocaleDateString('en-CA') <= dateTo);
+      if (end) {
+        list = list.filter(c => c.lastOrder && new Date(c.lastOrder).toLocaleDateString('en-CA') <= end);
       }
     }
     
@@ -287,9 +298,30 @@ export default function Customers() {
       list = list.filter(c => c.orders >= 3);
     }
     else if (filter === 'top_20_monthly') {
-      const sorted = [...list].sort((a, b) => (b.monthlySpent || 0) - (a.monthlySpent || 0));
-      const topIds = new Set(sorted.slice(0, 20).map(c => c.id));
-      list = list.filter(c => topIds.has(c.id));
+      const spentMap = {};
+      const { start, end } = dateFilter || {};
+      
+      rawOrders.forEach(o => {
+        if (o.status === 'cancelled') return;
+        const key = o.customer_phone || o.customer_email || o.customer_name;
+        if (!key) return;
+        
+        const orderDateStr = new Date(o.created_at).toLocaleDateString('en-CA');
+        if (start && orderDateStr < start) return;
+        if (end && orderDateStr > end) return;
+        
+        spentMap[key] = (spentMap[key] || 0) + Number(o.total || 0);
+      });
+      
+      // Filter list to only customers who spent something in the selected range, then sort by spent
+      let segmentList = list.filter(c => (spentMap[c.id] || 0) > 0);
+      segmentList = segmentList.map(c => ({
+        ...c,
+        rangeSpent: spentMap[c.id]
+      }));
+      segmentList.sort((a, b) => b.rangeSpent - a.rangeSpent);
+      
+      list = segmentList.slice(0, 20);
     }
     else if (filter === 'weekend_lovers') {
       list = list.filter(c => c.weekendOrders && (c.weekendOrders / c.orders) >= 0.5);
@@ -325,7 +357,7 @@ export default function Customers() {
     return list;
   };
 
-  const fullAudienceList = getAudience(form.audience, form.dateFrom, form.dateTo);
+  const fullAudienceList = getAudience(form.audience, form.dateFilter);
   const audienceList = fullAudienceList.filter(c => !excludedEmails.has(c.email.trim().toLowerCase()));
   const noEmailCount = customers.filter(c => !c.email).length;
 
@@ -373,6 +405,20 @@ export default function Customers() {
     });
   };
 
+  // ── View campaign detail logs ─────────────────────────────────────────────
+  const viewCampaignDetail = async (campaign) => {
+    setDetailCampaign(campaign);
+    setCampaignLogs([]);
+    setLogsLoading(true);
+    const { data } = await supabase
+      .from('campaign_logs')
+      .select('*')
+      .eq('campaign_id', campaign.id)
+      .order('created_at', { ascending: true });
+    setCampaignLogs(data || []);
+    setLogsLoading(false);
+  };
+
   // ── Send campaign ────────────────────────────────────────────────────────
   const sendCampaign = () => {
     if (!form.name.trim() || !form.subject.trim() || !form.body.trim()) {
@@ -391,31 +437,49 @@ export default function Customers() {
         setConfirmAction(prev => ({ ...prev, isLoading: true }));
         setSending(true);
         setSendResult(null);
+        let campaignId = null;
 
         try {
           const recipients = audienceList.map(c => ({ email: c.email, name: c.name || '' }));
-          const { data: result, error } = await supabase.functions.invoke('send-campaign', {
-            body: { subject: form.subject, body: form.body, recipients },
-          });
 
+          // 1. Insert campaign record first to get the ID for per-email logging
+          const { data: campaignRow, error: insertErr } = await supabase
+            .from('email_campaigns')
+            .insert({
+              name: form.name,
+              subject: form.subject,
+              body: form.body,
+              audience: form.audience,
+              recipient_count: recipients.length,
+              sent_count: 0,
+              status: 'sending',
+            })
+            .select('id')
+            .single();
+          if (insertErr) throw new Error(insertErr.message);
+          campaignId = campaignRow.id;
+
+          // 2. Invoke edge function — passes campaign_id so it can log each email
+          const { data: result, error } = await supabase.functions.invoke('send-campaign', {
+            body: { subject: form.subject, body: form.body, recipients, campaign_id: campaignId },
+          });
           if (error) throw new Error(error.message || 'Send failed');
 
-          // Save campaign record
-          await supabase.from('email_campaigns').insert({
-            name: form.name,
-            subject: form.subject,
-            body: form.body,
-            audience: form.audience,
-            recipient_count: recipients.length,
+          // 3. Update campaign with final counts and status
+          await supabase.from('email_campaigns').update({
             sent_count: result?.sent ?? recipients.length,
             status: result?.failed > 0 ? 'partial' : 'sent',
-          });
+          }).eq('id', campaignId);
 
           setSendResult({ sent: result?.sent ?? recipients.length, failed: result?.failed ?? 0 });
-          setForm({ name: '', subject: '', body: DEFAULT_CAMPAIGN_BODY, audience: 'all', dateFrom: '', dateTo: '' });
+          setForm({ name: '', subject: '', body: DEFAULT_CAMPAIGN_BODY, audience: 'all', dateFilter: { start: null, end: null } });
           showToast('Success', `Campaign sent`, 'success');
           fetchCampaigns();
         } catch (err) {
+          // Mark campaign as failed if we already created the record
+          if (campaignId) {
+            await supabase.from('email_campaigns').update({ status: 'failed' }).eq('id', campaignId);
+          }
           showToast('Error sending campaign', err.message, 'error');
         } finally {
           setSending(false);
@@ -508,9 +572,11 @@ export default function Customers() {
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button onClick={() => setTab('directory')} style={tabBtn(tab === 'directory')}>Directory</button>
-          <button onClick={() => setTab('campaigns')} style={tabBtn(tab === 'campaigns')}>
-            <Mail size={14} /> Email Campaigns
-          </button>
+          {canManage && (
+            <button onClick={() => setTab('campaigns')} style={tabBtn(tab === 'campaigns')}>
+              <Mail size={14} /> Email Campaigns
+            </button>
+          )}
         </div>
       </div>
 
@@ -677,7 +743,7 @@ export default function Customers() {
                         {c.lastOrder ? new Date(c.lastOrder).toLocaleDateString() : 'Never'}
                       </td>
                       <td style={{ textAlign: 'right' }}>
-                        {isAdmin && (
+                        {canDelete && (
                           <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)', padding: '4px 8px' }} onClick={() => handleDelete(c.phone)}>
                             <Trash2 size={16} />
                           </button>
@@ -749,25 +815,15 @@ export default function Customers() {
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-                <div className="form-group" style={{ margin: 0, display: 'flex', flexDirection: 'column' }}>
-                  <label>Last Order From (Optional)</label>
-                  <DashCalendar
-                    value={form.dateFrom}
-                    onChange={v => setForm(f => ({ ...f, dateFrom: v }))}
-                    placeholder="From date"
-                    wrapperStyle={{ width: '100%' }}
-                  />
-                </div>
-                <div className="form-group" style={{ margin: 0, display: 'flex', flexDirection: 'column' }}>
-                  <label>Last Order To (Optional)</label>
-                  <DashCalendar
-                    value={form.dateTo}
-                    onChange={v => setForm(f => ({ ...f, dateTo: v }))}
-                    placeholder="To date"
-                    wrapperStyle={{ width: '100%' }}
-                  />
-                </div>
+              <div className="form-group" style={{ marginBottom: 16 }}>
+                <label>Last Order Date Range (Optional)</label>
+                <DashCalendar
+                  range={true}
+                  value={form.dateFilter}
+                  onChange={v => setForm(f => ({ ...f, dateFilter: v }))}
+                  placeholder="Filter by customer last order date range"
+                  wrapperStyle={{ width: '100%' }}
+                />
               </div>
 
               <div className="form-group" style={{ marginBottom: 16 }}>
@@ -880,101 +936,147 @@ export default function Customers() {
                   />
                 </div>
 
-                {/* Scrollable list */}
-                <div style={{
-                  maxHeight: '280px', overflowY: 'auto',
-                  display: 'flex', flexDirection: 'column', gap: 8,
-                  paddingRight: 4
-                }}>
-                  {(() => {
-                    const searched = fullAudienceList.filter(c => 
-                      c.name?.toLowerCase().includes(recipientSearch.toLowerCase()) || 
-                      c.email?.toLowerCase().includes(recipientSearch.toLowerCase())
-                    );
-
-                    if (fullAudienceList.length === 0) {
-                      return (
-                        <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
-                          No recipients in the selected audience segment.
-                        </div>
-                      );
+                {/* Bulk toggle and info */}
+                {(() => {
+                  const searched = fullAudienceList.filter(c => 
+                    c.name?.toLowerCase().includes(recipientSearch.toLowerCase()) || 
+                    c.email?.toLowerCase().includes(recipientSearch.toLowerCase())
+                  );
+                  const allSearchedIncluded = searched.every(c => !excludedEmails.has(c.email.trim().toLowerCase()));
+                  const someSearchedIncluded = searched.some(c => !excludedEmails.has(c.email.trim().toLowerCase()));
+                  
+                  const toggleAllRecipients = () => {
+                    const next = new Set(excludedEmails);
+                    if (allSearchedIncluded) {
+                      searched.forEach(c => {
+                        next.add(c.email.trim().toLowerCase());
+                      });
+                    } else {
+                      searched.forEach(c => {
+                        next.delete(c.email.trim().toLowerCase());
+                      });
                     }
+                    setExcludedEmails(next);
+                  };
 
-                    if (searched.length === 0) {
-                      return (
-                        <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
-                          No match found for "{recipientSearch}"
-                        </div>
-                      );
-                    }
-
-                    return searched.map(c => {
-                      const emailKey = c.email.trim().toLowerCase();
-                      const isExcluded = excludedEmails.has(emailKey);
-                      
-                      return (
-                        <div
-                          key={c.id}
-                          style={{
-                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            padding: '10px 12px', background: isExcluded ? 'rgba(0,0,0,0.2)' : 'var(--black2)',
-                            borderRadius: 8, border: '1px solid var(--border-subtle)',
-                            opacity: isExcluded ? 0.45 : 1, transition: 'all 0.15s'
-                          }}
-                        >
-                          <div style={{ minWidth: 0, flex: 1, paddingRight: 12 }}>
-                            <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {c.name || 'Anonymous Customer'}
-                            </div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
-                              {c.email}
-                            </div>
-                            <div style={{ fontSize: '0.72rem', color: 'var(--red)', fontWeight: 600, marginTop: 4 }}>
-                              {form.audience === 'top_20_monthly' 
-                                ? `₦${Number(c.monthlySpent || 0).toLocaleString()} spent this month` 
-                                : `₦${Number(c.totalSpent || 0).toLocaleString()} total spent · ${c.orders} order${c.orders !== 1 ? 's' : ''}`
-                              }
-                            </div>
-                          </div>
-
-                          <div>
-                            {isExcluded ? (
-                              <button
-                                onClick={() => {
-                                  const next = new Set(excludedEmails);
-                                  next.delete(emailKey);
-                                  setExcludedEmails(next);
-                                }}
-                                style={{
-                                  padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border-subtle)',
-                                  background: 'var(--white)', color: 'var(--text)',
-                                  fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer'
-                                }}
-                              >
-                                Restore
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => {
-                                  const next = new Set(excludedEmails);
-                                  next.add(emailKey);
-                                  setExcludedEmails(next);
-                                }}
-                                style={{
-                                  padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(220,38,38,0.2)',
-                                  background: 'rgba(220,38,38,0.05)', color: '#ef4444',
-                                  fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer'
-                                }}
-                              >
-                                Exclude
-                              </button>
-                            )}
+                  return (
+                    <>
+                      {searched.length > 0 && (
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '10px 14px',
+                          background: 'var(--black2)',
+                          borderRadius: 8,
+                          marginBottom: 12,
+                          border: '1px solid var(--border-subtle)'
+                        }}>
+                          <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)' }}>
+                            <input
+                              type="checkbox"
+                              checked={allSearchedIncluded && searched.length > 0}
+                              ref={el => {
+                                if (el) {
+                                  el.indeterminate = !allSearchedIncluded && someSearchedIncluded;
+                                }
+                              }}
+                              onChange={toggleAllRecipients}
+                              style={{
+                                width: '16px',
+                                height: '16px',
+                                marginRight: '10px',
+                                cursor: 'pointer',
+                                accentColor: 'var(--red)'
+                              }}
+                            />
+                            <span>Include All ({searched.length} matching)</span>
+                          </label>
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                            {searched.filter(c => !excludedEmails.has(c.email.trim().toLowerCase())).length} selected
                           </div>
                         </div>
-                      );
-                    });
-                  })()}
-                </div>
+                      )}
+
+                      {/* Scrollable list */}
+                      <div style={{
+                        maxHeight: '280px', overflowY: 'auto',
+                        display: 'flex', flexDirection: 'column', gap: 8,
+                        paddingRight: 4
+                      }}>
+                        {fullAudienceList.length === 0 && (
+                          <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                            No recipients in the selected audience segment.
+                          </div>
+                        )}
+
+                        {fullAudienceList.length > 0 && searched.length === 0 && (
+                          <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                            No match found for "{recipientSearch}"
+                          </div>
+                        )}
+
+                        {searched.map(c => {
+                          const emailKey = c.email.trim().toLowerCase();
+                          const isExcluded = excludedEmails.has(emailKey);
+                          
+                          return (
+                            <div
+                              key={c.id}
+                              style={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                padding: '10px 12px', background: isExcluded ? 'rgba(0,0,0,0.2)' : 'var(--black2)',
+                                borderRadius: 8, border: '1px solid var(--border-subtle)',
+                                opacity: isExcluded ? 0.45 : 1, transition: 'all 0.15s'
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, flex: 1 }}>
+                                <input
+                                  type="checkbox"
+                                  checked={!isExcluded}
+                                  onChange={() => {
+                                    const next = new Set(excludedEmails);
+                                    if (isExcluded) {
+                                      next.delete(emailKey);
+                                    } else {
+                                      next.add(emailKey);
+                                    }
+                                    setExcludedEmails(next);
+                                  }}
+                                  style={{
+                                    width: '16px',
+                                    height: '16px',
+                                    marginRight: '12px',
+                                    cursor: 'pointer',
+                                    accentColor: 'var(--red)',
+                                    flexShrink: 0
+                                  }}
+                                />
+                                <div style={{ minWidth: 0, flex: 1, paddingRight: 12 }}>
+                                  <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {c.name || 'Anonymous Customer'}
+                                  </div>
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
+                                    {c.email}
+                                  </div>
+                                  <div style={{ fontSize: '0.72rem', color: 'var(--red)', fontWeight: 600, marginTop: 4 }}>
+                                    {form.audience === 'top_20_monthly' ? (
+                                      form.dateFilter && (form.dateFilter.start || form.dateFilter.end)
+                                        ? `₦${Number(c.rangeSpent || 0).toLocaleString()} spent in range`
+                                        : `₦${Number(c.rangeSpent || c.totalSpent || 0).toLocaleString()} spent (all-time)`
+                                    ) : (
+                                      `₦${Number(c.totalSpent || 0).toLocaleString()} total spent · ${c.orders} order${c.orders !== 1 ? 's' : ''}`
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </div>
 
@@ -1138,7 +1240,7 @@ export default function Customers() {
                   <thead>
                     <tr>
                       <th>Campaign</th><th>Subject</th><th>Audience</th>
-                      <th>Recipients</th><th>Status</th><th>Date</th>
+                      <th>Recipients</th><th>Sent</th><th>Status</th><th>Date</th><th></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1148,6 +1250,7 @@ export default function Customers() {
                           sent:    { bg: 'rgba(22,163,74,0.06)', color: '#16a34a', border: '1px solid rgba(22,163,74,0.2)' },
                           partial: { bg: 'rgba(234,179,8,0.06)', color: '#ca8a04', border: '1px solid rgba(234,179,8,0.2)' },
                           failed:  { bg: 'rgba(239,68,68,0.06)', color: '#dc2626', border: '1px solid rgba(239,68,68,0.2)' },
+                          sending: { bg: 'rgba(59,130,246,0.06)', color: '#2563eb', border: '1px solid rgba(59,130,246,0.2)' },
                         }[status] || { bg: 'var(--black2)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' };
                         return (
                           <span style={{
@@ -1156,17 +1259,30 @@ export default function Customers() {
                           }}>{status}</span>
                         );
                       };
+                      const failed = (c.recipient_count || 0) - (c.sent_count || 0);
                       return (
                         <tr key={c.id}>
                           <td style={{ fontWeight: 700 }}>{c.name}</td>
-                          <td style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.subject}</td>
+                          <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.subject}</td>
                           <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                             {AUDIENCE_OPTIONS.find(o => o.value === c.audience)?.label || c.audience}
                           </td>
-                          <td style={{ fontWeight: 600 }}>{c.recipient_count}</td>
+                          <td style={{ fontWeight: 600 }}>{c.recipient_count ?? '—'}</td>
+                          <td style={{ fontSize: '0.82rem' }}>
+                            <span style={{ color: '#16a34a', fontWeight: 700 }}>{c.sent_count ?? '—'}</span>
+                            {failed > 0 && <span style={{ color: '#dc2626', fontWeight: 700, marginLeft: 4 }}>/ {failed} fail</span>}
+                          </td>
                           <td>{getStatusBadge(c.status)}</td>
                           <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
                             {new Date(c.created_at).toLocaleDateString()}
+                          </td>
+                          <td>
+                            <button
+                              onClick={() => viewCampaignDetail(c)}
+                              style={{ background: 'none', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '5px 12px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}
+                            >
+                              View Details
+                            </button>
                           </td>
                         </tr>
                       );
@@ -1177,11 +1293,102 @@ export default function Customers() {
             )}
           </div>
         </>
-      )}      <ConfirmModal 
+      )}
+
+      <ConfirmModal 
         isOpen={!!confirmAction} 
         onClose={() => setConfirmAction(null)} 
         {...confirmAction} 
       />
+
+      {/* ── Campaign Log Detail Modal ── */}
+      {detailCampaign && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          onClick={() => setDetailCampaign(null)}
+        >
+          <div
+            style={{ background: 'var(--card-bg)', borderRadius: 16, width: '100%', maxWidth: 720, maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid var(--border-subtle)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+              <div>
+                <div style={{ fontWeight: 900, fontSize: '1rem', marginBottom: 4 }}>{detailCampaign.name}</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{detailCampaign.subject}</div>
+              </div>
+              <button onClick={() => setDetailCampaign(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', flexShrink: 0, padding: 4 }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Stats bar */}
+            <div style={{ padding: '14px 24px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+              {[
+                { label: 'Total', value: detailCampaign.recipient_count ?? '—', color: 'var(--text)' },
+                { label: 'Delivered', value: detailCampaign.sent_count ?? '—', color: '#16a34a' },
+                { label: 'Failed', value: Math.max(0, (detailCampaign.recipient_count || 0) - (detailCampaign.sent_count || 0)), color: '#dc2626' },
+                { label: 'Sent', value: new Date(detailCampaign.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }), color: 'var(--text-muted)' },
+              ].map(({ label, value, color }) => (
+                <div key={label}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>{label}</div>
+                  <div style={{ fontWeight: 800, fontSize: '1rem', color }}>{value}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Log table */}
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              {logsLoading ? (
+                <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading logs...</div>
+              ) : campaignLogs.length === 0 ? (
+                <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <Mail size={32} style={{ opacity: 0.3, marginBottom: 10 }} />
+                  <div style={{ fontWeight: 700, marginBottom: 6 }}>No per-email logs available</div>
+                  <div style={{ fontSize: '0.82rem' }}>Detailed logging applies to campaigns sent after this feature was added.</div>
+                </div>
+              ) : (
+                <table className="dash-table" style={{ width: '100%' }}>
+                  <thead>
+                    <tr>
+                      <th>Email</th>
+                      <th>Name</th>
+                      <th>Status</th>
+                      <th>Error</th>
+                      <th>Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {campaignLogs.map(log => (
+                      <tr key={log.id}>
+                        <td style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{log.email}</td>
+                        <td style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{log.name || '—'}</td>
+                        <td>
+                          <span style={{
+                            padding: '3px 10px', borderRadius: 20, fontSize: '0.7rem', fontWeight: 800,
+                            textTransform: 'uppercase', letterSpacing: '0.04em', display: 'inline-block',
+                            ...(log.status === 'sent'
+                              ? { background: 'rgba(22,163,74,0.08)', color: '#16a34a', border: '1px solid rgba(22,163,74,0.2)' }
+                              : { background: 'rgba(239,68,68,0.08)', color: '#dc2626', border: '1px solid rgba(239,68,68,0.2)' })
+                          }}>
+                            {log.status}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: '0.78rem', color: '#dc2626', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {log.error || '—'}
+                        </td>
+                        <td style={{ fontSize: '0.78rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                          {new Date(log.created_at).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

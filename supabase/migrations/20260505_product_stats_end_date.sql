@@ -47,8 +47,18 @@ AS $function$
       AND (p_end      IS NULL OR created_at <= p_end)
   ),
   items AS (
-    SELECT oi.product_id, oi.name AS item_name, oi.qty, oi.price,
-           co.delivery_zone, co.delivery_address, co.customer_phone
+    SELECT 
+      oi.product_id, 
+      CASE 
+        WHEN oi.name ~* '\s*\(?\s*CHOPPED\s*\)?\s*$' THEN 
+          regexp_replace(oi.name, '\s*\(?\s*CHOPPED\s*\)?\s*$', '', 'i') || ' (CHOPPED)'
+        ELSE oi.name 
+      END AS item_name, 
+      oi.qty, 
+      oi.price,
+      co.delivery_zone, 
+      co.delivery_address, 
+      co.customer_phone
     FROM order_items oi
     JOIN confirmed_orders co ON co.id = oi.order_id
   ),
@@ -130,7 +140,11 @@ CREATE OR REPLACE FUNCTION public.get_stats_all_products(
  STABLE SECURITY DEFINER
 AS $function$
   SELECT
-    oi.name,
+    CASE 
+      WHEN oi.name ~* '\s*\(?\s*CHOPPED\s*\)?\s*$' THEN 
+        regexp_replace(oi.name, '\s*\(?\s*CHOPPED\s*\)?\s*$', '', 'i') || ' (CHOPPED)'
+      ELSE oi.name 
+    END AS name,
     SUM(oi.qty * oi.price)::numeric AS revenue,
     SUM(oi.qty)::bigint             AS units
   FROM order_items oi
@@ -140,7 +154,7 @@ AS $function$
     AND (p_store_id IS NULL OR o.store_id = p_store_id)
     AND (p_start    IS NULL OR o.created_at >= p_start)
     AND (p_end      IS NULL OR o.created_at <= p_end)
-  GROUP BY oi.name
+  GROUP BY 1
   ORDER BY revenue DESC;
 $function$;
 

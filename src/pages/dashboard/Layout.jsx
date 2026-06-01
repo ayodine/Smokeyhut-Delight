@@ -81,9 +81,24 @@ export default function DashboardLayout() {
   const firstAllowedPath = firstNavItem?.type === 'group' ? firstNavItem.children[0]?.to : firstNavItem?.to;
 
   useEffect(() => {
-    supabase.from('stores').select('id, name').order('id').then(({ data }) => {
+    const fetchStores = async () => {
+      const { data } = await supabase.from('stores').select('id, name').order('id');
       if (data) setStoreOptions(data);
-    });
+    };
+
+    fetchStores();
+
+    // Subscribe to changes on the stores table in real-time
+    const channel = supabase
+      .channel('public:stores')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stores' }, () => {
+        fetchStores();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // Keep finance sub-menu open when navigating within it

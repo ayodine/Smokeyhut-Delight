@@ -62,15 +62,19 @@ function PaymentsContent() {
   const [kpis, setKpis] = useState(EMPTY_KPIS);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo]   = useState('');
+  const [dateFilter, setDateFilter] = useState({ start: null, end: null });
   const [period, setPeriod]   = useState('');
   const [page, setPage]       = useState(1);
   const [total, setTotal]     = useState(0);
   const methods = ['all', 'bank_transfer', 'cash', 'pos'];
 
-  useEffect(() => { setPage(1); }, [selectedStore, filter, dateFrom, dateTo, period]);
-  useEffect(() => { fetchData(); }, [selectedStore, filter, dateFrom, dateTo, period, page]);
+  useEffect(() => { setPage(1); }, [selectedStore, filter, dateFilter, period]);
+  useEffect(() => {
+    // Only fetch if date filter selection is complete
+    const isDateFilterIncomplete = !period && dateFilter && dateFilter.start && !dateFilter.end;
+    if (isDateFilterIncomplete) return;
+    fetchData();
+  }, [selectedStore, filter, dateFilter, period, page]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -83,7 +87,7 @@ function PaymentsContent() {
       .order('created_at', { ascending: false })
       .range((page - 1) * PER_PAGE, page * PER_PAGE - 1);
 
-    const activePeriod = period ? getPeriodRange(period) : { from: dateFrom, to: dateTo };
+    const activePeriod = period ? getPeriodRange(period) : { from: dateFilter?.start, to: dateFilter?.end };
 
     if (selectedStore && selectedStore !== 'all') q = q.eq('store_id', selectedStore);
     if (filter !== 'all') q = q.eq('payment_method', filter);
@@ -176,7 +180,7 @@ function PaymentsContent() {
           {PERIODS.map(p => (
             <button
               key={p.value}
-              onClick={() => { setPeriod(period === p.value ? '' : p.value); setDateFrom(''); setDateTo(''); }}
+              onClick={() => { setPeriod(period === p.value ? '' : p.value); setDateFilter({ start: null, end: null }); }}
               style={{
                 padding: '6px 14px', borderRadius: 20,
                 border: `1px solid ${period === p.value ? 'var(--red)' : 'var(--border-subtle)'}`,
@@ -187,10 +191,14 @@ function PaymentsContent() {
               }}
             >{p.label}</button>
           ))}
-          <DashCalendar value={dateFrom} onChange={v => { setDateFrom(v); if (v) setPeriod(''); }} placeholder="From date" />
-          <DashCalendar value={dateTo}   onChange={v => { setDateTo(v);   if (v) setPeriod(''); }} placeholder="To date" />
-          {(dateFrom || dateTo || period) && (
-            <button onClick={() => { setDateFrom(''); setDateTo(''); setPeriod(''); }} style={{ background: 'none', border: 'none', fontSize: '0.8rem', color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 600 }}>
+          <DashCalendar
+            range={true}
+            value={dateFilter}
+            onChange={v => { setDateFilter(v); if (v && (v.start || v.end)) setPeriod(''); }}
+            placeholder="Pick a date range"
+          />
+          {((dateFilter && (dateFilter.start || dateFilter.end)) || period) && (
+            <button onClick={() => { setDateFilter({ start: null, end: null }); setPeriod(''); }} style={{ background: 'none', border: 'none', fontSize: '0.8rem', color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 600 }}>
               Clear dates
             </button>
           )}

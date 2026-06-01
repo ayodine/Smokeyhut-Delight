@@ -23,15 +23,29 @@ const PERIODS = [
   { label: 'All Time',   value: 'all' },
 ];
 
-function getStartDate(period) {
+function getPeriodParams(key, customDate) {
   const now = new Date();
-  switch (period) {
-    case 'today': { const d = new Date(now); d.setHours(0,0,0,0); return d; }
-    case 'week':  { const d = new Date(now); d.setDate(now.getDate() - ((now.getDay() + 6) % 7)); d.setHours(0,0,0,0); return d; }
-    case 'month': { return new Date(now.getFullYear(), now.getMonth(), 1); }
-    case 'year':  { return new Date(now.getFullYear(), 0, 1); }
-    default: return null;
+  if (key === 'today') {
+    const d = new Date(now); d.setHours(0, 0, 0, 0); return { start: d.toISOString(), end: null };
   }
+  if (key === 'week') {
+    const d = new Date(now);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    d.setHours(0, 0, 0, 0);
+    return { start: d.toISOString(), end: null };
+  }
+  if (key === 'month') {
+    return { start: new Date(now.getFullYear(), now.getMonth(), 1).toISOString(), end: null };
+  }
+  if (key === 'year') {
+    return { start: new Date(now.getFullYear(), 0, 1).toISOString(), end: null };
+  }
+  if (key === 'all' && customDate && (customDate.start || customDate.end)) {
+    const s = customDate.start ? new Date(`${customDate.start}T00:00:00`) : null;
+    const e = customDate.end ? new Date(`${customDate.end}T23:59:59.999`) : null;
+    return { start: s ? s.toISOString() : null, end: e ? e.toISOString() : null };
+  }
+  return { start: null, end: null };
 }
 const CHANNELS = ['WhatsApp', 'Instagram', 'Facebook', 'Offline', 'Walk-in', 'Phone', 'Website'];
 const PAYMENT_METHODS = ['cash', 'bank_transfer', 'pos', 'other'];
@@ -175,8 +189,15 @@ function generateInvoice(order) {
   if (w) { w.addEventListener('load', () => URL.revokeObjectURL(url)); }
 }
 
+function getLocalDateStr(dateInput) {
+  const d = new Date(dateInput);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
 function todayDate() {
-  return new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+  return getLocalDateStr(new Date());
 }
 function currentTime() {
   const now = new Date();
@@ -190,22 +211,22 @@ const emptyNewOrder = {
   zoneId: '', deliveryFee: 0,
   orderDate: todayDate(), orderTime: currentTime(),
 };
-
 export default function Orders() {
   const { userRole, userPermissions } = useAuth();
   const { selectedStore } = useOutletContext() || {};
   const { showToast } = useToast();
   const isAdmin = userRole === 'Admin';
   const canCreateOrder = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Orders:create');
-  const canCancelOrder = isAdmin || (userPermissions || []).includes('Orders:cancel');
-  const canDeleteOrder = isAdmin || (userPermissions || []).includes('Orders:delete');
+  const canCancelOrder = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Orders:cancel');
+  const canDeleteOrder = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Orders:delete');
+  const canManageOrder = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Orders:manage');
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
   const [storeList, setStoreList] = useState([]);
   const [areas, setAreas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
-  const [period, setPeriod] = useState('all');
+  const [period, setPeriod] = useState('month');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [expandedId, setExpandedId] = useState(null);
@@ -222,7 +243,7 @@ export default function Orders() {
   const [savingBulk, setSavingBulk] = useState(false);
   const [trashView, setTrashView] = useState(false);
   const [deletedOrders, setDeletedOrders] = useState([]);
-  const [dateFilter, setDateFilter] = useState(''); // YYYY-MM-DD
+  const [dateFilter, setDateFilter] = useState({ start: null, end: null });
   const [confirmAction, setConfirmAction] = useState(null);
   const [sourceFilter, setSourceFilter] = useState('all'); // 'all' | 'storefront' | 'whatsapp'
   const [newOrderAlert, setNewOrderAlert] = useState(null); // { id, name, total }
@@ -356,7 +377,13 @@ export default function Orders() {
     };
   }, [selectedStore, playChime]);
 
-  useEffect(() => { fetchData(); }, [selectedStore]);
+  useEffect(() => {
+    // Only fetch if date filter selection is complete (both start and end are set, or both are null)
+    const isDateFilterIncomplete = dateFilter && dateFilter.start && !dateFilter.end;
+    if (isDateFilterIncomplete) return;
+
+    fetchData();
+  }, [selectedStore, period, dateFilter]);
   useEffect(() => { setPage(1); }, [filter, period, debouncedSearch, dateFilter]);
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 250);
@@ -370,25 +397,83 @@ export default function Orders() {
     const buildBase = () => {
       let q = supabase.from('orders').select('*, order_items(*)');
       if (storeFilter) q = q.or(`store_id.eq.${storeFilter},store_id.is.null`);
+      
+      const { start, end } = getPeriodParams(period, dateFilter);
+      if (start) q = q.gte('created_at', start);
+      if (end) q = q.lte('created_at', end);
+      
       return q;
     };
 
-    // Deleted orders only need summary columns — skip order_items join to save egress
     const buildDeletedBase = () => {
       let q = supabase.from('orders').select('id, customer_name, customer_email, customer_phone, delivery_address, total, status, created_at, deleted_at, store_id, notes');
       if (storeFilter) q = q.or(`store_id.eq.${storeFilter},store_id.is.null`);
+      
+      const { start, end } = getPeriodParams(period, dateFilter);
+      if (start) q = q.gte('created_at', start);
+      if (end) q = q.lte('created_at', end);
+      
       return q;
     };
 
-    const [ordersRes, deletedRes, productsRes, storesRes, zonesRes] = await Promise.all([
-      buildBase().is('deleted_at', null).order('created_at', { ascending: false }),
-      buildDeletedBase().not('deleted_at', 'is', null).order('deleted_at', { ascending: false }),
+    const fetchAllOrders = async () => {
+      let all = [];
+      let pageNum = 0;
+      const PAGE_SIZE = 1000;
+      let hasMore = true;
+      while (hasMore) {
+        const { data, error } = await buildBase()
+          .is('deleted_at', null)
+          .order('created_at', { ascending: false })
+          .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
+        if (error) {
+          console.error('[Orders] Error loading chunk:', error);
+          hasMore = false;
+        } else if (!data || data.length === 0) {
+          hasMore = false;
+        } else {
+          all = [...all, ...data];
+          if (data.length < PAGE_SIZE) hasMore = false;
+          else pageNum++;
+        }
+      }
+      return all;
+    };
+
+    const fetchAllDeleted = async () => {
+      let all = [];
+      let pageNum = 0;
+      const PAGE_SIZE = 1000;
+      let hasMore = true;
+      while (hasMore) {
+        const { data, error } = await buildDeletedBase()
+          .not('deleted_at', 'is', null)
+          .order('deleted_at', { ascending: false })
+          .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
+        if (error) {
+          console.error('[Trash] Error loading chunk:', error);
+          hasMore = false;
+        } else if (!data || data.length === 0) {
+          hasMore = false;
+        } else {
+          all = [...all, ...data];
+          if (data.length < PAGE_SIZE) hasMore = false;
+          else pageNum++;
+        }
+      }
+      return all;
+    };
+
+    const [loadedOrders, loadedDeleted, productsRes, storesRes, zonesRes] = await Promise.all([
+      fetchAllOrders(),
+      fetchAllDeleted(),
       supabase.from('products').select('id, name, price').order('name'),
       supabase.from('stores').select('id, name').eq('is_active', true).order('id'),
       fetchFlatAreas(supabase),
     ]);
-    if (ordersRes.data) setOrders(ordersRes.data);
-    if (deletedRes.data) setDeletedOrders(deletedRes.data);
+
+    setOrders(loadedOrders);
+    setDeletedOrders(loadedDeleted);
     if (productsRes.data) setProducts(productsRes.data);
     if (storesRes.data) {
       setStoreList(storesRes.data);
@@ -738,9 +823,7 @@ export default function Orders() {
   };
 
   // ── Filter + Sort ────────────────────────────────────────
-  const startDate = useMemo(() => getStartDate(period), [period]);
-
-  // Period + search only (used for status tab counts)
+  // Search only (since period and custom date range are fully handled at the database query level!)
   const periodSearchFiltered = useMemo(() => {
     const q = debouncedSearch.toLowerCase();
     return orders.filter(o => {
@@ -748,11 +831,9 @@ export default function Orders() {
         String(o.customer_name || '').toLowerCase().includes(q) ||
         String(o.id).toLowerCase().includes(q) ||
         String(o.customer_phone || '').toLowerCase().includes(q);
-      const matchPeriod = !startDate || new Date(o.created_at) >= startDate;
-      const matchDate = !dateFilter || new Date(o.created_at).toLocaleDateString('en-CA') === dateFilter;
-      return matchSearch && matchPeriod && matchDate;
+      return matchSearch;
     });
-  }, [orders, debouncedSearch, startDate, dateFilter]);
+  }, [orders, debouncedSearch]);
 
   // Period + search + status + source (final set before sort)
   const baseFiltered = useMemo(() =>
@@ -953,8 +1034,10 @@ export default function Orders() {
               <input className="dash-search" placeholder="Search orders..." value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 40 }} />
             </div>
             <DashCalendar
+              range={true}
               value={dateFilter}
-              onChange={v => { setDateFilter(v); if (v) setPeriod('all'); }}
+              onChange={v => { setDateFilter(v); if (v && (v.start || v.end)) setPeriod('all'); }}
+              placeholder="Filter by date range"
             />
             {/* Test chime button — helps "unlock" AudioContext after first interaction */}
             <button
@@ -1357,21 +1440,25 @@ export default function Orders() {
                     <div><strong>Method:</strong> {(sel.payment_method || '').replace(/_/g, ' ')}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <strong>Store:</strong>
-                      {storeList.length > 1 ? (
-                        <select
-                          value={sel.store_id || ''}
-                          onChange={async (e) => {
-                            const storeId = e.target.value ? Number(e.target.value) : null;
-                            await supabase.from('orders').update({ store_id: storeId }).eq('id', sel.id);
-                            setOrders(prev => prev.map(o => o.id === sel.id ? { ...o, store_id: storeId } : o));
-                          }}
-                          style={{ padding: '4px 24px 4px 8px', borderRadius: 6, border: '1px solid var(--border-subtle)', background: 'var(--white)', fontSize: '0.82rem', fontFamily: "'DM Sans', sans-serif", outline: 'none' }}
-                        >
-                          <option value="">Unassigned</option>
-                          {storeList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
+                      {canManageOrder ? (
+                        storeList.length > 1 ? (
+                          <select
+                            value={sel.store_id || ''}
+                            onChange={async (e) => {
+                              const storeId = e.target.value ? Number(e.target.value) : null;
+                              await supabase.from('orders').update({ store_id: storeId }).eq('id', sel.id);
+                              setOrders(prev => prev.map(o => o.id === sel.id ? { ...o, store_id: storeId } : o));
+                            }}
+                            style={{ padding: '4px 24px 4px 8px', borderRadius: 6, border: '1px solid var(--border-subtle)', background: 'var(--white)', fontSize: '0.82rem', fontFamily: "'DM Sans', sans-serif", outline: 'none' }}
+                          >
+                            <option value="">Unassigned</option>
+                            {storeList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                          </select>
+                        ) : (
+                          <span>{storeList.find(s => s.id === sel.store_id)?.name || sel.store_id || 'Unassigned'}</span>
+                        )
                       ) : (
-                        <span>{storeList.find(s => s.id === sel.store_id)?.name || sel.store_id || 'Unassigned'}</span>
+                        <span>{storeList.find(s => s.id === sel.store_id)?.name || 'Unassigned'}</span>
                       )}
                     </div>
                     {sel.notes?.replace(/^\[via .+?\]\n?/, '') && (
@@ -1389,6 +1476,7 @@ export default function Orders() {
                     value={sel.status}
                     onChange={e => updateStatus(sel.id, e.target.value)}
                     options={statuses.filter(s => s !== 'all' && (canCancelOrder || s !== 'cancelled')).map(s => ({ value: s, label: s }))}
+                    disabled={!canManageOrder}
                   />
                 </div>
                 <button onClick={() => generateInvoice(sel)} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--white)', border: '1px solid var(--border-subtle)', padding: '8px 16px', borderRadius: 8, fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem' }}>

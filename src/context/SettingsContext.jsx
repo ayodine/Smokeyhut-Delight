@@ -58,7 +58,8 @@ export function SettingsProvider({ children }) {
       publicSupabase.from('app_settings').select('value').eq('key', 'delivery_options').single(),
       publicSupabase.from('app_settings').select('value').eq('key', 'ticker_items').single(),
       publicSupabase.from('app_settings').select('value').eq('key', 'bank_details').single(),
-    ]).then(([deliveryRes, tickerRes, bankRes]) => {
+      publicSupabase.from('app_settings').select('value').eq('key', 'general_settings').single(),
+    ]).then(([deliveryRes, tickerRes, bankRes, generalRes]) => {
       localStorage.setItem('smokey_settings_fetched_at', String(Date.now()));
       setSettingsState(prev => ({
         ...prev,
@@ -67,6 +68,7 @@ export function SettingsProvider({ children }) {
         ...(Array.isArray(tickerRes.data?.value) && tickerRes.data.value.length > 0
           ? { tickerItems: tickerRes.data.value } : {}),
         ...(bankRes.data?.value ? bankRes.data.value : {}),
+        ...(generalRes.data?.value ? generalRes.data.value : {}),
       }));
     });
 
@@ -103,6 +105,16 @@ export function SettingsProvider({ children }) {
     if (newSettings.bankName !== undefined || newSettings.accountName !== undefined || newSettings.accountNumber !== undefined) {
       const bankDetails = { bankName: newSettings.bankName, accountName: newSettings.accountName, accountNumber: newSettings.accountNumber };
       upserts.push(supabase.from('app_settings').upsert({ key: 'bank_details', value: bankDetails, updated_at: new Date().toISOString() }));
+    }
+    if (newSettings.storeName !== undefined || newSettings.email !== undefined || newSettings.phone !== undefined || newSettings.weekdayHours !== undefined || newSettings.sundayHours !== undefined) {
+      const generalSettings = {
+        storeName: newSettings.storeName !== undefined ? newSettings.storeName : settings.storeName,
+        email: newSettings.email !== undefined ? newSettings.email : settings.email,
+        phone: newSettings.phone !== undefined ? newSettings.phone : settings.phone,
+        weekdayHours: newSettings.weekdayHours !== undefined ? newSettings.weekdayHours : settings.weekdayHours,
+        sundayHours: newSettings.sundayHours !== undefined ? newSettings.sundayHours : settings.sundayHours
+      };
+      upserts.push(supabase.from('app_settings').upsert({ key: 'general_settings', value: generalSettings, updated_at: new Date().toISOString() }));
     }
     if (upserts.length > 0) {
       const results = await Promise.all(upserts);

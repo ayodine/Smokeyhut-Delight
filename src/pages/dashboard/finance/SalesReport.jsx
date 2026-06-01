@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { TrendingUp, TrendingDown, DollarSign, ShoppingBag, Truck, Tag, Calendar, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../../lib/supabase';
+import DashCalendar from '../../../components/DashCalendar';
 
 const fmt = v => `₦${Number(v || 0).toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
 
@@ -34,7 +35,7 @@ const STATUS_COLORS = {
 
 export default function SalesReport() {
   const [period, setPeriod] = useState('month');
-  const [customDate, setCustomDate] = useState('');
+  const [customDate, setCustomDate] = useState({ start: null, end: null });
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({
     revenue: 0, deliveryFees: 0, discounts: 0, expenses: 0,
@@ -44,6 +45,10 @@ export default function SalesReport() {
   useEffect(() => { load(); }, [period, customDate]);
 
   const load = async () => {
+    // Only run if range selection is complete or cleared
+    const isCustomDateIncomplete = period === 'custom' && customDate && customDate.start && !customDate.end;
+    if (isCustomDateIncomplete) return;
+
     setLoading(true);
     const since = getStartDate(period);
 
@@ -51,17 +56,17 @@ export default function SalesReport() {
       .from('orders')
       .select('id, status, delivery_fee, coupon_discount, created_at, order_items(price, qty)');
       
-    if (period === 'custom' && customDate) {
-      const start = new Date(customDate); start.setHours(0,0,0,0);
-      const end = new Date(customDate); end.setHours(23,59,59,999);
+    if (period === 'custom' && customDate && customDate.start && customDate.end) {
+      const start = new Date(`${customDate.start}T00:00:00`);
+      const end = new Date(`${customDate.end}T23:59:59.999`);
       ordersQ = ordersQ.gte('created_at', start.toISOString()).lte('created_at', end.toISOString());
     } else if (since) {
       ordersQ = ordersQ.gte('created_at', since);
     }
 
     let expensesQ = supabase.from('expenses').select('amount, date');
-    if (period === 'custom' && customDate) {
-      expensesQ = expensesQ.eq('date', customDate);
+    if (period === 'custom' && customDate && customDate.start && customDate.end) {
+      expensesQ = expensesQ.gte('date', customDate.start).lte('date', customDate.end);
     } else if (since) {
       expensesQ = expensesQ.gte('date', since.split('T')[0]);
     }
@@ -94,8 +99,8 @@ export default function SalesReport() {
   const netProfit    = grossRevenue - data.expenses;
 
   const exportToExcel = () => {
-    const periodLabel = period === 'custom' && customDate
-      ? `Date: ${new Date(customDate).toLocaleDateString()}`
+    const periodLabel = period === 'custom' && customDate && customDate.start && customDate.end
+      ? `Date: ${new Date(customDate.start).toLocaleDateString()} to ${new Date(customDate.end).toLocaleDateString()}`
       : (PERIODS.find(p => p.value === period)?.label || period);
     const wb = XLSX.utils.book_new();
 
@@ -165,7 +170,7 @@ export default function SalesReport() {
           {PERIODS.map(p => (
             <button
               key={p.value}
-              onClick={() => { setPeriod(p.value); setCustomDate(''); }}
+              onClick={() => { setPeriod(p.value); setCustomDate({ start: null, end: null }); }}
               style={{
                 padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border-subtle)',
                 background: period === p.value ? 'var(--red)' : 'var(--white)',
@@ -176,20 +181,17 @@ export default function SalesReport() {
               {p.label}
             </button>
           ))}
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', marginLeft: 4 }}>
-            <input
-              type="date"
-              value={customDate}
-              onChange={e => { setCustomDate(e.target.value); setPeriod('custom'); }}
-              style={{
-                padding: '6px 12px', borderRadius: 8, fontSize: '0.8rem',
-                border: `1px solid ${period === 'custom' ? 'var(--red)' : 'var(--border-subtle)'}`,
-                background: period === 'custom' ? 'var(--red)' : 'var(--white)',
-                color: period === 'custom' ? '#fff' : 'var(--text)',
-                fontFamily: "'DM Sans',sans-serif", cursor: 'pointer', outline: 'none',
-              }}
-            />
-          </div>
+          <DashCalendar
+            range={true}
+            value={customDate}
+            onChange={v => { setCustomDate(v); if (v && (v.start || v.end)) setPeriod('custom'); }}
+            placeholder="Pick a date range"
+          />
+          {((customDate && (customDate.start || customDate.end)) || period === 'custom') && (
+            <button onClick={() => { setCustomDate({ start: null, end: null }); setPeriod('month'); }} style={{ background: 'none', border: 'none', fontSize: '0.8rem', color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 600 }}>
+              Clear dates
+            </button>
+          )}
           <button
             onClick={exportToExcel}
             disabled={loading}
@@ -257,7 +259,7 @@ export default function SalesReport() {
           <div className="dash-card-title">Orders by Status</div>
           <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
             <Calendar size={13} style={{ verticalAlign: 'text-bottom', marginRight: 4 }} />
-            {period === 'custom' && customDate ? new Date(customDate).toLocaleDateString('en-NG', { dateStyle: 'medium' }) : PERIODS.find(p => p.value === period)?.label}
+            {period === 'custom' && customDate && customDate.start && customDate.end ? `${new Date(customDate.start).toLocaleDateString('en-NG', { dateStyle: 'medium' })} - ${new Date(customDate.end).toLocaleDateString('en-NG', { dateStyle: 'medium' })}` : PERIODS.find(p => p.value === period)?.label}
           </div>
         </div>
         <div style={{ overflowX: 'auto' }}>

@@ -21,7 +21,12 @@ const EMPTY_KPIS = {
   total_fees: 0, delivered_count: 0, delivered_fees: 0,
 };
 
+import { useAuth } from '../../context/AuthContext';
+
 export default function Shipping() {
+  const { userRole, userPermissions } = useAuth();
+  const isAdmin = userRole === 'Admin';
+  const canManage = isAdmin || userRole === 'Manager' || userRole === 'Rider' || (userPermissions || []).includes('Shipping:manage');
   const { selectedStore } = useOutletContext() || {};
   const [orders, setOrders] = useState([]);
   const [kpis, setKpis] = useState(EMPTY_KPIS);
@@ -29,7 +34,7 @@ export default function Shipping() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(null);
   const [filter, setFilter] = useState('active');
-  const [dateFilter, setDateFilter] = useState('');
+  const [dateFilter, setDateFilter] = useState({ start: null, end: null });
   const { showToast } = useToast();
 
   const filters = [
@@ -40,7 +45,12 @@ export default function Shipping() {
     { key: 'delivered',  label: 'Delivered' },
   ];
 
-  useEffect(() => { fetchData(); }, [selectedStore, dateFilter]);
+  useEffect(() => {
+    // Only run if range selection is complete or cleared
+    const isDateFilterIncomplete = dateFilter && dateFilter.start && !dateFilter.end;
+    if (isDateFilterIncomplete) return;
+    fetchData();
+  }, [selectedStore, dateFilter]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -52,9 +62,9 @@ export default function Shipping() {
       .not('status', 'in', '("cancelled")')
       .order('created_at', { ascending: false });
 
-    if (dateFilter) {
-      const start = new Date(dateFilter); start.setHours(0,0,0,0);
-      const end = new Date(dateFilter); end.setHours(23,59,59,999);
+    if (dateFilter && dateFilter.start && dateFilter.end) {
+      const start = new Date(`${dateFilter.start}T00:00:00`);
+      const end = new Date(`${dateFilter.end}T23:59:59.999`);
       tableQuery = tableQuery.gte('created_at', start.toISOString()).lte('created_at', end.toISOString());
     } else {
       tableQuery = tableQuery.limit(300);
@@ -85,7 +95,7 @@ export default function Shipping() {
 
     setOrders(ordersRes.data || []);
 
-    if (dateFilter) {
+    if (dateFilter && dateFilter.start && dateFilter.end) {
       // When filtering by a specific date, calculate KPIs locally from the fetched orders
       // (because tableQuery has no row limit for specific dates, this is 100% accurate)
       const dateOrders = ordersRes.data || [];
@@ -136,7 +146,7 @@ export default function Shipping() {
     } else {
       setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: nextStatus } : o));
       // Refresh server-side KPIs after status change (if not date-filtered)
-      if (!dateFilter) {
+      if (!dateFilter || (!dateFilter.start && !dateFilter.end)) {
         const storeParam = selectedStore && selectedStore !== 'all' ? Number(selectedStore) : null;
         supabase.rpc('get_shipping_kpis', { p_store_id: storeParam }).then(({ data }) => {
           if (data) setKpis(data);
@@ -163,7 +173,9 @@ export default function Shipping() {
     const matchStatus = filter === 'active'
       ? ['pending', 'processing', 'shipped'].includes(o.status)
       : o.status === filter;
-    const matchDate = !dateFilter || new Date(o.created_at).toLocaleDateString('en-CA') === dateFilter;
+    const orderDateStr = new Date(o.created_at).toLocaleDateString('en-CA');
+    const matchDate = !dateFilter || !dateFilter.start || !dateFilter.end ||
+      (orderDateStr >= dateFilter.start && orderDateStr <= dateFilter.end);
     return matchStatus && matchDate;
   });
 
@@ -243,7 +255,17 @@ export default function Shipping() {
             </button>
           ))}
         </div>
-        <DashCalendar value={dateFilter} onChange={setDateFilter} placeholder="Filter by date" />
+        <DashCalendar
+          range={true}
+          value={dateFilter}
+          onChange={setDateFilter}
+          placeholder="Pick a date range"
+        />
+        {dateFilter && (dateFilter.start || dateFilter.end) && (
+          <button onClick={() => setDateFilter({ start: null, end: null })} style={{ background: 'none', border: 'none', fontSize: '0.8rem', color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 600 }}>
+            Clear dates
+          </button>
+        )}
       </div>
 
 
@@ -290,18 +312,22 @@ export default function Shipping() {
                     <td><span className={`status-badge ${order.status}`}>{order.status}</span></td>
                     <td>
                       {next ? (
-                        <button
-                          onClick={() => handleStatusUpdate(order, next.next)}
-                          disabled={updating === order.id}
-                          style={{
-                            background: next.color, color: '#fff', border: 'none',
-                            padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
-                            fontWeight: 700, fontSize: '0.78rem', whiteSpace: 'nowrap',
-                            opacity: updating === order.id ? 0.6 : 1
-                          }}
-                        >
-                          {updating === order.id ? <Loader2 size={14} className="spin" /> : next.label}
-                        </button>
+                        canManage ? (
+                          <button
+                            onClick={() => handleStatusUpdate(order, next.next)}
+                            disabled={updating === order.id}
+                            style={{
+                              background: next.color, color: '#fff', border: 'none',
+                              padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
+                              fontWeight: 700, fontSize: '0.78rem', whiteSpace: 'nowrap',
+                              opacity: updating === order.id ? 0.6 : 1
+                            }}
+                          >
+                            {updating === order.id ? <Loader2 size={14} className="spin" /> : next.label}
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>—</span>
+                        )
                       ) : (
                         <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>✓ Done</span>
                       )}

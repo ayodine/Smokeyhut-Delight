@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, Check } from 'lucide-react';
 
-export default function CustomSelect({ value, onChange, options, placeholder = "Select...", style }) {
+export default function CustomSelect({ value, onChange, options, placeholder = "Select...", style, disabled }) {
   const [isOpen, setIsOpen] = useState(false);
   const [openUpward, setOpenUpward] = useState(false);
   const dropdownRef = useRef(null);
@@ -18,6 +18,7 @@ export default function CustomSelect({ value, onChange, options, placeholder = "
   }, []);
 
   const handleToggle = () => {
+    if (disabled) return;
     if (!isOpen && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
       setOpenUpward(window.innerHeight - rect.bottom < 260);
@@ -43,7 +44,14 @@ export default function CustomSelect({ value, onChange, options, placeholder = "
         ref={triggerRef}
         className={`custom-select-trigger ${isOpen ? 'open' : ''}`}
         onClick={handleToggle}
-        style={{ height: '100%', boxSizing: 'border-box', display: 'flex', alignItems: 'center' }}
+        style={{
+          height: '100%',
+          boxSizing: 'border-box',
+          display: 'flex',
+          alignItems: 'center',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          opacity: disabled ? 0.65 : 1,
+        }}
       >
         <span style={{
           color: selectedOption ? 'inherit' : 'var(--text-muted)',

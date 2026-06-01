@@ -40,7 +40,13 @@ const SELECT_STYLE = {
   backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center',
 };
 
+import { useAuth } from '../../../context/AuthContext';
+
 export default function Expenses() {
+  const { userRole, userPermissions } = useAuth();
+  const isAdmin = userRole === 'Admin';
+  const canManage = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Expenses:manage');
+  const canDelete = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Expenses:delete');
   const [tab, setTab]             = useState('expenses'); // 'expenses' | 'categories'
   const [expenses, setExpenses]   = useState([]);
   const [categories, setCategories] = useState([]);
@@ -210,12 +216,16 @@ export default function Expenses() {
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Track business costs and expense categories.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={openCategoryModal} style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--white)', color: 'var(--text)', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <FolderOpen size={15} /> New Category
-          </button>
-          <button onClick={openExpenseModal} className="btn-primary" style={{ padding: '9px 16px', fontSize: '0.85rem' }}>
-            <Plus size={15} style={{ marginRight: 6 }} /> Add Expense
-          </button>
+          {canManage && (
+            <>
+              <button onClick={openCategoryModal} style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--white)', color: 'var(--text)', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <FolderOpen size={15} /> New Category
+              </button>
+              <button onClick={openExpenseModal} className="btn-primary" style={{ padding: '9px 16px', fontSize: '0.85rem' }}>
+                <Plus size={15} style={{ marginRight: 6 }} /> Add Expense
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -312,12 +322,13 @@ export default function Expenses() {
                     <td style={{ fontWeight: 800, color: 'var(--red)' }}>{fmt(e.amount)}</td>
                     <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)', maxWidth: 240 }}>{e.note || '—'}</td>
                     <td style={{ textAlign: 'right' }}>
-                      {deleting === e.id
-                        ? <Loader2 size={15} className="spin" color="var(--red)" />
-                        : <button onClick={() => deleteExpense(e.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)' }}>
-                            <Trash2 size={15} />
-                          </button>
-                      }
+                      {canDelete && (
+                        deleting === e.id
+                          ? <Loader2 size={15} className="spin" color="var(--red)" />
+                          : <button onClick={() => deleteExpense(e.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)' }}>
+                              <Trash2 size={15} />
+                            </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -365,11 +376,12 @@ export default function Expenses() {
                     <td style={{ fontWeight: 700 }}>{expenses.filter(e => e.category_id === cat.id).length}</td>
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                        <button onClick={() => startEditCat(cat)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><Edit2 size={14} /></button>
-                        {deleting === cat.id
-                          ? <Loader2 size={15} className="spin" color="var(--red)" />
-                          : <button onClick={() => deleteCategory(cat.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)' }}><Trash2 size={15} /></button>
-                        }
+                        {canManage && <button onClick={() => startEditCat(cat)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><Edit2 size={14} /></button>}
+                        {canDelete && (
+                          deleting === cat.id
+                            ? <Loader2 size={15} className="spin" color="var(--red)" />
+                            : <button onClick={() => deleteCategory(cat.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)' }}><Trash2 size={15} /></button>
+                        )}
                       </div>
                     </td>
                   </tr>

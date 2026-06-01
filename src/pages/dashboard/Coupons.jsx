@@ -7,11 +7,17 @@ import CustomSelect from '../../components/CustomSelect';
 import ConfirmModal from '../../components/ConfirmModal';
 import PremiumDateInput from '../../components/PremiumDateInput';
 
+import { useAuth } from '../../context/AuthContext';
+
 const EMPTY_FORM = { code: '', type: 'percent', value: '', min_order_amount: '', max_uses: '', expires_at: '', is_active: true };
 
 function fmt(n) { return '₦' + Number(n).toLocaleString(); }
 
 export default function Coupons() {
+  const { userRole, userPermissions } = useAuth();
+  const isAdmin = userRole === 'Admin';
+  const canManage = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Coupons:manage');
+  const canDelete = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Coupons:delete');
   const { showToast } = useToast();
   const [coupons, setCoupons] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -108,7 +114,7 @@ export default function Coupons() {
           <Tag size={22} color="var(--red)" />
           <h2 style={{ margin: 0, fontWeight: 900 }}>Coupons</h2>
         </div>
-        {editing === null && (
+        {canManage && editing === null && (
           <button className="btn-primary" onClick={startNew} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px' }}>
             <Plus size={16} /> New Coupon
           </button>
@@ -223,27 +229,35 @@ export default function Coupons() {
               </div>
 
               {/* Actions */}
-              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                <button
-                  onClick={() => toggleActive(c)}
-                  title={c.is_active ? 'Deactivate' : 'Activate'}
-                  style={{ background: 'none', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '6px 10px', cursor: 'pointer', color: c.is_active ? '#16a34a' : 'var(--text-muted)', display: 'flex' }}
-                >
-                  {c.is_active ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
-                </button>
-                <button
-                  onClick={() => startEdit(c)}
-                  style={{ background: 'none', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '6px 10px', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}
-                >
-                  <Edit2 size={16} />
-                </button>
-                <button
-                  onClick={() => deleteCoupon(c)}
-                  style={{ background: 'none', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '6px 10px', cursor: 'pointer', color: '#ef4444', display: 'flex' }}
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
+              {(canManage || canDelete) && (
+                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                  {canManage && (
+                    <>
+                      <button
+                        onClick={() => toggleActive(c)}
+                        title={c.is_active ? 'Deactivate' : 'Activate'}
+                        style={{ background: 'none', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '6px 10px', cursor: 'pointer', color: c.is_active ? '#16a34a' : 'var(--text-muted)', display: 'flex' }}
+                      >
+                        {c.is_active ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                      </button>
+                      <button
+                        onClick={() => startEdit(c)}
+                        style={{ background: 'none', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '6px 10px', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}
+                      >
+                        <Edit2 size={16} />
+                      </button>
+                    </>
+                  )}
+                  {canDelete && (
+                    <button
+                      onClick={() => deleteCoupon(c)}
+                      style={{ background: 'none', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '6px 10px', cursor: 'pointer', color: '#ef4444', display: 'flex' }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>

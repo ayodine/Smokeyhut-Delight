@@ -6,7 +6,13 @@ import { SkelList } from '../../components/Skeleton';
 import { fetchFlatAreas } from '../../lib/deliveryMatcher';
 import ConfirmModal from '../../components/ConfirmModal';
 
+import { useAuth } from '../../context/AuthContext';
+
 export default function DeliveryZones() {
+  const { userRole, userPermissions } = useAuth();
+  const isAdmin = userRole === 'Admin';
+  const canManage = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Zones:manage');
+  const canDelete = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Zones:delete');
   const { showToast } = useToast();
   const [areas, setAreas] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -98,13 +104,15 @@ export default function DeliveryZones() {
         <div className="dash-card-title" style={{ fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif", fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: 8 }}>
           <MapPin size={24} color="var(--red)" /> Delivery Locations
         </div>
-        <button
-          className="btn-primary"
-          style={{ padding: '8px 16px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6 }}
-          onClick={() => { setEditingId('new'); setForm({ name: '', price: '', aliases: '' }); }}
-        >
-          <Plus size={16} /> Add Location
-        </button>
+        {canManage && (
+          <button
+            className="btn-primary"
+            style={{ padding: '8px 16px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6 }}
+            onClick={() => { setEditingId('new'); setForm({ name: '', price: '', aliases: '' }); }}
+          >
+            <Plus size={16} /> Add Location
+          </button>
+        )}
       </div>
 
       <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', marginBottom: 20 }}>
@@ -165,18 +173,22 @@ export default function DeliveryZones() {
                   <div style={{ fontWeight: 800, fontSize: '0.9rem', color: 'var(--red)', flexShrink: 0 }}>
                     {fmt(area.price)}
                   </div>
-                  <button
-                    onClick={() => { setEditingId(area.id); setForm({ name: area.name, price: String(area.price), aliases: (area.aliases || []).join(', ') }); }}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 6 }}
-                  >
-                    <Edit2 size={15} />
-                  </button>
-                  <button
-                    onClick={() => deleteLocation(area.id)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)', padding: 6 }}
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                  {canManage && (
+                    <button
+                      onClick={() => { setEditingId(area.id); setForm({ name: area.name, price: String(area.price), aliases: (area.aliases || []).join(', ') }); }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 6 }}
+                    >
+                      <Edit2 size={15} />
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button
+                      onClick={() => deleteLocation(area.id)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)', padding: 6 }}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
                 </div>
             </div>
           ))}
