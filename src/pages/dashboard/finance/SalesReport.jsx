@@ -54,7 +54,8 @@ export default function SalesReport() {
 
     let ordersQ = supabase
       .from('orders')
-      .select('id, status, delivery_fee, coupon_discount, created_at, order_items(price, qty)');
+      .select('id, status, delivery_fee, coupon_discount, created_at, order_items(price, qty)')
+      .is('deleted_at', null);
       
     if (period === 'custom' && customDate && customDate.start && customDate.end) {
       const start = new Date(`${customDate.start}T00:00:00`);

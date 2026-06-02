@@ -83,6 +83,7 @@ function PaymentsContent() {
     let q = supabase
       .from('orders')
       .select('id, customer_name, customer_email, total, payment_method, status, created_at, store_id', { count: 'exact' })
+      .is('deleted_at', null)
       .not('payment_method', 'is', null)
       .order('created_at', { ascending: false })
       .range((page - 1) * PER_PAGE, page * PER_PAGE - 1);
@@ -97,6 +98,7 @@ function PaymentsContent() {
     let kpiFallbackQuery = supabase
       .from('orders')
       .select('status, total, payment_method')
+      .is('deleted_at', null)
       .not('payment_method', 'is', null)
       .in('status', ['processing', 'shipped', 'delivered']);
     if (selectedStore && selectedStore !== 'all') kpiFallbackQuery = kpiFallbackQuery.eq('store_id', selectedStore);

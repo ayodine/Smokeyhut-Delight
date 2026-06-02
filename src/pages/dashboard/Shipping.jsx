@@ -59,6 +59,7 @@ export default function Shipping() {
     let tableQuery = supabase
       .from('orders')
       .select('id, customer_name, customer_phone, delivery_address, total, delivery_fee, status, created_at, notes')
+      .is('deleted_at', null)
       .not('status', 'in', '("cancelled")')
       .order('created_at', { ascending: false });
 
@@ -79,10 +80,10 @@ export default function Shipping() {
     weekStart.setDate(now.getDate() - ((now.getDay() + 6) % 7));
     weekStart.setHours(0, 0, 0, 0);
 
-    let kpiFallbackQuery = supabase.from('orders').select('status, delivery_fee').not('status', 'in', '("cancelled")');
+    let kpiFallbackQuery = supabase.from('orders').select('status, delivery_fee').is('deleted_at', null).not('status', 'in', '("cancelled")');
     if (selectedStore && selectedStore !== 'all') kpiFallbackQuery = kpiFallbackQuery.eq('store_id', selectedStore);
 
-    let chartFallbackQuery = supabase.from('orders').select('status, delivery_fee, created_at').eq('status', 'delivered').gte('created_at', weekStart.toISOString());
+    let chartFallbackQuery = supabase.from('orders').select('status, delivery_fee, created_at').is('deleted_at', null).eq('status', 'delivered').gte('created_at', weekStart.toISOString());
     if (selectedStore && selectedStore !== 'all') chartFallbackQuery = chartFallbackQuery.eq('store_id', selectedStore);
 
     const [kpisRes, chartRes, ordersRes, kpiFallbackRes, chartFallbackRes] = await Promise.all([

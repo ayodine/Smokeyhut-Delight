@@ -55,7 +55,7 @@ export default function Overview() {
 
   // Helper: build a minimal unlimited query for fallback KPI computation
   const buildKpiFallback = (sp, startDate) => {
-    let q = supabase.from('orders').select('status, total, created_at');
+    let q = supabase.from('orders').select('status, total, created_at').is('deleted_at', null);
     if (sp !== null) q = q.eq('store_id', sp);
     if (startDate) q = q.gte('created_at', startDate.toISOString());
     return q;
@@ -91,6 +91,7 @@ export default function Overview() {
     let recentQuery = supabase
       .from('orders')
       .select('id,customer_name,total,status,created_at,store_id')
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(10);
     if (sp !== null) recentQuery = recentQuery.eq('store_id', sp);
@@ -99,6 +100,7 @@ export default function Overview() {
     let chartFallbackQuery = supabase
       .from('orders')
       .select('status, total, created_at')
+      .is('deleted_at', null)
       .neq('status', 'cancelled')
       .gte('created_at', weekStart.toISOString());
     if (sp !== null) chartFallbackQuery = chartFallbackQuery.eq('store_id', sp);
@@ -143,6 +145,7 @@ export default function Overview() {
     let recentQuery = supabase
       .from('orders')
       .select('id,customer_name,total,status,created_at,store_id')
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(10);
     if (sp !== null) recentQuery = recentQuery.eq('store_id', sp);
@@ -208,6 +211,7 @@ export default function Overview() {
       let exportQuery = supabase
         .from('orders')
         .select('id,customer_name,total,status,created_at')
+        .is('deleted_at', null)
         .order('created_at', { ascending: false });
       if (sp !== null) exportQuery = exportQuery.eq('store_id', sp);
       if (startDate) exportQuery = exportQuery.gte('created_at', startDate.toISOString());

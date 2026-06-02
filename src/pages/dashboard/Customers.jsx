@@ -123,6 +123,7 @@ export default function Customers() {
       const { data, error } = await supabase
         .from('orders')
         .select('id, customer_name, customer_email, customer_phone, total, created_at, status, payment_method, store_id, coupon_code')
+        .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
 
