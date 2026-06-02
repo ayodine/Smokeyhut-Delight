@@ -60,7 +60,7 @@ export default function Customers() {
   const [tab, setTab] = useState('directory');
   const [allCustomers, setAllCustomers] = useState([]);
   const [rawOrders, setRawOrders] = useState([]);
-  const [overviewDateFilter, setOverviewDateFilter] = useState(''); // YYYY-MM-DD
+  const [overviewDateFilter, setOverviewDateFilter] = useState({ start: null, end: null });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -207,7 +207,8 @@ export default function Customers() {
   };
 
   const { customers, kpis } = useMemo(() => {
-    if (!overviewDateFilter) {
+    const hasFilter = overviewDateFilter && (overviewDateFilter.start || overviewDateFilter.end);
+    if (!hasFilter) {
       // All-time mode
       const totalSpend = allCustomers.reduce((s, c) => s + c.totalSpent, 0);
       const totalOrdersCount = allCustomers.reduce((s, c) => s + c.orders, 0);
@@ -226,12 +227,19 @@ export default function Customers() {
       };
     }
 
-    // Date filtered mode
-    const dayOrders = rawOrders.filter(o => o.created_at && new Date(o.created_at).toLocaleDateString('en-CA') === overviewDateFilter);
-    const activeCustomerKeys = new Set(dayOrders.map(o => o.customer_phone || o.customer_email || o.customer_name).filter(Boolean));
+    // Date range filtered mode
+    const { start, end } = overviewDateFilter;
+    const rangeOrders = rawOrders.filter(o => {
+      if (!o.created_at) return false;
+      const orderDateStr = new Date(o.created_at).toLocaleDateString('en-CA');
+      if (start && orderDateStr < start) return false;
+      if (end && orderDateStr > end) return false;
+      return true;
+    });
+    const activeCustomerKeys = new Set(rangeOrders.map(o => o.customer_phone || o.customer_email || o.customer_name).filter(Boolean));
     
-    // Total Spent on that day (excluding cancelled)
-    const daySpend = dayOrders.filter(o => o.status !== 'cancelled').reduce((sum, o) => sum + Number(o.total || 0), 0);
+    // Total Spent in that range (excluding cancelled)
+    const rangeSpend = rangeOrders.filter(o => o.status !== 'cancelled').reduce((sum, o) => sum + Number(o.total || 0), 0);
     
     // Find the very first order date for every customer in all rawOrders
     const customerFirstOrderDates = {};
@@ -244,18 +252,24 @@ export default function Customers() {
       }
     });
 
-    const newCust = Array.from(activeCustomerKeys).filter(key => customerFirstOrderDates[key]?.dateStr === overviewDateFilter).length;
+    const newCust = Array.from(activeCustomerKeys).filter(key => {
+      const firstDateStr = customerFirstOrderDates[key]?.dateStr;
+      if (!firstDateStr) return false;
+      if (start && firstDateStr < start) return false;
+      if (end && firstDateStr > end) return false;
+      return true;
+    }).length;
     const retCust = activeCustomerKeys.size - newCust;
 
-    // The customers list for the directory table should be the full profiles of customers active on this day
-    const dayCustomersList = allCustomers.filter(c => activeCustomerKeys.has(c.id));
+    // The customers list for the directory table should be the full profiles of customers active in this range
+    const rangeCustomersList = allCustomers.filter(c => activeCustomerKeys.has(c.id));
 
     return {
-      customers: dayCustomersList,
+      customers: rangeCustomersList,
       kpis: {
         totalCustomers: activeCustomerKeys.size,
-        totalSpent: daySpend,
-        totalOrders: dayOrders.length,
+        totalSpent: rangeSpend,
+        totalOrders: rangeOrders.length,
         newCustomers: newCust,
         returningCustomers: retCust
       }
@@ -696,11 +710,13 @@ export default function Customers() {
                 />
               </div>
               <DashCalendar
+                range={true}
                 value={overviewDateFilter}
                 onChange={v => {
                   setOverviewDateFilter(v);
                   setPage(1);
                 }}
+                placeholder="Filter by date range"
                 style={{ height: '38px', boxSizing: 'border-box' }}
               />
             </div>
