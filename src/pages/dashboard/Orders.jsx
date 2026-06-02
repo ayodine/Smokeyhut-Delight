@@ -243,6 +243,7 @@ export default function Orders() {
   const [savingBulk, setSavingBulk] = useState(false);
   const [dateFilter, setDateFilter] = useState({ start: null, end: null });
   const [confirmAction, setConfirmAction] = useState(null);
+  const [cancelPrompt, setCancelPrompt] = useState(null); // { ids: string[], reason: string, onConfirm: (reason) => void }
   const [sourceFilter, setSourceFilter] = useState('all'); // 'all' | 'storefront' | 'whatsapp'
   const [newOrderAlert, setNewOrderAlert] = useState(null); // { id, name, total }
   
@@ -436,6 +437,28 @@ export default function Orders() {
   const updateStatus = async (id, newStatus) => {
     await supabase.from('orders').update({ status: newStatus }).eq('id', id);
     setOrders(prev => prev.map(o => o.id === id ? { ...o, status: newStatus } : o));
+  };
+
+  const updateStatusWithReason = async (ids, status, reason) => {
+    try {
+      setLoading(true);
+      const { error } = await supabase
+        .from('orders')
+        .update({ status, cancel_reason: reason })
+        .in('id', ids);
+      if (!error) {
+        setOrders(prev => prev.map(o => ids.includes(o.id) ? { ...o, status, cancel_reason: reason } : o));
+        setSelectedIds([]);
+        showToast('Orders Cancelled', `Successfully cancelled ${ids.length} order(s).`, 'success');
+      } else {
+        showToast('Cancellation failed', error.message, 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Error', 'An unexpected error occurred during cancellation', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const deleteOrder = (id) => {
@@ -1201,6 +1224,14 @@ export default function Orders() {
                         <strong>Note:</strong> {sel.notes.replace(/^\[via .+?\]\n?/, '')}
                       </div>
                     )}
+                    {sel.status === 'cancelled' && (
+                      <div style={{ marginTop: 12, padding: '12px 16px', background: 'rgba(239, 68, 68, 0.07)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: 10, fontSize: '0.85rem', color: '#dc2626' }}>
+                        <div style={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.72rem', letterSpacing: 0.5, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          ⚠️ Cancellation Reason (Audit Log)
+                        </div>
+                        <div style={{ fontWeight: 600 }}>{sel.cancel_reason || 'No reason provided.'}</div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1209,7 +1240,18 @@ export default function Orders() {
                 <div style={{ width: 150, flexShrink: 0 }}>
                   <CustomSelect
                     value={sel.status}
-                    onChange={e => updateStatus(sel.id, e.target.value)}
+                    onChange={e => {
+                      if (e.target.value === 'cancelled') {
+                        setCancelPrompt({
+                          ids: [sel.id],
+                          onConfirm: async (reason) => {
+                            await updateStatusWithReason([sel.id], 'cancelled', reason);
+                          }
+                        });
+                      } else {
+                        updateStatus(sel.id, e.target.value);
+                      }
+                    }}
                     options={statuses.filter(s => s !== 'all' && (canCancelOrder || s !== 'cancelled')).map(s => ({ value: s, label: s }))}
                     disabled={!canManageOrder}
                   />
@@ -1518,11 +1560,183 @@ export default function Orders() {
           ...['pending', 'processing', 'shipped', 'delivered', ...(canCancelOrder ? ['cancelled'] : [])].map(st => ({
             type: 'status',
             label: st,
-            onClick: () => handleBulkStatusUpdate(st)
+            onClick: () => {
+              if (st === 'cancelled') {
+                setCancelPrompt({
+                  ids: [...selectedIds],
+                  onConfirm: async (reason) => {
+                    await updateStatusWithReason([...selectedIds], 'cancelled', reason);
+                  }
+                });
+              } else {
+                handleBulkStatusUpdate(st);
+              }
+            }
           })),
           ...(canDeleteOrder ? [{ type: 'delete', label: 'Delete', onClick: handleBulkDelete }] : [])
         ]}
       />
+
+      <style>{`
+        @keyframes pulseGlow {
+          0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
+          70% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+      `}</style>
+
+      {cancelPrompt && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0, 0, 0, 0.75)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          zIndex: 99999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 20,
+          animation: 'fadeIn 0.25s ease-out'
+        }}>
+          <div style={{
+            background: 'linear-gradient(145deg, #0e0e0e, #161616)',
+            border: '1px solid rgba(245, 158, 11, 0.35)',
+            boxShadow: '0 25px 70px rgba(0,0,0,0.85), 0 0 35px rgba(245, 158, 11, 0.08)',
+            borderRadius: 24,
+            padding: '32px 28px',
+            width: '100%',
+            maxWidth: 440,
+            transform: 'scale(1)',
+            transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+            position: 'relative'
+          }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: 20 }}>
+              <div style={{
+                background: 'rgba(245, 158, 11, 0.12)',
+                color: '#f59e0b',
+                width: 56,
+                height: 56,
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 16,
+                border: '1px solid rgba(245, 158, 11, 0.25)',
+                boxShadow: '0 0 15px rgba(245, 158, 11, 0.1)',
+                animation: 'pulseGlow 2s infinite'
+              }}>
+                <AlertTriangle size={28} />
+              </div>
+              <h3 style={{
+                margin: 0,
+                fontSize: '1.35rem',
+                fontWeight: 900,
+                color: '#fff',
+                fontFamily: "'Mona Sans', sans-serif",
+                letterSpacing: -0.3
+              }}>
+                Cancel Order Audit
+              </h3>
+              <p style={{
+                margin: '8px 0 0 0',
+                fontSize: '0.86rem',
+                color: 'var(--text-muted)',
+                lineHeight: 1.4,
+                fontFamily: "'DM Sans', sans-serif"
+              }}>
+                Please state the reason for cancelling order {cancelPrompt.ids.length === 1 ? `#${cancelPrompt.ids[0]}` : `(${cancelPrompt.ids.length} selected)`}. This is required for audit logs.
+              </p>
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <textarea
+                placeholder="Type reason here (e.g. Out of stock, Customer request, duplicate order)..."
+                onChange={(e) => setCancelPrompt(prev => ({ ...prev, reason: e.target.value }))}
+                value={cancelPrompt.reason || ''}
+                style={{
+                  width: '100%',
+                  height: 110,
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: 12,
+                  padding: 14,
+                  fontSize: '0.9rem',
+                  color: '#fff',
+                  fontFamily: "'DM Sans', sans-serif",
+                  outline: 'none',
+                  resize: 'none',
+                  boxSizing: 'border-box',
+                  transition: 'all 0.25s',
+                  boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)'
+                }}
+                onFocus={(e) => {
+                  e.target.style.border = '1px solid rgba(245, 158, 11, 0.6)';
+                  e.target.style.background = 'rgba(255, 255, 255, 0.05)';
+                  e.target.style.boxShadow = '0 0 10px rgba(245, 158, 11, 0.15), inset 0 2px 4px rgba(0,0,0,0.2)';
+                }}
+                onBlur={(e) => {
+                  e.target.style.border = '1px solid rgba(255, 255, 255, 0.08)';
+                  e.target.style.background = 'rgba(255, 255, 255, 0.03)';
+                  e.target.style.boxShadow = 'inset 0 2px 4px rgba(0,0,0,0.2)';
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setCancelPrompt(null)}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: 12,
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  color: 'var(--text-muted)',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  fontFamily: "'DM Sans', sans-serif",
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => { e.target.style.background = 'rgba(255, 255, 255, 0.06)'; e.target.style.color = '#fff'; }}
+                onMouseLeave={(e) => { e.target.style.background = 'rgba(255, 255, 255, 0.02)'; e.target.style.color = 'var(--text-muted)'; }}
+              >
+                Go Back
+              </button>
+              <button
+                onClick={() => {
+                  if (cancelPrompt.reason?.trim()) {
+                    cancelPrompt.onConfirm(cancelPrompt.reason.trim());
+                    setCancelPrompt(null);
+                  }
+                }}
+                disabled={!cancelPrompt.reason?.trim()}
+                style={{
+                  flex: 1.5,
+                  padding: '12px',
+                  borderRadius: 12,
+                  border: 'none',
+                  background: cancelPrompt.reason?.trim() ? '#f59e0b' : 'rgba(245, 158, 11, 0.15)',
+                  color: cancelPrompt.reason?.trim() ? '#000' : 'rgba(255, 255, 255, 0.3)',
+                  fontWeight: 800,
+                  fontSize: '0.85rem',
+                  cursor: cancelPrompt.reason?.trim() ? 'pointer' : 'not-allowed',
+                  fontFamily: "'DM Sans', sans-serif",
+                  transition: 'all 0.25s',
+                  boxShadow: cancelPrompt.reason?.trim() ? '0 4px 15px rgba(245, 158, 11, 0.3)' : 'none'
+                }}
+              >
+                Log Cancellation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ConfirmModal 
         isOpen={!!confirmAction} 
