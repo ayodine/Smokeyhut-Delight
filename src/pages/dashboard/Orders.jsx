@@ -1579,9 +1579,9 @@ export default function Orders() {
 
       <style>{`
         @keyframes pulseGlow {
-          0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
-          70% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+          0% { box-shadow: 0 0 0 0 rgba(192, 32, 31, 0.4); }
+          70% { box-shadow: 0 0 0 10px rgba(192, 32, 31, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(192, 32, 31, 0); }
         }
         @keyframes fadeIn {
           from { opacity: 0; }
@@ -1593,9 +1593,9 @@ export default function Orders() {
         <div style={{
           position: 'fixed',
           inset: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
+          background: 'rgba(0, 0, 0, 0.4)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
           zIndex: 99999,
           display: 'flex',
           alignItems: 'center',
@@ -1604,10 +1604,10 @@ export default function Orders() {
           animation: 'fadeIn 0.25s ease-out'
         }}>
           <div style={{
-            background: 'linear-gradient(145deg, #0e0e0e, #161616)',
-            border: '1px solid rgba(245, 158, 11, 0.35)',
-            boxShadow: '0 25px 70px rgba(0,0,0,0.85), 0 0 35px rgba(245, 158, 11, 0.08)',
-            borderRadius: 24,
+            background: 'var(--white)',
+            border: '1px solid var(--border-subtle)',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.12)',
+            borderRadius: 20,
             padding: '32px 28px',
             width: '100%',
             maxWidth: 440,
@@ -1617,8 +1617,8 @@ export default function Orders() {
           }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: 20 }}>
               <div style={{
-                background: 'rgba(245, 158, 11, 0.12)',
-                color: '#f59e0b',
+                background: 'rgba(192, 32, 31, 0.08)',
+                color: 'var(--red)',
                 width: 56,
                 height: 56,
                 borderRadius: '50%',
@@ -1626,8 +1626,7 @@ export default function Orders() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginBottom: 16,
-                border: '1px solid rgba(245, 158, 11, 0.25)',
-                boxShadow: '0 0 15px rgba(245, 158, 11, 0.1)',
+                border: '1px solid rgba(192, 32, 31, 0.22)',
                 animation: 'pulseGlow 2s infinite'
               }}>
                 <AlertTriangle size={28} />
@@ -1636,7 +1635,7 @@ export default function Orders() {
                 margin: 0,
                 fontSize: '1.35rem',
                 fontWeight: 900,
-                color: '#fff',
+                color: 'var(--text)',
                 fontFamily: "'Mona Sans', sans-serif",
                 letterSpacing: -0.3
               }}>
@@ -1661,28 +1660,28 @@ export default function Orders() {
                 style={{
                   width: '100%',
                   height: 110,
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  background: 'var(--black)',
+                  border: '1px solid var(--border-subtle)',
                   borderRadius: 12,
                   padding: 14,
                   fontSize: '0.9rem',
-                  color: '#fff',
+                  color: 'var(--text)',
                   fontFamily: "'DM Sans', sans-serif",
                   outline: 'none',
                   resize: 'none',
                   boxSizing: 'border-box',
                   transition: 'all 0.25s',
-                  boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)'
+                  boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.02)'
                 }}
                 onFocus={(e) => {
-                  e.target.style.border = '1px solid rgba(245, 158, 11, 0.6)';
-                  e.target.style.background = 'rgba(255, 255, 255, 0.05)';
-                  e.target.style.boxShadow = '0 0 10px rgba(245, 158, 11, 0.15), inset 0 2px 4px rgba(0,0,0,0.2)';
+                  e.target.style.border = '1px solid var(--red)';
+                  e.target.style.background = 'var(--white)';
+                  e.target.style.boxShadow = '0 0 0 3px rgba(192,32,31,0.1), inset 0 1px 3px rgba(0,0,0,0.02)';
                 }}
                 onBlur={(e) => {
-                  e.target.style.border = '1px solid rgba(255, 255, 255, 0.08)';
-                  e.target.style.background = 'rgba(255, 255, 255, 0.03)';
-                  e.target.style.boxShadow = 'inset 0 2px 4px rgba(0,0,0,0.2)';
+                  e.target.style.border = '1px solid var(--border-subtle)';
+                  e.target.style.background = 'var(--black)';
+                  e.target.style.boxShadow = 'inset 0 1px 3px rgba(0,0,0,0.02)';
                 }}
               />
             </div>
@@ -1694,8 +1693,8 @@ export default function Orders() {
                   flex: 1,
                   padding: '12px',
                   borderRadius: 12,
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid var(--border-subtle)',
+                  background: 'var(--white)',
                   color: 'var(--text-muted)',
                   fontWeight: 700,
                   fontSize: '0.85rem',
@@ -1703,8 +1702,8 @@ export default function Orders() {
                   fontFamily: "'DM Sans', sans-serif",
                   transition: 'all 0.2s'
                 }}
-                onMouseEnter={(e) => { e.target.style.background = 'rgba(255, 255, 255, 0.06)'; e.target.style.color = '#fff'; }}
-                onMouseLeave={(e) => { e.target.style.background = 'rgba(255, 255, 255, 0.02)'; e.target.style.color = 'var(--text-muted)'; }}
+                onMouseEnter={(e) => { e.target.style.background = 'var(--black2)'; e.target.style.color = 'var(--text)'; }}
+                onMouseLeave={(e) => { e.target.style.background = 'var(--white)'; e.target.style.color = 'var(--text-muted)'; }}
               >
                 Go Back
               </button>
@@ -1721,14 +1720,14 @@ export default function Orders() {
                   padding: '12px',
                   borderRadius: 12,
                   border: 'none',
-                  background: cancelPrompt.reason?.trim() ? '#f59e0b' : 'rgba(245, 158, 11, 0.15)',
-                  color: cancelPrompt.reason?.trim() ? '#000' : 'rgba(255, 255, 255, 0.3)',
+                  background: cancelPrompt.reason?.trim() ? 'var(--red)' : 'var(--black3)',
+                  color: cancelPrompt.reason?.trim() ? '#fff' : 'var(--gray-light)',
                   fontWeight: 800,
                   fontSize: '0.85rem',
                   cursor: cancelPrompt.reason?.trim() ? 'pointer' : 'not-allowed',
                   fontFamily: "'DM Sans', sans-serif",
                   transition: 'all 0.25s',
-                  boxShadow: cancelPrompt.reason?.trim() ? '0 4px 15px rgba(245, 158, 11, 0.3)' : 'none'
+                  boxShadow: cancelPrompt.reason?.trim() ? '0 4px 12px rgba(192,32,31,0.2)' : 'none'
                 }}
               >
                 Log Cancellation
