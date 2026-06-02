@@ -241,8 +241,6 @@ export default function Orders() {
   const [showBulkOrder, setShowBulkOrder] = useState(false);
   const [bulkOrders, setBulkOrders] = useState([{ ...emptyNewOrder }]);
   const [savingBulk, setSavingBulk] = useState(false);
-  const [trashView, setTrashView] = useState(false);
-  const [deletedOrders, setDeletedOrders] = useState([]);
   const [dateFilter, setDateFilter] = useState({ start: null, end: null });
   const [confirmAction, setConfirmAction] = useState(null);
   const [sourceFilter, setSourceFilter] = useState('all'); // 'all' | 'storefront' | 'whatsapp'
@@ -257,22 +255,11 @@ export default function Orders() {
 
   // Bulk action selections state
   const [selectedIds, setSelectedIds] = useState([]);
-  const [selectedTrashIds, setSelectedTrashIds] = useState([]);
 
   // Auto-reset selections when view or filters change
   useEffect(() => {
     setSelectedIds([]);
-  }, [filter, sourceFilter, page, trashView]);
-
-  useEffect(() => {
-    setSelectedTrashIds([]);
-  }, [trashView]);
-
-  useEffect(() => {
-    if (trashView && !canDeleteOrder) {
-      setTrashView(false);
-    }
-  }, [trashView, canDeleteOrder]);
+  }, [filter, sourceFilter, page]);
 
   const [realtimeStatus, setRealtimeStatus] = useState('connecting'); // 'connecting' | 'ok' | 'error'
   const audioCtxRef = useRef(null);
@@ -405,17 +392,6 @@ export default function Orders() {
       return q;
     };
 
-    const buildDeletedBase = () => {
-      let q = supabase.from('orders').select('id, customer_name, customer_email, customer_phone, delivery_address, total, status, created_at, deleted_at, store_id, notes');
-      if (storeFilter) q = q.or(`store_id.eq.${storeFilter},store_id.is.null`);
-      
-      const { start, end } = getPeriodParams(period, dateFilter);
-      if (start) q = q.gte('created_at', start);
-      if (end) q = q.lte('created_at', end);
-      
-      return q;
-    };
-
     const fetchAllOrders = async () => {
       let all = [];
       let pageNum = 0;
@@ -440,40 +416,14 @@ export default function Orders() {
       return all;
     };
 
-    const fetchAllDeleted = async () => {
-      let all = [];
-      let pageNum = 0;
-      const PAGE_SIZE = 1000;
-      let hasMore = true;
-      while (hasMore) {
-        const { data, error } = await buildDeletedBase()
-          .not('deleted_at', 'is', null)
-          .order('deleted_at', { ascending: false })
-          .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
-        if (error) {
-          console.error('[Trash] Error loading chunk:', error);
-          hasMore = false;
-        } else if (!data || data.length === 0) {
-          hasMore = false;
-        } else {
-          all = [...all, ...data];
-          if (data.length < PAGE_SIZE) hasMore = false;
-          else pageNum++;
-        }
-      }
-      return all;
-    };
-
-    const [loadedOrders, loadedDeleted, productsRes, storesRes, zonesRes] = await Promise.all([
+    const [loadedOrders, productsRes, storesRes, zonesRes] = await Promise.all([
       fetchAllOrders(),
-      fetchAllDeleted(),
       supabase.from('products').select('id, name, price').order('name'),
       supabase.from('stores').select('id, name').eq('is_active', true).order('id'),
       fetchFlatAreas(supabase),
     ]);
 
     setOrders(loadedOrders);
-    setDeletedOrders(loadedDeleted);
     if (productsRes.data) setProducts(productsRes.data);
     if (storesRes.data) {
       setStoreList(storesRes.data);
@@ -491,47 +441,18 @@ export default function Orders() {
   const deleteOrder = (id) => {
     if (!canDeleteOrder) return showToast('Permission Denied', 'You do not have permission to delete orders.', 'error');
     setConfirmAction({
-      title: 'Move to Trash?',
-      message: 'You can recover this order later from the Trash.',
-      onConfirm: async () => {
-        setConfirmAction(prev => ({ ...prev, isLoading: true }));
-        const now = new Date().toISOString();
-        const { error } = await supabase.from('orders').update({ deleted_at: now }).eq('id', id);
-        if (!error) {
-          const moved = orders.find(o => o.id === id);
-          setOrders(prev => prev.filter(o => o.id !== id));
-          if (moved) setDeletedOrders(prev => [{ ...moved, deleted_at: now }, ...prev]);
-          showToast('Order moved to trash', 'You can recover it from Trash.', 'info');
-        }
-        setConfirmAction(null);
-      }
-    });
-  };
-
-  const restoreOrder = async (id) => {
-    if (!canDeleteOrder) return showToast('Permission Denied', 'You do not have permission to restore orders.', 'error');
-    const { error } = await supabase.from('orders').update({ deleted_at: null }).eq('id', id);
-    if (!error) {
-      const moved = deletedOrders.find(o => o.id === id);
-      setDeletedOrders(prev => prev.filter(o => o.id !== id));
-      if (moved) setOrders(prev => [{ ...moved, deleted_at: null }, ...prev]);
-      showToast('Order restored', '', 'success');
-    }
-  };
-
-  const permanentDelete = (id) => {
-    if (!canDeleteOrder) return showToast('Permission Denied', 'You do not have permission to delete orders.', 'error');
-    setConfirmAction({
-      title: 'Permanently Delete?',
-      message: 'This action cannot be undone.',
+      title: 'Permanently Delete Order?',
+      message: 'Are you sure you want to delete this order? This action cannot be undone.',
       isDestructive: true,
       onConfirm: async () => {
         setConfirmAction(prev => ({ ...prev, isLoading: true }));
         await supabase.from('order_items').delete().eq('order_id', id);
         const { error } = await supabase.from('orders').delete().eq('id', id);
         if (!error) {
-          setDeletedOrders(prev => prev.filter(o => o.id !== id));
+          setOrders(prev => prev.filter(o => o.id !== id));
           showToast('Order permanently deleted', '', 'info');
+        } else {
+          showToast('Failed to delete order', error.message, 'error');
         }
         setConfirmAction(null);
       }
@@ -559,68 +480,21 @@ export default function Orders() {
     }
   };
 
-  const handleBulkMoveToTrash = () => {
+  const handleBulkDelete = () => {
     if (!canDeleteOrder) return showToast('Permission Denied', 'You do not have permission to delete orders.', 'error');
     if (selectedIds.length === 0) return;
     setConfirmAction({
-      title: 'Move Selected to Trash?',
-      message: `Are you sure you want to move ${selectedIds.length} selected orders to the trash?`,
-      onConfirm: async () => {
-        setConfirmAction(prev => ({ ...prev, isLoading: true }));
-        const now = new Date().toISOString();
-        const { error } = await supabase.from('orders').update({ deleted_at: now }).in('id', selectedIds);
-        if (!error) {
-          const moved = orders.filter(o => selectedIds.includes(o.id)).map(o => ({ ...o, deleted_at: now }));
-          setOrders(prev => prev.filter(o => !selectedIds.includes(o.id)));
-          setDeletedOrders(prev => [...moved, ...prev]);
-          setSelectedIds([]);
-          showToast('Orders moved to trash', `${moved.length} orders moved to trash`, 'info');
-        } else {
-          showToast('Failed to delete', error.message, 'error');
-        }
-        setConfirmAction(null);
-      }
-    });
-  };
-
-  const handleBulkRecover = async () => {
-    if (!canDeleteOrder) return showToast('Permission Denied', 'You do not have permission to restore orders.', 'error');
-    if (selectedTrashIds.length === 0) return;
-    try {
-      setLoading(true);
-      const { error } = await supabase.from('orders').update({ deleted_at: null }).in('id', selectedTrashIds);
-      if (!error) {
-        const moved = deletedOrders.filter(o => selectedTrashIds.includes(o.id)).map(o => ({ ...o, deleted_at: null }));
-        setDeletedOrders(prev => prev.filter(o => !selectedTrashIds.includes(o.id)));
-        setOrders(prev => [...moved, ...prev]);
-        setSelectedTrashIds([]);
-        showToast('Orders restored', `${moved.length} orders successfully restored`, 'success');
-      } else {
-        showToast('Failed to restore', error.message, 'error');
-      }
-    } catch (err) {
-      console.error(err);
-      showToast('Error', 'An unexpected error occurred', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleBulkPermanentDelete = () => {
-    if (!canDeleteOrder) return showToast('Permission Denied', 'You do not have permission to delete orders.', 'error');
-    if (selectedTrashIds.length === 0) return;
-    setConfirmAction({
       title: 'Delete Selected Forever?',
-      message: `Are you sure you want to permanently delete the ${selectedTrashIds.length} selected orders? This action cannot be undone.`,
+      message: `Are you sure you want to permanently delete the ${selectedIds.length} selected orders? This action cannot be undone.`,
       isDestructive: true,
       onConfirm: async () => {
         setConfirmAction(prev => ({ ...prev, isLoading: true }));
         // Delete child items first to satisfy foreign keys
-        await supabase.from('order_items').delete().in('order_id', selectedTrashIds);
-        const { error } = await supabase.from('orders').delete().in('id', selectedTrashIds);
+        await supabase.from('order_items').delete().in('order_id', selectedIds);
+        const { error } = await supabase.from('orders').delete().in('id', selectedIds);
         if (!error) {
-          setDeletedOrders(prev => prev.filter(o => !selectedTrashIds.includes(o.id)));
-          setSelectedTrashIds([]);
+          setOrders(prev => prev.filter(o => !selectedIds.includes(o.id)));
+          setSelectedIds([]);
           showToast('Permanently deleted', 'Selected orders deleted forever', 'info');
         } else {
           showToast('Failed to delete', error.message, 'error');
@@ -995,7 +869,7 @@ export default function Orders() {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div className="dash-card-title" style={{ fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif", fontSize: '1.4rem' }}>
-              {trashView ? 'Trash — Deleted Orders' : 'Orders Management'}
+              Orders Management
             </div>
             {/* Realtime status dot */}
             <span title={realtimeStatus === 'ok' ? 'Live updates active' : realtimeStatus === 'error' ? 'Live updates failed — refresh' : 'Connecting…'} style={{
@@ -1004,11 +878,6 @@ export default function Orders() {
               boxShadow: realtimeStatus === 'ok' ? '0 0 0 3px rgba(34,197,94,0.2)' : 'none',
             }} />
           </div>
-          {trashView && (
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: 4 }}>
-              Orders here are not visible to the storefront. Recover or delete permanently.
-            </p>
-          )}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
           {/* Period filter */}
@@ -1050,30 +919,7 @@ export default function Orders() {
                 color: 'var(--text-muted)', fontFamily: "'DM Sans',sans-serif",
               }}
             >🔔</button>
-            {canDeleteOrder && (
-              <button
-                onClick={() => setTrashView(v => !v)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px',
-                  fontSize: '0.85rem', whiteSpace: 'nowrap', borderRadius: 8, cursor: 'pointer',
-                  border: `1px solid ${trashView ? 'var(--red)' : 'var(--border-subtle)'}`,
-                  background: trashView ? 'var(--red)' : 'var(--white)',
-                  color: trashView ? '#fff' : 'var(--text)', fontWeight: 700,
-                  fontFamily: "'DM Sans',sans-serif", position: 'relative',
-                }}
-              >
-                <Trash2 size={15} /> Trash
-                {deletedOrders.length > 0 && (
-                  <span style={{
-                    position: 'absolute', top: -6, right: -6,
-                    background: '#ef4444', color: '#fff', borderRadius: '50%',
-                    width: 18, height: 18, fontSize: '0.65rem', fontWeight: 800,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>{deletedOrders.length}</span>
-                )}
-              </button>
-            )}
-            {canCreateOrder && !trashView && (
+            {canCreateOrder && (
               <>
                 <button
                   className="btn-secondary"
@@ -1095,115 +941,6 @@ export default function Orders() {
         </div>
       </div>
 
-      {trashView ? (
-        /* ── Trash View ── */
-        <div className="dash-card">
-          {deletedOrders.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text-muted)' }}>
-              <Trash2 size={40} style={{ opacity: 0.3, marginBottom: 12 }} />
-              <div style={{ fontWeight: 700 }}>Trash is empty</div>
-              <div style={{ fontSize: '0.82rem', marginTop: 4 }}>Deleted orders will appear here.</div>
-            </div>
-          ) : (
-            <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, padding: '10px 14px', background: 'rgba(239,68,68,0.07)', borderRadius: 10, border: '1px solid rgba(239,68,68,0.2)' }}>
-                <AlertTriangle size={16} color="#ef4444" />
-                <span style={{ fontSize: '0.83rem', color: '#ef4444', fontWeight: 600 }}>
-                  {deletedOrders.length} deleted order{deletedOrders.length !== 1 ? 's' : ''}. Recover to restore them or delete permanently.
-                </span>
-              </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="dash-table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: 44, textAlign: 'center' }}>
-                        <input
-                          type="checkbox"
-                          checked={deletedOrders.length > 0 && deletedOrders.every(o => selectedTrashIds.includes(o.id))}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedTrashIds(deletedOrders.map(o => o.id));
-                            } else {
-                              setSelectedTrashIds([]);
-                            }
-                          }}
-                          style={{ cursor: 'pointer', width: 16, height: 16, accentColor: 'var(--red)' }}
-                        />
-                      </th>
-                      <th>Order ID</th>
-                      <th>Customer</th>
-                      <th>Total</th>
-                      <th>Status</th>
-                      <th>Original Date</th>
-                      <th>Deleted</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {deletedOrders.map(order => {
-                      const isSelected = selectedTrashIds.includes(order.id);
-                      return (
-                        <tr 
-                          key={order.id} 
-                          style={{ 
-                            opacity: 0.8,
-                            background: isSelected ? 'rgba(0, 0, 0, 0.04)' : undefined,
-                            borderLeft: isSelected ? '3px solid var(--text-muted)' : undefined,
-                          }}
-                        >
-                          <td style={{ width: 44, textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedTrashIds([...selectedTrashIds, order.id]);
-                                } else {
-                                  setSelectedTrashIds(selectedTrashIds.filter(id => id !== order.id));
-                                }
-                              }}
-                              style={{ cursor: 'pointer', width: 16, height: 16, accentColor: 'var(--red)' }}
-                            />
-                          </td>
-                          <td style={{ fontWeight: 700, color: 'var(--text-muted)' }}>{order.id}</td>
-                        <td>
-                          <div style={{ fontWeight: 700 }}>{order.customer_name}</div>
-                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{order.customer_phone}</div>
-                        </td>
-                        <td style={{ fontWeight: 700 }}>{fmt(order.total || 0)}</td>
-                        <td><span className={`status-badge ${order.status}`}>{order.status}</span></td>
-                        <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                          {new Date(order.created_at).toLocaleDateString()}
-                        </td>
-                        <td style={{ fontSize: '0.82rem', color: '#ef4444' }}>
-                          {new Date(order.deleted_at).toLocaleDateString()}
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                            <button
-                              onClick={() => restoreOrder(order.id)}
-                              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 7, border: '1px solid #22c55e', background: 'rgba(34,197,94,0.1)', color: '#16a34a', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer' }}
-                            >
-                              <RotateCcw size={13} /> Recover
-                            </button>
-                            <button
-                              onClick={() => permanentDelete(order.id)}
-                              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 7, border: '1px solid rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.08)', color: '#ef4444', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer' }}
-                            >
-                              <Trash2 size={13} /> Delete Forever
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ); })}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </div>
-      ) : (
-      <>
       {/* KPI Cards */}
       <div className="kpi-grid" style={{ marginBottom: 20 }}>
         <div className="kpi-card yellow">
@@ -1352,8 +1089,6 @@ export default function Orders() {
         </div>
         <Pagination page={page} total={filtered.length} perPage={PER_PAGE} onChange={setPage} />
       </div>
-      </>
-      )}
 
       {/* ── Slide-Out Drawer ── */}
       <div className={`dash-drawer-overlay ${expandedId ? 'open' : ''}`} onClick={() => setExpandedId(null)}></div>
@@ -1785,22 +1520,9 @@ export default function Orders() {
             label: st,
             onClick: () => handleBulkStatusUpdate(st)
           })),
-          ...(canDeleteOrder ? [{ type: 'delete', label: 'Trash', onClick: handleBulkMoveToTrash }] : [])
+          ...(canDeleteOrder ? [{ type: 'delete', label: 'Delete', onClick: handleBulkDelete }] : [])
         ]}
       />
-
-      {/* Floating Bulk Actions Bar (Trash View) */}
-      {canDeleteOrder && (
-        <BulkActionBar 
-          selectedCount={selectedTrashIds.length} 
-          onDeselectAll={() => setSelectedTrashIds([])}
-          isTrashView={true}
-          actions={[
-            { type: 'recover', label: 'Recover', onClick: handleBulkRecover },
-            { type: 'delete', label: 'Delete Forever', onClick: handleBulkPermanentDelete }
-          ]}
-        />
-      )}
 
       <ConfirmModal 
         isOpen={!!confirmAction} 
