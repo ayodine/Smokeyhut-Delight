@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Users, DollarSign, Package, Trash2, Download, Mail, Send, Loader2, UserPlus, Repeat2, ChevronUp, ChevronDown, Search, Sparkles } from 'lucide-react';
+import { Users, DollarSign, Package, Trash2, Download, Mail, Send, Loader2, UserPlus, Repeat2, ChevronUp, ChevronDown, Search, Sparkles, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { SkelDashHeader, SkelKpiGrid, SkelTable } from '../../components/Skeleton';
 import Pagination from '../../components/Pagination';
@@ -78,6 +78,8 @@ export default function Customers() {
   const [confirmAction, setConfirmAction] = useState(null);
   const [excludedEmails, setExcludedEmails] = useState(new Set());
   const [recipientSearch, setRecipientSearch] = useState('');
+  const [stores, setStores] = useState([]);
+  const [mailingListExpanded, setMailingListExpanded] = useState(false);
   // Campaign detail / logs
   const [detailCampaign, setDetailCampaign] = useState(null);
   const [campaignLogs, setCampaignLogs] = useState([]);
@@ -100,6 +102,18 @@ export default function Customers() {
   const fetchData = async () => {
     setLoading(true);
     
+    // Fetch stores list
+    try {
+      const { data: storesList, error: storesErr } = await supabase
+        .from('stores')
+        .select('id, name')
+        .order('name');
+      if (storesErr) throw storesErr;
+      if (storesList) setStores(storesList);
+    } catch (e) {
+      console.error('Error fetching stores list:', e);
+    }
+    
     let allOrders = [];
     let pageNum = 0;
     const PAGE_SIZE = 1000;
@@ -108,7 +122,7 @@ export default function Customers() {
     while (hasMore) {
       const { data, error } = await supabase
         .from('orders')
-        .select('customer_name, customer_email, customer_phone, total, created_at, status')
+        .select('id, customer_name, customer_email, customer_phone, total, created_at, status, payment_method, store_id, coupon_code')
         .order('created_at', { ascending: false })
         .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
 
@@ -134,8 +148,32 @@ export default function Customers() {
         const key = o.customer_phone || o.customer_email || o.customer_name;
         if (!key) return;
         if (!map[key]) {
-          map[key] = { id: key, name: o.customer_name, email: o.customer_email, phone: o.customer_phone, orders: 0, totalSpent: 0, lastOrder: null, hasPendingOrder: false, hasCancelledOrder: false, weekendOrders: 0, monthlySpent: 0 };
+          map[key] = { 
+            id: key, 
+            name: o.customer_name, 
+            email: o.customer_email, 
+            phone: o.customer_phone, 
+            orders: 0, 
+            totalSpent: 0, 
+            lastOrder: null, 
+            hasPendingOrder: false, 
+            hasCancelledOrder: false, 
+            weekendOrders: 0, 
+            monthlySpent: 0,
+            ordersDetails: []
+          };
         }
+        
+        map[key].ordersDetails.push({
+          id: o.id,
+          total: Number(o.total || 0),
+          created_at: o.created_at,
+          status: o.status,
+          payment_method: o.payment_method,
+          store_id: o.store_id,
+          coupon_code: o.coupon_code
+        });
+
         if (o.status !== 'cancelled') {
           map[key].totalSpent += Number(o.total || 0);
           
@@ -779,34 +817,31 @@ export default function Customers() {
           )}
 
           {/* Responsive grid for Form + Live Preview */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-            gap: 24,
-            marginBottom: 24,
-            alignItems: 'start'
-          }}>
+          <div className="campaigns-grid">
             {/* LEFT COLUMN: COMPOSE FORM */}
-            <div className="dash-card" style={{ margin: 0 }}>
-              <div className="dash-card-header" style={{ marginBottom: 20 }}>
-                <div className="dash-card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Sparkles size={18} color="var(--red)" />
+            <div className="dash-card" style={{ margin: 0, borderTop: '4px solid var(--red)' }}>
+              <div className="dash-card-header" style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--border-subtle)' }}>
+                <div className="dash-card-title" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '1.15rem' }}>
+                  <Sparkles size={20} color="var(--red)" />
                   Compose Campaign
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 4, fontWeight: 500 }}>
+                  Craft and send premium personalized emails to target your customer segments.
                 </div>
               </div>
 
               <div className="form-group" style={{ marginBottom: 16 }}>
-                <label>Campaign Name</label>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 6 }}>Campaign Name</label>
                 <input
                   placeholder="e.g. Easter Weekend Promo"
                   value={form.name}
                   onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                  style={{ width: '100%', boxSizing: 'border-box' }}
+                  className="premium-input"
                 />
               </div>
 
               <div className="form-group" style={{ marginBottom: 16 }}>
-                <label>Target Audience</label>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 6 }}>Target Audience</label>
                 <CustomSelect
                   value={form.audience}
                   onChange={e => setForm(f => ({ ...f, audience: e.target.value }))}
@@ -816,7 +851,7 @@ export default function Customers() {
               </div>
 
               <div className="form-group" style={{ marginBottom: 16 }}>
-                <label>Last Order Date Range (Optional)</label>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 6 }}>Last Order Date Range (Optional)</label>
                 <DashCalendar
                   range={true}
                   value={form.dateFilter}
@@ -826,38 +861,17 @@ export default function Customers() {
                 />
               </div>
 
-              <div className="form-group" style={{ marginBottom: 16 }}>
-                <label>Subject Line</label>
-                <input
-                  placeholder="e.g. 🔥 20% Off All Orders This Weekend Only!"
-                  value={form.subject}
-                  onChange={e => setForm(f => ({ ...f, subject: e.target.value }))}
-                />
-              </div>
 
-              <div className="form-group" style={{ marginBottom: 20 }}>
-                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span>Message Body</span>
-                  <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'none', letterSpacing: '0' }}>
-                    Use <code>{'{customer_name}'}</code> to personalize
-                  </span>
-                </label>
-                <textarea
-                  rows={12}
-                  placeholder={`Hi {customer_name},\n\nWe have an exciting offer just for you! This weekend only, enjoy 20% off all orders.\n\nUse code SAVE20 at checkout.\n\nShop now at smokeyhutdelight.com\n\n— The Smokeyhut Delight Team`}
-                  value={form.body}
-                  onChange={e => setForm(f => ({ ...f, body: e.target.value }))}
-                  style={{ resize: 'vertical', minHeight: '320px' }}
-                />
-              </div>
+
+
 
               {/* Audience preview + send button */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', background: 'var(--black2)', borderRadius: 10, flexWrap: 'wrap', gap: 12, border: '1px solid var(--border-subtle)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', background: 'var(--card-bg2)', borderRadius: 10, flexWrap: 'wrap', gap: 12, border: '1px solid var(--border-subtle)', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.01)' }}>
                 <div style={{ fontSize: '0.85rem' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Recipients: </span>
-                  <span style={{ fontWeight: 800, color: audienceList.length > 0 ? '#16a34a' : '#dc2626' }}>{audienceList.length}</span>
-                  <span style={{ color: 'var(--text-muted)', marginLeft: 12 }}>·</span>
-                  <span style={{ color: 'var(--text-muted)', marginLeft: 12 }}>{noEmailCount} have no email</span>
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Recipients: </span>
+                  <span style={{ fontWeight: 900, color: audienceList.length > 0 ? '#16a34a' : '#dc2626' }}>{audienceList.length}</span>
+                  <span style={{ color: 'var(--text-muted)', marginLeft: 10 }}>·</span>
+                  <span style={{ color: 'var(--text-muted)', marginLeft: 10, fontWeight: 500 }}>{noEmailCount} without email</span>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button
@@ -867,10 +881,13 @@ export default function Customers() {
                       display: 'flex', alignItems: 'center', gap: 8,
                       padding: '10px 20px', borderRadius: 8, border: '1px solid var(--border-subtle)',
                       background: 'var(--white)',
-                      color: 'var(--text)', fontWeight: 700, fontSize: '0.88rem',
+                      color: 'var(--text)', fontWeight: 700, fontSize: '0.85rem',
                       cursor: sending || sendingTest ? 'not-allowed' : 'pointer',
                       fontFamily: "'DM Sans',sans-serif",
+                      transition: 'all 0.2s',
                     }}
+                    onMouseEnter={e => { if (!sending && !sendingTest) { e.currentTarget.style.background = 'var(--black2)'; } }}
+                    onMouseLeave={e => { if (!sending && !sendingTest) { e.currentTarget.style.background = 'var(--white)'; } }}
                   >
                     {sendingTest
                       ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> Test...</>
@@ -884,10 +901,13 @@ export default function Customers() {
                       display: 'flex', alignItems: 'center', gap: 8,
                       padding: '10px 24px', borderRadius: 8, border: 'none',
                       background: sending || sendingTest || audienceList.length === 0 ? '#9ca3af' : 'var(--red)',
-                      color: '#fff', fontWeight: 700, fontSize: '0.88rem',
+                      color: '#fff', fontWeight: 750, fontSize: '0.85rem',
                       cursor: sending || sendingTest || audienceList.length === 0 ? 'not-allowed' : 'pointer',
                       fontFamily: "'DM Sans',sans-serif",
+                      transition: 'all 0.2s',
                     }}
+                    onMouseEnter={e => { if (!sending && !sendingTest && audienceList.length > 0) { e.currentTarget.style.background = 'var(--red-dark)'; } }}
+                    onMouseLeave={e => { if (!sending && !sendingTest && audienceList.length > 0) { e.currentTarget.style.background = 'var(--red)'; } }}
                   >
                     {sending
                       ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> Sending...</>
@@ -897,193 +917,235 @@ export default function Customers() {
                 </div>
               </div>
 
-              {/* RECIPIENT MAILING LIST CARD */}
-              <div className="dash-card" style={{ margin: '24px 0 0 0' }}>
-                <div className="dash-card-header" style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-                  <div className="dash-card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {/* COLLAPSIBLE MAILING LIST ACCORDION */}
+              <div className="dash-card" style={{ margin: '20px 0 0 0', padding: '16px 20px', border: '1px solid var(--border-subtle)', boxShadow: '0 2px 8px rgba(0,0,0,0.01)' }}>
+                <div 
+                  onClick={() => setMailingListExpanded(!mailingListExpanded)}
+                  style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center', 
+                    cursor: 'pointer',
+                    userSelect: 'none'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <Users size={18} color="var(--red)" />
-                    Mailing List ({audienceList.length} of {fullAudienceList.length} active)
+                    <span style={{ fontWeight: 800, fontSize: '0.9rem', color: 'var(--text)' }}>
+                      Configure Recipients
+                    </span>
+                    <span style={{ 
+                      padding: '2px 8px', 
+                      borderRadius: 12, 
+                      background: 'rgba(22,163,74,0.08)', 
+                      color: '#16a34a', 
+                      fontSize: '0.72rem', 
+                      fontWeight: 800 
+                    }}>
+                      {audienceList.length} selected
+                    </span>
                   </div>
-                  {excludedEmails.size > 0 && (
-                    <button
-                      onClick={() => setExcludedEmails(new Set())}
-                      style={{
-                        background: 'none', border: 'none', color: 'var(--red)',
-                        fontSize: '0.78rem', fontWeight: 800, cursor: 'pointer',
-                        padding: 0, textTransform: 'uppercase', letterSpacing: '0.05em'
-                      }}
-                    >
-                      Reset Exclusions ({excludedEmails.size})
-                    </button>
-                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                      {mailingListExpanded ? 'Hide details' : 'Customize exclusions'}
+                    </span>
+                    <ChevronDown 
+                      size={16} 
+                      style={{ 
+                        transform: mailingListExpanded ? 'rotate(180deg)' : 'none', 
+                        transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)', 
+                        color: 'var(--text-muted)' 
+                      }} 
+                    />
+                  </div>
                 </div>
 
-                {/* Search input */}
-                <div style={{ position: 'relative', marginBottom: 16 }}>
-                  <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-                  <input
-                    type="text"
-                    placeholder="Search list by name or email..."
-                    value={recipientSearch}
-                    onChange={e => setRecipientSearch(e.target.value)}
-                    style={{
-                      width: '100%', boxSizing: 'border-box',
-                      padding: '10px 12px 10px 36px', fontSize: '0.85rem',
-                      borderRadius: 8, border: '1px solid var(--border-subtle)',
-                      background: 'var(--white)', color: 'var(--text)',
-                      fontFamily: 'inherit', outline: 'none'
-                    }}
-                  />
-                </div>
-
-                {/* Bulk toggle and info */}
-                {(() => {
-                  const searched = fullAudienceList.filter(c => 
-                    c.name?.toLowerCase().includes(recipientSearch.toLowerCase()) || 
-                    c.email?.toLowerCase().includes(recipientSearch.toLowerCase())
-                  );
-                  const allSearchedIncluded = searched.every(c => !excludedEmails.has(c.email.trim().toLowerCase()));
-                  const someSearchedIncluded = searched.some(c => !excludedEmails.has(c.email.trim().toLowerCase()));
-                  
-                  const toggleAllRecipients = () => {
-                    const next = new Set(excludedEmails);
-                    if (allSearchedIncluded) {
-                      searched.forEach(c => {
-                        next.add(c.email.trim().toLowerCase());
-                      });
-                    } else {
-                      searched.forEach(c => {
-                        next.delete(c.email.trim().toLowerCase());
-                      });
-                    }
-                    setExcludedEmails(next);
-                  };
-
-                  return (
-                    <>
-                      {searched.length > 0 && (
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '10px 14px',
-                          background: 'var(--black2)',
-                          borderRadius: 8,
-                          marginBottom: 12,
-                          border: '1px solid var(--border-subtle)'
-                        }}>
-                          <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)' }}>
-                            <input
-                              type="checkbox"
-                              checked={allSearchedIncluded && searched.length > 0}
-                              ref={el => {
-                                if (el) {
-                                  el.indeterminate = !allSearchedIncluded && someSearchedIncluded;
-                                }
-                              }}
-                              onChange={toggleAllRecipients}
-                              style={{
-                                width: '16px',
-                                height: '16px',
-                                marginRight: '10px',
-                                cursor: 'pointer',
-                                accentColor: 'var(--red)'
-                              }}
-                            />
-                            <span>Include All ({searched.length} matching)</span>
-                          </label>
-                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                            {searched.filter(c => !excludedEmails.has(c.email.trim().toLowerCase())).length} selected
-                          </div>
-                        </div>
+                <div className={`accordion-wrapper${mailingListExpanded ? ' expanded' : ' collapsed'}`}>
+                  <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 16, marginTop: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                        Search and uncheck customers to exclude them from this mailing list.
+                      </div>
+                      {excludedEmails.size > 0 && (
+                        <button
+                          onClick={() => setExcludedEmails(new Set())}
+                          style={{
+                            background: 'none', border: 'none', color: 'var(--red)',
+                            fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer',
+                            padding: 0, textTransform: 'uppercase', letterSpacing: '0.05em'
+                          }}
+                        >
+                          Reset Exclusions ({excludedEmails.size})
+                        </button>
                       )}
+                    </div>
 
-                      {/* Scrollable list */}
-                      <div style={{
-                        maxHeight: '280px', overflowY: 'auto',
-                        display: 'flex', flexDirection: 'column', gap: 8,
-                        paddingRight: 4
-                      }}>
-                        {fullAudienceList.length === 0 && (
-                          <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
-                            No recipients in the selected audience segment.
-                          </div>
-                        )}
+                    {/* Search input */}
+                    <div style={{ position: 'relative', marginBottom: 16 }}>
+                      <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                      <input
+                        type="text"
+                        placeholder="Search list by name or email..."
+                        value={recipientSearch}
+                        onChange={e => setRecipientSearch(e.target.value)}
+                        className="premium-input"
+                        style={{ paddingLeft: 36, fontSize: '0.85rem' }}
+                      />
+                    </div>
 
-                        {fullAudienceList.length > 0 && searched.length === 0 && (
-                          <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
-                            No match found for "{recipientSearch}"
-                          </div>
-                        )}
+                    {/* Bulk toggle and info */}
+                    {(() => {
+                      const searched = fullAudienceList.filter(c => 
+                        c.name?.toLowerCase().includes(recipientSearch.toLowerCase()) || 
+                        c.email?.toLowerCase().includes(recipientSearch.toLowerCase())
+                      );
+                      const allSearchedIncluded = searched.every(c => !excludedEmails.has(c.email.trim().toLowerCase()));
+                      const someSearchedIncluded = searched.some(c => !excludedEmails.has(c.email.trim().toLowerCase()));
+                      
+                      const toggleAllRecipients = () => {
+                        const next = new Set(excludedEmails);
+                        if (allSearchedIncluded) {
+                          searched.forEach(c => {
+                            next.add(c.email.trim().toLowerCase());
+                          });
+                        } else {
+                          searched.forEach(c => {
+                            next.delete(c.email.trim().toLowerCase());
+                          });
+                        }
+                        setExcludedEmails(next);
+                      };
 
-                        {searched.map(c => {
-                          const emailKey = c.email.trim().toLowerCase();
-                          const isExcluded = excludedEmails.has(emailKey);
-                          
-                          return (
-                            <div
-                              key={c.id}
-                              style={{
-                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                padding: '10px 12px', background: isExcluded ? 'rgba(0,0,0,0.2)' : 'var(--black2)',
-                                borderRadius: 8, border: '1px solid var(--border-subtle)',
-                                opacity: isExcluded ? 0.45 : 1, transition: 'all 0.15s'
-                              }}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, flex: 1 }}>
+                      return (
+                        <>
+                          {searched.length > 0 && (
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '10px 14px',
+                              background: 'var(--black2)',
+                              borderRadius: 8,
+                              marginBottom: 12,
+                              border: '1px solid var(--border-subtle)'
+                            }}>
+                              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)' }}>
                                 <input
                                   type="checkbox"
-                                  checked={!isExcluded}
-                                  onChange={() => {
-                                    const next = new Set(excludedEmails);
-                                    if (isExcluded) {
-                                      next.delete(emailKey);
-                                    } else {
-                                      next.add(emailKey);
+                                  checked={allSearchedIncluded && searched.length > 0}
+                                  ref={el => {
+                                    if (el) {
+                                      el.indeterminate = !allSearchedIncluded && someSearchedIncluded;
                                     }
-                                    setExcludedEmails(next);
                                   }}
+                                  onChange={toggleAllRecipients}
                                   style={{
                                     width: '16px',
                                     height: '16px',
-                                    marginRight: '12px',
+                                    marginRight: '10px',
                                     cursor: 'pointer',
-                                    accentColor: 'var(--red)',
-                                    flexShrink: 0
+                                    accentColor: 'var(--red)'
                                   }}
                                 />
-                                <div style={{ minWidth: 0, flex: 1, paddingRight: 12 }}>
-                                  <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {c.name || 'Anonymous Customer'}
-                                  </div>
-                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
-                                    {c.email}
-                                  </div>
-                                  <div style={{ fontSize: '0.72rem', color: 'var(--red)', fontWeight: 600, marginTop: 4 }}>
-                                    {form.audience === 'top_20_monthly' ? (
-                                      form.dateFilter && (form.dateFilter.start || form.dateFilter.end)
-                                        ? `₦${Number(c.rangeSpent || 0).toLocaleString()} spent in range`
-                                        : `₦${Number(c.rangeSpent || c.totalSpent || 0).toLocaleString()} spent (all-time)`
-                                    ) : (
-                                      `₦${Number(c.totalSpent || 0).toLocaleString()} total spent · ${c.orders} order${c.orders !== 1 ? 's' : ''}`
-                                    )}
-                                  </div>
-                                </div>
+                                <span>Include All ({searched.length} matching)</span>
+                              </label>
+                              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 650 }}>
+                                {searched.filter(c => !excludedEmails.has(c.email.trim().toLowerCase())).length} selected
                               </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    </>
-                  );
-                })()}
+                          )}
+
+                          {/* Scrollable list */}
+                          <div className="custom-scrollbar" style={{
+                            maxHeight: '260px', overflowY: 'auto',
+                            display: 'flex', flexDirection: 'column', gap: 8,
+                            paddingRight: 4
+                          }}>
+                            {fullAudienceList.length === 0 && (
+                              <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                                No recipients in the selected audience segment.
+                              </div>
+                            )}
+
+                            {fullAudienceList.length > 0 && searched.length === 0 && (
+                              <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                                No match found for "{recipientSearch}"
+                              </div>
+                            )}
+
+                            {searched.map(c => {
+                              const emailKey = c.email.trim().toLowerCase();
+                              const isExcluded = excludedEmails.has(emailKey);
+                              
+                              return (
+                                <div
+                                  key={c.id}
+                                  style={{
+                                    display: 'flex', alignItems: 'center', justifySpace: 'between',
+                                    padding: '10px 12px', background: isExcluded ? 'rgba(0,0,0,0.03)' : 'var(--black2)',
+                                    borderRadius: 8, border: '1px solid var(--border-subtle)',
+                                    opacity: isExcluded ? 0.55 : 1, transition: 'all 0.15s'
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, flex: 1 }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={!isExcluded}
+                                      onChange={() => {
+                                        const next = new Set(excludedEmails);
+                                        if (isExcluded) {
+                                          next.delete(emailKey);
+                                        } else {
+                                          next.add(emailKey);
+                                        }
+                                        setExcludedEmails(next);
+                                      }}
+                                      style={{
+                                        width: '16px',
+                                        height: '16px',
+                                        marginRight: '12px',
+                                        cursor: 'pointer',
+                                        accentColor: 'var(--red)',
+                                        flexShrink: 0
+                                      }}
+                                    />
+                                    <div style={{ minWidth: 0, flex: 1, paddingRight: 12 }}>
+                                      <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {c.name || 'Anonymous Customer'}
+                                      </div>
+                                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
+                                        {c.email}
+                                      </div>
+                                      <div style={{ fontSize: '0.72rem', color: 'var(--red)', fontWeight: 600, marginTop: 4 }}>
+                                        {form.audience === 'top_20_monthly' ? (
+                                          form.dateFilter && (form.dateFilter.start || form.dateFilter.end)
+                                            ? `₦${Number(c.rangeSpent || 0).toLocaleString()} spent in range`
+                                            : `₦${Number(c.rangeSpent || c.totalSpent || 0).toLocaleString()} spent (all-time)`
+                                        ) : (
+                                          `₦${Number(c.totalSpent || 0).toLocaleString()} total spent · ${c.orders} order${c.orders !== 1 ? 's' : ''}`
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
               </div>
             </div>
 
             {/* RIGHT COLUMN: LIVE EMAIL MOCKUP PREVIEW */}
-            <div className="dash-card" style={{ margin: 0, position: 'sticky', top: 20 }}>
-              <div className="dash-card-header" style={{ marginBottom: 20 }}>
-                <div className="dash-card-title">Live Preview</div>
+            <div className="dash-card" style={{ margin: 0, position: 'sticky', top: 20, boxShadow: '0 8px 32px rgba(0,0,0,0.04)', borderTop: '4px solid var(--red)' }}>
+              <div className="dash-card-header" style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--border-subtle)' }}>
+                <div className="dash-card-title" style={{ fontSize: '1.15rem' }}>Live Preview</div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 4, fontWeight: 500 }}>
+                  Real-time preview of how customers will receive your email.
+                </div>
               </div>
               
               {/* Mockup email client container */}
@@ -1091,10 +1153,11 @@ export default function Customers() {
                 background: 'var(--white)',
                 border: '1px solid var(--border-subtle)',
                 borderRadius: 14,
-                boxShadow: '0 12px 40px rgba(0,0,0,0.06)',
+                boxShadow: '0 16px 48px rgba(0,0,0,0.08)',
                 overflow: 'hidden',
                 display: 'flex',
-                flexDirection: 'column'
+                flexDirection: 'column',
+                transition: 'all 0.3s ease'
               }}>
                 {/* macOS control header bar */}
                 <div style={{
@@ -1110,8 +1173,8 @@ export default function Customers() {
                     <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#fbbf24' }}></span>
                     <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#10b981' }}></span>
                   </div>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                    Smokey Mail Preview
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                    Smokey Mail preview
                   </span>
                   <div style={{ width: 42 }}></div> {/* Spacer */}
                 </div>
@@ -1119,29 +1182,43 @@ export default function Customers() {
                 {/* Email metadata header */}
                 <div style={{ padding: '16px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--white)', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ display: 'flex' }}>
-                    <span style={{ width: 64, color: 'var(--text-muted)', fontWeight: 600 }}>From:</span>
-                    <span style={{ color: 'var(--text)', fontWeight: 700 }}>
+                    <span style={{ width: 64, color: 'var(--text-muted)', fontWeight: 700 }}>From:</span>
+                    <span style={{ color: 'var(--text)', fontWeight: 800 }}>
                       Smokeyhut Delight <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>&lt;Smokeyhutdelight01@gmail.com&gt;</span>
                     </span>
                   </div>
                   <div style={{ display: 'flex' }}>
-                    <span style={{ width: 64, color: 'var(--text-muted)', fontWeight: 600 }}>To:</span>
-                    <span style={{ color: 'var(--text)', fontWeight: 600 }}>
+                    <span style={{ width: 64, color: 'var(--text-muted)', fontWeight: 700 }}>To:</span>
+                    <span style={{ color: 'var(--text)', fontWeight: 700 }}>
                       Sarah Olowookere <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>&lt;sarah.o@gmail.com&gt;</span>
                     </span>
                   </div>
-                  <div style={{ display: 'flex', borderTop: '1px solid rgba(0,0,0,0.04)', paddingTop: 8 }}>
-                    <span style={{ width: 64, color: 'var(--text-muted)', fontWeight: 600 }}>Subject:</span>
-                    <span style={{ color: 'var(--text)', fontWeight: 800 }}>
-                      {form.subject || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: 400 }}>Enter a subject line...</span>}
-                    </span>
+                  <div style={{ display: 'flex', alignItems: 'center', borderTop: '1px solid rgba(0,0,0,0.03)', paddingTop: 8 }}>
+                    <span style={{ width: 64, color: 'var(--text-muted)', fontWeight: 700 }}>Subject:</span>
+                    <input
+                      type="text"
+                      placeholder="Enter a subject line..."
+                      value={form.subject}
+                      onChange={e => setForm(f => ({ ...f, subject: e.target.value }))}
+                      style={{
+                        flex: 1,
+                        background: 'transparent',
+                        border: 'none',
+                        outline: 'none',
+                        color: 'var(--text)',
+                        fontWeight: 800,
+                        fontSize: '0.85rem',
+                        fontFamily: 'inherit',
+                        padding: 0,
+                      }}
+                    />
                   </div>
                 </div>
 
                 {/* Email body preview area */}
                 <div style={{
                   background: '#111',
-                  padding: '20px',
+                  padding: '24px',
                   fontFamily: 'Arial, sans-serif'
                 }}>
                   <div style={{
@@ -1149,68 +1226,80 @@ export default function Customers() {
                     background: '#1a1a1a',
                     borderRadius: 12,
                     overflow: 'hidden',
-                    border: '1px solid var(--border-subtle)'
+                    border: '1px solid rgba(255,255,255,0.05)'
                   }}>
                     {/* Header banner */}
-                    <div style={{ background: '#c0201f', padding: '16px 24px', textAlign: 'center' }}>
+                    <div style={{ background: 'var(--red)', padding: '20px 24px', textAlign: 'center' }}>
                       <div style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 10 }}>
-                        <img src="/logo.svg" alt="Smokeyhut Logo" style={{ height: 32, display: 'block' }} />
+                        <img src="/logo.svg" alt="Smokeyhut Logo" style={{ height: 36, display: 'block' }} />
                       </div>
                       <div style={{ display: 'inline-block', verticalAlign: 'middle' }}>
-                        <span style={{ color: '#fff', fontSize: '1.15rem', letterSpacing: '0.03em', fontWeight: 900, fontFamily: 'Arial, sans-serif' }}>
+                        <span style={{ color: '#fff', fontSize: '1.2rem', letterSpacing: '0.04em', fontWeight: 900, fontFamily: 'Arial, sans-serif' }}>
                           Smokeyhut Delight
                         </span>
                       </div>
                     </div>
-                    {/* Content */}
-                    <div style={{ padding: '24px 20px', minHeight: '180px' }}>
-                      <h2 style={{ color: '#fff', marginTop: 0, marginBottom: 20, fontSize: '1.25rem', fontWeight: 'bold', fontFamily: 'Arial, sans-serif' }}>
-                        {form.subject || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: 400 }}>Campaign Subject</span>}
-                      </h2>
-                      {(() => {
-                        const text = form.body;
-                        if (!text) {
-                          return (
-                            <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.88rem', textAlign: 'center', marginTop: 40 }}>
-                              Write a message body on the left to see the live personalization preview here.
-                            </div>
-                          );
-                        }
-                        const parts = text.split('{customer_name}');
-                        return (
-                          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8, color: '#bbb', fontSize: '0.88rem' }}>
-                            {parts.map((p, idx) => (
-                              <span key={idx}>
-                                {p}
-                                {idx < parts.length - 1 && (
-                                  <span style={{
-                                    background: 'rgba(192,32,31,0.2)',
-                                    color: '#ff4d4d',
-                                    fontWeight: 800,
-                                    padding: '2px 8px',
-                                    borderRadius: 4,
-                                    margin: '0 2px',
-                                    display: 'inline-block',
-                                    border: '1px solid rgba(192,32,31,0.4)',
-                                    fontSize: '0.82rem'
-                                  }}>
-                                    Sarah
-                                  </span>
-                                )}
-                              </span>
-                            ))}
-                          </div>
-                        );
-                      })()}
+                    {/* Content (Inline WYSIWYG Message Body Editor) */}
+                    <div style={{ padding: '28px 24px', minHeight: '180px' }}>
+                      <input
+                        type="text"
+                        placeholder="Campaign Subject"
+                        value={form.subject}
+                        onChange={e => setForm(f => ({ ...f, subject: e.target.value }))}
+                        style={{
+                          width: '100%',
+                          background: 'transparent',
+                          border: 'none',
+                          outline: 'none',
+                          color: '#fff',
+                          marginTop: 0,
+                          marginBottom: 20,
+                          fontSize: '1.25rem',
+                          fontWeight: 'bold',
+                          fontFamily: 'Arial, sans-serif',
+                          borderBottom: '1px solid rgba(255,255,255,0.05)',
+                          paddingBottom: 12,
+                        }}
+                      />
+                      
+                      {/* Interactive edit helper inside the preview mockup */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 12, borderBottom: '1px dashed rgba(255,255,255,0.08)', marginBottom: 16 }}>
+                        <span style={{ fontSize: '0.75rem', color: '#888', fontWeight: 705, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          ✏️ Edit Email Content Directly Below
+                        </span>
+                        <span style={{ fontSize: '0.72rem', color: '#888', fontWeight: 500 }}>
+                          Click <span onClick={() => setForm(f => ({ ...f, body: f.body + '{customer_name}' }))} className="personalization-tag" style={{ border: '1px dashed rgba(255,255,255,0.2)', color: '#fff', background: 'rgba(255,255,255,0.05)' }} title="Insert customer name tag">{'{customer_name}'}</span> to personalize
+                        </span>
+                      </div>
+
+                      <textarea
+                        rows={12}
+                        placeholder="Write your email body here... Click to edit. Use {customer_name} to insert customer name personalization."
+                        value={form.body}
+                        onChange={e => setForm(f => ({ ...f, body: e.target.value }))}
+                        style={{
+                          width: '100%',
+                          minHeight: '260px',
+                          background: 'transparent',
+                          border: 'none',
+                          outline: 'none',
+                          color: '#ccc',
+                          fontFamily: 'Arial, sans-serif',
+                          fontSize: '0.88rem',
+                          lineHeight: 1.8,
+                          resize: 'vertical',
+                          padding: 0,
+                        }}
+                      />
                     </div>
                     {/* Footer */}
                     <div style={{
                       padding: '16px 20px',
-                      background: '#0d0d0d',
+                      background: '#0c0c0c',
                       textAlign: 'center',
                       fontSize: '0.72rem',
                       color: '#555',
-                      lineHeight: '1.5',
+                      lineHeight: '1.6',
                       borderTop: '1px solid rgba(255,255,255,0.02)'
                     }}>
                       You are receiving this because you ordered from Smokeyhut Delight.<br />
@@ -1223,16 +1312,23 @@ export default function Customers() {
           </div>
 
           {/* Campaign history */}
-          <div className="dash-card">
-            <div className="dash-card-header" style={{ marginBottom: 16 }}>
-              <div className="dash-card-title">Campaign History</div>
+          <div className="dash-card" style={{ borderTop: '4px solid var(--red)' }}>
+            <div className="dash-card-header" style={{ marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid var(--border-subtle)' }}>
+              <div className="dash-card-title" style={{ fontSize: '1.15rem' }}>Campaign History</div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 4, fontWeight: 500 }}>
+                Historical log of all sent and pending email campaigns.
+              </div>
             </div>
             {campsLoading ? (
-              <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</div>
-            ) : campaigns.length === 0 ? (
               <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                <Mail size={32} style={{ opacity: 0.3, marginBottom: 10 }} />
-                <div>No campaigns sent yet. Compose your first one above.</div>
+                <Loader2 size={24} style={{ animation: 'spin 1s linear infinite', marginBottom: 10 }} />
+                <div>Loading campaigns...</div>
+              </div>
+            ) : campaigns.length === 0 ? (
+              <div style={{ padding: '50px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                <Mail size={36} style={{ opacity: 0.3, marginBottom: 12 }} />
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>No campaigns sent yet</div>
+                <div style={{ fontSize: '0.85rem' }}>Compose and send your first mailing list promo above.</div>
               </div>
             ) : (
               <div style={{ overflowX: 'auto' }}>
@@ -1240,7 +1336,7 @@ export default function Customers() {
                   <thead>
                     <tr>
                       <th>Campaign</th><th>Subject</th><th>Audience</th>
-                      <th>Recipients</th><th>Sent</th><th>Status</th><th>Date</th><th></th>
+                      <th>Recipients</th><th>Delivery (Sent/Failed)</th><th>Status</th><th>Date</th><th></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1254,32 +1350,50 @@ export default function Customers() {
                         }[status] || { bg: 'var(--black2)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' };
                         return (
                           <span style={{
-                            padding: '4px 12px', borderRadius: 20, fontSize: '0.72rem', fontWeight: 800,
-                            textTransform: 'uppercase', letterSpacing: '0.04em', display: 'inline-block', ...styleMap
-                          }}>{status}</span>
+                            padding: '6px 14px', borderRadius: 20, fontSize: '0.72rem', fontWeight: 800,
+                            textTransform: 'uppercase', letterSpacing: '0.04em', display: 'inline-flex', alignItems: 'center', ...styleMap
+                          }}>
+                            <span className={`pulse-dot ${status}`} />
+                            {status}
+                          </span>
                         );
                       };
                       const failed = (c.recipient_count || 0) - (c.sent_count || 0);
+                      const total = c.recipient_count || 0;
+                      const successPct = total > 0 ? (c.sent_count / total) * 100 : 0;
+                      const failPct = total > 0 ? (failed / total) * 100 : 0;
                       return (
-                        <tr key={c.id}>
-                          <td style={{ fontWeight: 700 }}>{c.name}</td>
-                          <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.subject}</td>
-                          <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        <tr key={c.id} style={{ transition: 'background 0.2s' }}>
+                          <td style={{ fontWeight: 800, color: 'var(--text)' }}>{c.name}</td>
+                          <td style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.subject}</td>
+                          <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>
                             {AUDIENCE_OPTIONS.find(o => o.value === c.audience)?.label || c.audience}
                           </td>
-                          <td style={{ fontWeight: 600 }}>{c.recipient_count ?? '—'}</td>
-                          <td style={{ fontSize: '0.82rem' }}>
-                            <span style={{ color: '#16a34a', fontWeight: 700 }}>{c.sent_count ?? '—'}</span>
-                            {failed > 0 && <span style={{ color: '#dc2626', fontWeight: 700, marginLeft: 4 }}>/ {failed} fail</span>}
+                          <td style={{ fontWeight: 700, color: 'var(--text)' }}>{c.recipient_count ?? '—'}</td>
+                          <td style={{ verticalAlign: 'middle' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              <div style={{ fontSize: '0.82rem' }}>
+                                <span style={{ color: '#16a34a', fontWeight: 800 }}>{c.sent_count ?? '—'}</span>
+                                {failed > 0 && <span style={{ color: '#dc2626', fontWeight: 800, marginLeft: 4 }}>/ {failed} failed</span>}
+                              </div>
+                              {total > 0 && (
+                                <div className="delivery-progress-container" title={`${Math.round(successPct)}% delivered, ${Math.round(failPct)}% failed`}>
+                                  <div className="delivery-progress-success" style={{ width: `${successPct}%` }} />
+                                  <div className="delivery-progress-fail" style={{ width: `${failPct}%` }} />
+                                </div>
+                              )}
+                            </div>
                           </td>
                           <td>{getStatusBadge(c.status)}</td>
-                          <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                            {new Date(c.created_at).toLocaleDateString()}
+                          <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                            {new Date(c.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}
                           </td>
                           <td>
                             <button
                               onClick={() => viewCampaignDetail(c)}
-                              style={{ background: 'none', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '5px 12px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}
+                              style={{ background: 'var(--white)', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 750, color: 'var(--text-muted)', whiteSpace: 'nowrap', transition: 'all 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}
+                              onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(192,32,31,0.4)'; e.currentTarget.style.color = 'var(--red)'; }}
+                              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
                             >
                               View Details
                             </button>

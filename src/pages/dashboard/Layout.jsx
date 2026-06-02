@@ -6,9 +6,17 @@ import {
   BarChart2, Package, Truck, CreditCard, Store, ShoppingBag, Users,
   Settings, LogOut, Globe, Menu, UserCog, MapPin, Tag,
   DollarSign, TrendingUp, Receipt, Archive, ChevronDown,
+  ChevronLeft, ChevronRight, Shield, Briefcase, Bike, User
 } from 'lucide-react';
 import AdminChatBubble from '../../components/AdminChatBubble';
 import CustomSelect from '../../components/CustomSelect';
+
+const ROLE_METADATA = {
+  Admin: { icon: Shield, label: 'Admin' },
+  Manager: { icon: Briefcase, label: 'Manager' },
+  Rider: { icon: Bike, label: 'Rider' },
+  Staff: { icon: User, label: 'Staff' }
+};
 
 const allNavItems = [
   { to: '/admin',           icon: BarChart2,   label: 'Overview',  end: true, roles: ['Admin', 'Manager', 'Staff'] },
@@ -48,13 +56,20 @@ function passesPermission(label, role, userPermissions) {
 }
 
 export default function DashboardLayout() {
-  const { signOut, user, userRole, userPermissions } = useAuth();
+  const { signOut, user, userRole, userPermissions, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    return localStorage.getItem('dash_sidebar_collapsed') === 'true';
+  });
   const [selectedStore, setSelectedStore] = useState('all');
   const [storeOptions, setStoreOptions] = useState([]);
   const [financeOpen, setFinanceOpen] = useState(location.pathname.startsWith('/admin/finance'));
+
+  useEffect(() => {
+    localStorage.setItem('dash_sidebar_collapsed', sidebarCollapsed);
+  }, [sidebarCollapsed]);
 
   const role = userRole || 'Admin';
 
@@ -107,24 +122,63 @@ export default function DashboardLayout() {
   }, [location.pathname]);
 
   useEffect(() => {
-    if (!userRole || isRouteAllowed) return;
+    if (loading || !userRole || isRouteAllowed) return;
     navigate(firstAllowedPath || '/admin/shipping', { replace: true });
-  }, [userRole, location.pathname, userPermissions]);
+  }, [userRole, location.pathname, userPermissions, loading]);
 
   const handleLogout = async () => {
     await signOut();
     navigate('/admin/login');
   };
 
-  const roleLabel = { Admin: '🔑 Admin', Manager: '🧑‍💼 Manager', Rider: '🛵 Rider', Staff: '👤 Staff' }[role] || role;
+  const roleMeta = ROLE_METADATA[role] || { icon: User, label: role };
+  const RoleIcon = roleMeta.icon;
   const isFinanceActive = location.pathname.startsWith('/admin/finance');
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#1A1610' }}>
+        <div style={{ textAlign: 'center' }}>
+          <img
+            src="/logo.svg"
+            alt="Smokeyhut Delight"
+            style={{ width: 80, height: 80, objectFit: 'contain', animation: 'pulse 1.5s ease-in-out infinite' }}
+          />
+          <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="dash-layout">
-      <aside className={`dash-sidebar${sidebarOpen ? ' open' : ''}`}>
-        <div className="dash-sidebar-logo" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <img src="/logo.svg" alt="Smokeyhut Logo" style={{ width: 28, height: 28, objectFit: 'contain' }} />
-          <span className="accent">Admin</span>
+      <aside className={`dash-sidebar${sidebarOpen ? ' open' : ''}${sidebarCollapsed ? ' collapsed' : ''}`}>
+        <div className="dash-sidebar-logo" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, overflow: 'hidden' }}>
+            <img src="/logo.svg" alt="Smokeyhut Logo" style={{ width: 28, height: 28, objectFit: 'contain', flexShrink: 0 }} />
+            <span className="accent logo-text" style={{ transition: 'opacity 0.2s, width 0.2s' }}>Admin</span>
+          </div>
+          <button 
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            className="sidebar-collapse-toggle"
+            title={sidebarCollapsed ? "Expand Menu" : "Collapse Menu"}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'rgba(255,255,255,0.45)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 4,
+              borderRadius: 6,
+              transition: 'background 0.2s, color 0.2s',
+            }}
+            onMouseEnter={e => e.currentTarget.style.color = '#fff'}
+            onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.45)'}
+          >
+            {sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+          </button>
         </div>
         <nav className="dash-nav">
           {navItems.map(item => {
@@ -135,9 +189,10 @@ export default function DashboardLayout() {
                   <button
                     className={`dash-nav-item dash-nav-group-btn${isFinanceActive ? ' active' : ''}`}
                     onClick={() => setFinanceOpen(v => !v)}
+                    title={sidebarCollapsed ? item.label : undefined}
                   >
                     <Icon className="nav-icon" size={18} />
-                    {item.label}
+                    <span className="nav-label">{item.label}</span>
                     <ChevronDown
                       size={14}
                       style={{ marginLeft: 'auto', transform: financeOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}
@@ -153,9 +208,10 @@ export default function DashboardLayout() {
                             to={child.to}
                             className={({ isActive }) => `dash-nav-item dash-nav-sub-item${isActive ? ' active' : ''}`}
                             onClick={() => setSidebarOpen(false)}
+                            title={sidebarCollapsed ? child.label : undefined}
                           >
                             <CIcon size={14} style={{ opacity: 0.7 }} />
-                            {child.label}
+                            <span className="nav-label">{child.label}</span>
                           </NavLink>
                         );
                       })}
@@ -173,32 +229,46 @@ export default function DashboardLayout() {
                 end={item.end}
                 className={({ isActive }) => `dash-nav-item${isActive ? ' active' : ''}`}
                 onClick={() => setSidebarOpen(false)}
+                title={sidebarCollapsed ? item.label : undefined}
               >
                 <Icon className="nav-icon" size={18} />
-                {item.label}
+                <span className="nav-label">{item.label}</span>
               </NavLink>
             );
           })}
         </nav>
         <div className="dash-sidebar-footer">
-          <div style={{ marginBottom: 4, color: 'rgba(255,255,255,0.5)', fontSize: '0.78rem' }}>
+          <div className="sidebar-footer-email" style={{ marginBottom: 4, color: 'rgba(255,255,255,0.5)', fontSize: '0.78rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {user?.email || 'admin@smokeyhut.com'}
           </div>
-          <div style={{ marginBottom: 8, fontSize: '0.72rem', color: 'rgba(255,255,255,0.35)' }}>
-            {roleLabel}
+          <div className="sidebar-footer-role" style={{ 
+            marginBottom: 8, 
+            fontSize: '0.72rem', 
+            color: 'rgba(255,255,255,0.35)', 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: 6,
+            overflow: 'hidden', 
+            textOverflow: 'ellipsis', 
+            whiteSpace: 'nowrap' 
+          }}>
+            <RoleIcon size={12} style={{ opacity: 0.6 }} />
+            <span>{roleMeta.label}</span>
           </div>
-          <button onClick={handleLogout} className="dash-nav-item" style={{ color: 'rgba(255,255,255,0.6)', padding: '8px 16px', background: 'none', border: 'none', cursor: 'pointer', width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 12 }}>
-            <LogOut size={18} className="nav-icon" /> Sign Out
+          <button onClick={handleLogout} className="dash-nav-item" title={sidebarCollapsed ? "Sign Out" : undefined} style={{ color: 'rgba(255,255,255,0.6)', padding: '8px 16px', background: 'none', border: 'none', cursor: 'pointer', width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <LogOut size={18} className="nav-icon" />
+            <span className="nav-label">Sign Out</span>
           </button>
-          <NavLink to="/" className="dash-nav-item" style={{ color: 'rgba(255,255,255,0.6)', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Globe size={18} className="nav-icon" /> View Store
+          <NavLink to="/" className="dash-nav-item" title={sidebarCollapsed ? "View Store" : undefined} style={{ color: 'rgba(255,255,255,0.6)', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <Globe size={18} className="nav-icon" />
+            <span className="nav-label">View Store</span>
           </NavLink>
         </div>
       </aside>
 
       {sidebarOpen && <div className="dash-sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
 
-      <main className="dash-main">
+      <main className={`dash-main${sidebarCollapsed ? ' collapsed' : ''}`}>
         <header className="dash-topbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <button onClick={() => setSidebarOpen(!sidebarOpen)} className="dash-menu-toggle">
