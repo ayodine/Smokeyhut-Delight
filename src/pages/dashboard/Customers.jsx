@@ -470,6 +470,125 @@ export default function Customers() {
     setCampaignLogs(data || []);
     setLogsLoading(false);
   };
+ 
+  // ── Retry failed campaign emails ───────────────────────────────────────────
+  const handleRetryFailed = async (campaign) => {
+    setSending(true);
+    try {
+      // Fetch failed logs first if we don't have them
+      let failedLogs = [];
+      if (detailCampaign && detailCampaign.id === campaign.id && campaignLogs.length > 0) {
+        failedLogs = campaignLogs.filter(log => log.status === 'failed');
+      } else {
+        const { data, error } = await supabase
+          .from('campaign_logs')
+          .select('*')
+          .eq('campaign_id', campaign.id)
+          .eq('status', 'failed');
+        if (error) throw error;
+        failedLogs = data || [];
+      }
+
+      if (failedLogs.length === 0) {
+        showToast('Info', 'No failed recipients found for this campaign.', 'info');
+        setSending(false);
+        return;
+      }
+
+      setConfirmAction({
+        title: 'Retry Failed Emails',
+        message: `Retry sending this campaign to ${failedLogs.length} failed recipient${failedLogs.length !== 1 ? 's' : ''}?`,
+        isDestructive: false,
+        confirmText: 'Retry Now',
+        onConfirm: async () => {
+          setConfirmAction(prev => ({ ...prev, isLoading: true }));
+          try {
+            const recipients = failedLogs.map(log => ({
+              email: log.email,
+              name: log.name || ''
+            }));
+
+            // Update status to sending
+            await supabase
+              .from('email_campaigns')
+              .update({ status: 'sending' })
+              .eq('id', campaign.id);
+
+            if (detailCampaign && detailCampaign.id === campaign.id) {
+              setDetailCampaign(prev => ({ ...prev, status: 'sending' }));
+            }
+
+            // Invoke edge function
+            const { data: result, error: invokeErr } = await supabase.functions.invoke('send-campaign', {
+              body: {
+                subject: campaign.subject,
+                body: campaign.body,
+                recipients,
+                campaign_id: campaign.id,
+                retry: true
+              },
+            });
+            if (invokeErr) throw new Error(invokeErr.message || 'Retry failed');
+
+            const newlySent = result?.sent ?? recipients.length;
+            const newlyFailed = result?.failed ?? 0;
+            const updatedSentCount = (campaign.sent_count || 0) + newlySent;
+
+            let finalStatus = 'sent';
+            if (newlyFailed > 0) {
+              finalStatus = updatedSentCount > 0 ? 'partial' : 'failed';
+            } else if (updatedSentCount < (campaign.recipient_count || 0)) {
+              finalStatus = 'partial';
+            }
+
+            await supabase.from('email_campaigns').update({
+              sent_count: updatedSentCount,
+              status: finalStatus,
+            }).eq('id', campaign.id);
+
+            showToast('Success', `Retry complete: ${newlySent} sent, ${newlyFailed} failed`, 'success');
+            
+            // Refresh list
+            fetchCampaigns();
+
+            // Refresh detail modal if open
+            if (detailCampaign && detailCampaign.id === campaign.id) {
+              setDetailCampaign({
+                ...campaign,
+                sent_count: updatedSentCount,
+                status: finalStatus
+              });
+              
+              setCampaignLogs([]);
+              setLogsLoading(true);
+              const { data: newLogs } = await supabase
+                .from('campaign_logs')
+                .select('*')
+                .eq('campaign_id', campaign.id)
+                .order('created_at', { ascending: true });
+              setCampaignLogs(newLogs || []);
+              setLogsLoading(false);
+            }
+          } catch (err) {
+            showToast('Error retrying campaign', err.message, 'error');
+            await supabase
+              .from('email_campaigns')
+              .update({ status: campaign.status })
+              .eq('id', campaign.id);
+            if (detailCampaign && detailCampaign.id === campaign.id) {
+              setDetailCampaign(prev => ({ ...prev, status: campaign.status }));
+            }
+          } finally {
+            setSending(false);
+            setConfirmAction(null);
+          }
+        }
+      });
+    } catch (err) {
+      showToast('Error preparing retry', err.message, 'error');
+      setSending(false);
+    }
+  };
 
   // ── Send campaign ────────────────────────────────────────────────────────
   const sendCampaign = () => {
@@ -1405,14 +1524,39 @@ export default function Customers() {
                             {new Date(c.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}
                           </td>
                           <td>
-                            <button
-                              onClick={() => viewCampaignDetail(c)}
-                              style={{ background: 'var(--white)', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 750, color: 'var(--text-muted)', whiteSpace: 'nowrap', transition: 'all 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}
-                              onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(192,32,31,0.4)'; e.currentTarget.style.color = 'var(--red)'; }}
-                              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
-                            >
-                              View Details
-                            </button>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <button
+                                onClick={() => viewCampaignDetail(c)}
+                                style={{ background: 'var(--white)', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 750, color: 'var(--text-muted)', whiteSpace: 'nowrap', transition: 'all 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}
+                                onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(192,32,31,0.4)'; e.currentTarget.style.color = 'var(--red)'; }}
+                                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
+                              >
+                                View Details
+                              </button>
+                              {failed > 0 && (
+                                <button
+                                  disabled={sending}
+                                  onClick={() => handleRetryFailed(c)}
+                                  style={{
+                                    background: 'rgba(192,32,31,0.06)',
+                                    border: '1px solid rgba(192,32,31,0.2)',
+                                    borderRadius: 8,
+                                    padding: '6px 14px',
+                                    cursor: sending ? 'not-allowed' : 'pointer',
+                                    fontSize: '0.78rem',
+                                    fontWeight: 750,
+                                    color: 'var(--red)',
+                                    whiteSpace: 'nowrap',
+                                    transition: 'all 0.2s',
+                                    boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+                                  }}
+                                  onMouseEnter={e => { if (!sending) { e.currentTarget.style.background = 'var(--red)'; e.currentTarget.style.color = '#fff'; } }}
+                                  onMouseLeave={e => { if (!sending) { e.currentTarget.style.background = 'rgba(192,32,31,0.06)'; e.currentTarget.style.color = 'var(--red)'; } }}
+                                >
+                                  Retry Failed
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1442,14 +1586,48 @@ export default function Customers() {
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
               <div>
                 <div style={{ fontWeight: 900, fontSize: '1rem', marginBottom: 4 }}>{detailCampaign.name}</div>
                 <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{detailCampaign.subject}</div>
               </div>
-              <button onClick={() => setDetailCampaign(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', flexShrink: 0, padding: 4 }}>
-                <X size={18} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {Math.max(0, (detailCampaign.recipient_count || 0) - (detailCampaign.sent_count || 0)) > 0 && (
+                  <button
+                    disabled={sending || logsLoading}
+                    onClick={() => handleRetryFailed(detailCampaign)}
+                    style={{
+                      background: 'var(--red)',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 8,
+                      padding: '8px 16px',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      cursor: (sending || logsLoading) ? 'not-allowed' : 'pointer',
+                      fontFamily: "'DM Sans', sans-serif",
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6
+                    }}
+                  >
+                    {sending ? (
+                      <>
+                        <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
+                        Retrying...
+                      </>
+                    ) : (
+                      <>
+                        <Send size={13} />
+                        Retry Failed
+                      </>
+                    )}
+                  </button>
+                )}
+                <button onClick={() => setDetailCampaign(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', flexShrink: 0, padding: 4 }}>
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             {/* Stats bar */}

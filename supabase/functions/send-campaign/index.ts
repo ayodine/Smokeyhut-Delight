@@ -46,17 +46,30 @@ serve(async (req) => {
       })
     }
 
-    const { subject, body, recipients, campaign_id }: {
+    const { subject, body, recipients, campaign_id, retry }: {
       subject: string
       body: string
       recipients: Recipient[]
       campaign_id?: string
+      retry?: boolean
     } = await req.json()
 
     if (!subject || !body || !recipients?.length) {
       return new Response(JSON.stringify({ error: 'subject, body, and recipients are required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
+    }
+
+    // If this is a retry, delete previous failed logs to avoid duplicates and correct statistics
+    if (campaign_id && retry) {
+      const { error: deleteErr } = await serviceClient
+        .from('campaign_logs')
+        .delete()
+        .eq('campaign_id', campaign_id)
+        .eq('status', 'failed')
+      if (deleteErr) {
+        console.error('Failed to delete old failed logs:', deleteErr)
+      }
     }
 
     // Connect to Gmail SMTP server securely via TLS (port 465) using deno-mailer
