@@ -221,6 +221,10 @@ export default function Orders() {
   const canDeleteOrder = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Orders:delete');
   const canManageOrder = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Orders:manage');
   const [orders, setOrders] = useState([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [statusCounts, setStatusCounts] = useState({ all: 0, pending: 0, processing: 0, shipped: 0, delivered: 0, cancelled: 0 });
+  const [sourceCounts, setSourceCounts] = useState({ storefront: 0, whatsapp: 0 });
+  const [expandedCustomerOrderCount, setExpandedCustomerOrderCount] = useState(0);
   const [products, setProducts] = useState([]);
   const [storeList, setStoreList] = useState([]);
   const [areas, setAreas] = useState([]);
@@ -329,9 +333,10 @@ export default function Orders() {
         const { data: items } = await supabase.from('order_items').select('*').eq('order_id', order.id);
         const fullOrder = { ...order, order_items: items || [] };
 
-        setOrders(prev => [fullOrder, ...prev]);
+        setOrders(prev => [fullOrder, ...prev].slice(0, PER_PAGE));
         playChime();
         setNewOrderAlert({ id: order.id, name: order.customer_name, total: order.total });
+        fetchData();
 
         // Request browser notification permission and show notification
         if (Notification.permission === 'granted') {
@@ -365,66 +370,105 @@ export default function Orders() {
     };
   }, [selectedStore, playChime]);
 
+  // Fetch customer's total orders count when drawer opens
   useEffect(() => {
-    // Only fetch if date filter selection is complete (both start and end are set, or both are null)
+    if (!expandedId) {
+      setExpandedCustomerOrderCount(0);
+      return;
+    }
+    const fetchCustomerOrderCount = async () => {
+      const order = orders.find(o => o.id === expandedId);
+      if (order && order.customer_phone) {
+        const { count } = await supabase
+          .from('orders')
+          .select('id', { count: 'exact', head: true })
+          .eq('customer_phone', order.customer_phone)
+          .is('deleted_at', null);
+        setExpandedCustomerOrderCount(count || 0);
+      }
+    };
+    fetchCustomerOrderCount();
+  }, [expandedId, orders]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [selectedStore, filter, sourceFilter, period, debouncedSearch, dateFilter]);
+
+  useEffect(() => {
     const isDateFilterIncomplete = dateFilter && dateFilter.start && !dateFilter.end;
     if (isDateFilterIncomplete) return;
 
     fetchData();
-  }, [selectedStore, period, dateFilter]);
-  useEffect(() => { setPage(1); }, [filter, period, debouncedSearch, dateFilter]);
+  }, [selectedStore, period, dateFilter, page, filter, sourceFilter, sortKey, sortDir, debouncedSearch]);
+
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 250);
     return () => clearTimeout(t);
   }, [search]);
 
-  const fetchData = async () => {
+  async function fetchData() {
     setLoading(true);
     const storeFilter = selectedStore && selectedStore !== 'all' ? selectedStore : null;
+    const { start, end } = getPeriodParams(period, dateFilter);
+    const p_start = start || null;
+    const p_end = end || null;
+    const p_store_id = storeFilter ? Number(storeFilter) : null;
 
-    const buildBase = () => {
-      let q = supabase.from('orders').select('*, order_items(*)');
+    const getBaseCountQuery = () => {
+      let q = supabase.from('orders').select('id', { count: 'exact', head: true }).is('deleted_at', null);
       if (storeFilter) q = q.or(`store_id.eq.${storeFilter},store_id.is.null`);
-      
-      const { start, end } = getPeriodParams(period, dateFilter);
-      if (start) q = q.gte('created_at', start);
-      if (end) q = q.lte('created_at', end);
-      
+      if (p_start) q = q.gte('created_at', p_start);
+      if (p_end) q = q.lte('created_at', p_end);
       return q;
     };
 
-    const fetchAllOrders = async () => {
-      let all = [];
-      let pageNum = 0;
-      const PAGE_SIZE = 1000;
-      let hasMore = true;
-      while (hasMore) {
-        const { data, error } = await buildBase()
-          .is('deleted_at', null)
-          .order('created_at', { ascending: false })
-          .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
-        if (error) {
-          console.error('[Orders] Error loading chunk:', error);
-          hasMore = false;
-        } else if (!data || data.length === 0) {
-          hasMore = false;
-        } else {
-          all = [...all, ...data];
-          if (data.length < PAGE_SIZE) hasMore = false;
-          else pageNum++;
-        }
-      }
-      return all;
-    };
-
-    const [loadedOrders, productsRes, storesRes, zonesRes] = await Promise.all([
-      fetchAllOrders(),
+    const [countsRes, storefrontRes, whatsappRes, productsRes, storesRes, zonesRes] = await Promise.all([
+      supabase.rpc('get_orders_status_counts', { p_store_id, p_start, p_end }),
+      getBaseCountQuery().eq('channel', 'storefront'),
+      getBaseCountQuery().eq('channel', 'whatsapp'),
       supabase.from('products').select('id, name, price').order('name'),
       supabase.from('stores').select('id, name').eq('is_active', true).order('id'),
       fetchFlatAreas(supabase),
     ]);
 
-    setOrders(loadedOrders);
+    if (countsRes.data) {
+      setStatusCounts(countsRes.data);
+    }
+    setSourceCounts({
+      storefront: storefrontRes.count || 0,
+      whatsapp: whatsappRes.count || 0
+    });
+
+    let q = supabase.from('orders').select('*, order_items(*)', { count: 'exact' }).is('deleted_at', null);
+    if (storeFilter) q = q.or(`store_id.eq.${storeFilter},store_id.is.null`);
+    if (p_start) q = q.gte('created_at', p_start);
+    if (p_end) q = q.lte('created_at', p_end);
+    if (filter !== 'all') q = q.eq('status', filter);
+    if (sourceFilter !== 'all') q = q.eq('channel', sourceFilter);
+
+    if (debouncedSearch.trim()) {
+      const searchVal = debouncedSearch.trim();
+      const searchInt = parseInt(searchVal, 10);
+      if (!isNaN(searchInt) && String(searchInt) === searchVal) {
+        q = q.or(`id.eq.${searchInt},customer_name.ilike.%${searchVal}%,customer_phone.ilike.%${searchVal}%`);
+      } else {
+        q = q.or(`customer_name.ilike.%${searchVal}%,customer_phone.ilike.%${searchVal}%`);
+      }
+    }
+
+    q = q.order(sortKey === 'items' ? 'created_at' : sortKey, { ascending: sortDir === 'asc' });
+    q = q.range((page - 1) * PER_PAGE, page * PER_PAGE - 1);
+
+    const { data, count, error } = await q;
+    if (!error && data) {
+      setOrders(data);
+      setTotalCount(count || 0);
+    } else {
+      console.error('[Orders] Error loading paginated orders:', error);
+      setOrders([]);
+      setTotalCount(0);
+    }
+
     if (productsRes.data) setProducts(productsRes.data);
     if (storesRes.data) {
       setStoreList(storesRes.data);
@@ -432,11 +476,12 @@ export default function Orders() {
     }
     setAreas(zonesRes);
     setLoading(false);
-  };
+  }
 
   const updateStatus = async (id, newStatus) => {
     await supabase.from('orders').update({ status: newStatus }).eq('id', id);
     setOrders(prev => prev.map(o => o.id === id ? { ...o, status: newStatus } : o));
+    await fetchData();
   };
 
   const updateStatusWithReason = async (ids, status, reason) => {
@@ -450,6 +495,7 @@ export default function Orders() {
         setOrders(prev => prev.map(o => ids.includes(o.id) ? { ...o, status, cancel_reason: reason } : o));
         setSelectedIds([]);
         showToast('Orders Cancelled', `Successfully cancelled ${ids.length} order(s).`, 'success');
+        await fetchData();
       } else {
         showToast('Cancellation failed', error.message, 'error');
       }
@@ -474,6 +520,7 @@ export default function Orders() {
         if (!error) {
           setOrders(prev => prev.filter(o => o.id !== id));
           showToast('Order permanently deleted', '', 'info');
+          await fetchData();
         } else {
           showToast('Failed to delete order', error.message, 'error');
         }
@@ -492,6 +539,7 @@ export default function Orders() {
         setOrders(prev => prev.map(o => selectedIds.includes(o.id) ? { ...o, status: newStatus } : o));
         setSelectedIds([]);
         showToast('Bulk Status Updated', `Successfully updated ${selectedIds.length} orders to ${newStatus}`, 'success');
+        await fetchData();
       } else {
         showToast('Update failed', error.message, 'error');
       }
@@ -519,6 +567,7 @@ export default function Orders() {
           setOrders(prev => prev.filter(o => !selectedIds.includes(o.id)));
           setSelectedIds([]);
           showToast('Permanently deleted', 'Selected orders deleted forever', 'info');
+          await fetchData();
         } else {
           showToast('Failed to delete', error.message, 'error');
         }
@@ -720,39 +769,6 @@ export default function Orders() {
   };
 
   // ── Filter + Sort ────────────────────────────────────────
-  // Search only (since period and custom date range are fully handled at the database query level!)
-  const periodSearchFiltered = useMemo(() => {
-    const q = debouncedSearch.toLowerCase();
-    return orders.filter(o => {
-      const matchSearch = !q ||
-        String(o.customer_name || '').toLowerCase().includes(q) ||
-        String(o.id).toLowerCase().includes(q) ||
-        String(o.customer_phone || '').toLowerCase().includes(q);
-      return matchSearch;
-    });
-  }, [orders, debouncedSearch]);
-
-  // Period + search + status + source (final set before sort)
-  const baseFiltered = useMemo(() =>
-    periodSearchFiltered.filter(o => {
-      if (filter !== 'all' && o.status !== filter) return false;
-      if (sourceFilter !== 'all' && (o.channel || 'storefront') !== sourceFilter) return false;
-      return true;
-    }),
-    [periodSearchFiltered, filter, sourceFilter]
-  );
-
-  const filtered = useMemo(() => [...baseFiltered].sort((a, b) => {
-    let av, bv;
-    if (sortKey === 'total') { av = Number(a.total || 0); bv = Number(b.total || 0); }
-    else if (sortKey === 'created_at') { av = a.created_at; bv = b.created_at; }
-    else if (sortKey === 'items') { av = a.order_items?.length || 0; bv = b.order_items?.length || 0; }
-    else { av = String(a[sortKey] || '').toLowerCase(); bv = String(b[sortKey] || '').toLowerCase(); }
-    if (av < bv) return sortDir === 'asc' ? -1 : 1;
-    if (av > bv) return sortDir === 'asc' ? 1 : -1;
-    return 0;
-  }), [baseFiltered, sortKey, sortDir]);
-
   const handleSort = (key) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortKey(key); setSortDir('asc'); }
@@ -764,15 +780,6 @@ export default function Orders() {
       : <ChevronDown size={11} style={{ verticalAlign: 'middle', marginLeft: 3, color: 'var(--red)' }} />;
   };
   const thStyle = (col) => ({ cursor: 'pointer', userSelect: 'none', background: sortKey === col ? 'var(--black2)' : undefined });
-
-  const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
-
-  // KPIs — computed from period+search filtered orders (ignores status tab)
-  const kpiPending   = useMemo(() => periodSearchFiltered.filter(o => o.status === 'pending').length, [periodSearchFiltered]);
-  const kpiProcessing = useMemo(() => periodSearchFiltered.filter(o => o.status === 'processing').length, [periodSearchFiltered]);
-  const kpiShipped   = useMemo(() => periodSearchFiltered.filter(o => o.status === 'shipped').length, [periodSearchFiltered]);
-  const kpiDelivered = useMemo(() => periodSearchFiltered.filter(o => o.status === 'delivered').length, [periodSearchFiltered]);
-  const kpiCancelled = useMemo(() => periodSearchFiltered.filter(o => o.status === 'cancelled').length, [periodSearchFiltered]);
 
   if (loading) return (
     <div>
@@ -968,47 +975,47 @@ export default function Orders() {
       <div className="kpi-grid" style={{ marginBottom: 20 }}>
         <div className="kpi-card yellow">
           <div className="kpi-icon"><Clock size={24} /></div>
-          <div className="kpi-value">{kpiPending}</div>
+          <div className="kpi-value">{statusCounts.pending || 0}</div>
           <div className="kpi-label">Pending</div>
           <div className="kpi-change down">Awaiting action</div>
         </div>
         <div className="kpi-card blue">
           <div className="kpi-icon"><RefreshCw size={24} /></div>
-          <div className="kpi-value">{kpiProcessing}</div>
+          <div className="kpi-value">{statusCounts.processing || 0}</div>
           <div className="kpi-label">Processing</div>
           <div className="kpi-change up">Being prepared</div>
         </div>
         <div className="kpi-card purple">
           <div className="kpi-icon"><Truck size={24} /></div>
-          <div className="kpi-value">{kpiShipped}</div>
+          <div className="kpi-value">{statusCounts.shipped || 0}</div>
           <div className="kpi-label">Shipped</div>
           <div className="kpi-change up">On the way</div>
         </div>
         <div className="kpi-card green">
           <div className="kpi-icon"><CheckCircle size={24} /></div>
-          <div className="kpi-value">{kpiDelivered}</div>
+          <div className="kpi-value">{statusCounts.delivered || 0}</div>
           <div className="kpi-label">Delivered</div>
           <div className="kpi-change up">Completed</div>
         </div>
         <div className="kpi-card red">
           <div className="kpi-icon"><XCircle size={24} /></div>
-          <div className="kpi-value">{kpiCancelled}</div>
+          <div className="kpi-value">{statusCounts.cancelled || 0}</div>
           <div className="kpi-label">Cancelled</div>
-          <div className="kpi-change down">{kpiCancelled > 0 ? 'Review needed' : 'None this period'}</div>
+          <div className="kpi-change down">{(statusCounts.cancelled || 0) > 0 ? 'Review needed' : 'None this period'}</div>
         </div>
       </div>
 
       <div className="dash-filters">
         {statuses.map(s => (
           <button key={s} className={`dash-filter-btn${filter === s ? ' active' : ''}`} onClick={() => setFilter(s)}>
-            {s === 'all' ? `All (${periodSearchFiltered.length})` : `${s.charAt(0).toUpperCase() + s.slice(1)} (${periodSearchFiltered.filter(o => o.status === s).length})`}
+            {s === 'all' ? `All (${statusCounts.all || 0})` : `${s.charAt(0).toUpperCase() + s.slice(1)} (${statusCounts[s] || 0})`}
           </button>
         ))}
       </div>
       <div className="dash-filters" style={{ marginTop: 8 }}>
         {[['all', 'All Sources'], ['storefront', 'Website'], ['whatsapp', 'WhatsApp']].map(([val, label]) => (
           <button key={val} className={`dash-filter-btn${sourceFilter === val ? ' active' : ''}`} onClick={() => setSourceFilter(val)}>
-            {label}{val !== 'all' ? ` (${periodSearchFiltered.filter(o => (o.channel || 'storefront') === val).length})` : ''}
+            {label}{val === 'all' ? ` (${statusCounts.all || 0})` : ` (${sourceCounts[val] || 0})`}
           </button>
         ))}
       </div>
@@ -1020,13 +1027,13 @@ export default function Orders() {
               <th style={{ width: 44, textAlign: 'center' }}>
                 <input
                   type="checkbox"
-                  checked={paged.length > 0 && paged.every(o => selectedIds.includes(o.id))}
+                  checked={orders.length > 0 && orders.every(o => selectedIds.includes(o.id))}
                   onChange={(e) => {
                     if (e.target.checked) {
-                      const newSel = [...new Set([...selectedIds, ...paged.map(o => o.id)])];
+                      const newSel = [...new Set([...selectedIds, ...orders.map(o => o.id)])];
                       setSelectedIds(newSel);
                     } else {
-                      const pageIds = paged.map(o => o.id);
+                      const pageIds = orders.map(o => o.id);
                       setSelectedIds(selectedIds.filter(id => !pageIds.includes(id)));
                     }
                   }}
@@ -1042,7 +1049,7 @@ export default function Orders() {
               <th style={thStyle('created_at')} onClick={() => handleSort('created_at')}>Date &amp; Time <SortIcon col="created_at" /></th>
             </tr></thead>
             <tbody>
-              {paged.map(order => {
+              {orders.map(order => {
                 const itemsCount = order.order_items?.length || 0;
                 const channel = getChannel(order.notes);
                 const isSelected = selectedIds.includes(order.id);
@@ -1102,7 +1109,7 @@ export default function Orders() {
                   </React.Fragment>
                 );
               })}
-              {filtered.length === 0 && (
+              {orders.length === 0 && (
                 <tr>
                   <td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>No orders found matching your filter.</td>
                 </tr>
@@ -1110,14 +1117,14 @@ export default function Orders() {
             </tbody>
           </table>
         </div>
-        <Pagination page={page} total={filtered.length} perPage={PER_PAGE} onChange={setPage} />
+        <Pagination page={page} total={totalCount} perPage={PER_PAGE} onChange={setPage} />
       </div>
 
       {/* ── Slide-Out Drawer ── */}
       <div className={`dash-drawer-overlay ${expandedId ? 'open' : ''}`} onClick={() => setExpandedId(null)}></div>
       <div className={`dash-drawer ${expandedId ? 'open' : ''}`}>
         {(() => {
-          const sel = periodSearchFiltered.find(o => o.id === expandedId);
+          const sel = orders.find(o => o.id === expandedId);
           if (!sel) return null;
           const selChannel = getChannel(sel.notes);
           return (
@@ -1141,8 +1148,7 @@ export default function Orders() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <span><strong>Name:</strong> {sel.customer_name}</span>
                       {(() => {
-                        const count = orders.filter(o => o.customer_phone && o.customer_phone === sel.customer_phone).length;
-                        const isNew = count <= 1;
+                        const isNew = expandedCustomerOrderCount <= 1;
                         return (
                           <span style={{
                             fontSize: '0.68rem', fontWeight: 800, padding: '2px 8px', borderRadius: 20, flexShrink: 0,

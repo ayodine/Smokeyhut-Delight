@@ -400,16 +400,34 @@ export default function Overview() {
         ? `Date: ${new Date(customDate.start).toLocaleDateString()} to ${new Date(customDate.end).toLocaleDateString()}`
         : (PERIODS.find(p => p.value === period)?.label || period);
 
-      let exportQuery = supabase
-        .from('orders')
-        .select('id,customer_name,total,status,created_at')
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false });
-      if (sp !== null) exportQuery = exportQuery.eq('store_id', sp);
-      if (startDate) exportQuery = exportQuery.gte('created_at', startDate.toISOString());
-      if (endDate) exportQuery = exportQuery.lte('created_at', endDate.toISOString());
+      let allOrders = [];
+      let pageNum = 0;
+      const PAGE_SIZE = 1000;
+      let hasMore = true;
 
-      const { data: exportOrders } = await exportQuery;
+      while (hasMore) {
+        let exportQuery = supabase
+          .from('orders')
+          .select('id,customer_name,total,status,created_at')
+          .is('deleted_at', null)
+          .order('created_at', { ascending: false })
+          .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
+        if (sp !== null) exportQuery = exportQuery.eq('store_id', sp);
+        if (startDate) exportQuery = exportQuery.gte('created_at', startDate.toISOString());
+        if (endDate) exportQuery = exportQuery.lte('created_at', endDate.toISOString());
+
+        const { data, error } = await exportQuery;
+        if (error) {
+          console.error('[Overview Export] Error loading chunk:', error);
+          hasMore = false;
+        } else if (!data || data.length === 0) {
+          hasMore = false;
+        } else {
+          allOrders = [...allOrders, ...data];
+          if (data.length < PAGE_SIZE) hasMore = false;
+          else pageNum++;
+        }
+      }
 
       const wb = XLSX.utils.book_new();
 
@@ -430,7 +448,7 @@ export default function Overview() {
 
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
         ['Order ID', 'Customer', 'Total (₦)', 'Status', 'Date'],
-        ...(exportOrders || []).map(o => [
+        ...allOrders.map(o => [
           o.id,
           o.customer_name,
           Number(o.total || 0),

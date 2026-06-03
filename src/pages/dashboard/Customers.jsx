@@ -58,15 +58,25 @@ export default function Customers() {
   const canDelete = isAdmin || userRole === 'Manager' || (userPermissions || []).includes('Customers:delete');
 
   const [tab, setTab] = useState('directory');
-  const [allCustomers, setAllCustomers] = useState([]);
-  const [rawOrders, setRawOrders] = useState([]);
   const [overviewDateFilter, setOverviewDateFilter] = useState({ start: null, end: null });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
   const PER_PAGE = 20;
   const [sortKey, setSortKey] = useState('lastOrder');
   const [sortDir, setSortDir] = useState('desc');
+
+  // Server-side loaded data
+  const [directoryCustomers, setDirectoryCustomers] = useState([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [kpis, setKpis] = useState({ totalCustomers: 0, totalSpent: 0, totalOrders: 0, newCustomers: 0, returningCustomers: 0, noEmailCount: 0 });
+  const [growth, setGrowth] = useState({ totalCustomers: null, totalSpent: null, totalOrders: null, newCustomers: null, returningCustomers: null });
+  const [campaignAudience, setCampaignAudience] = useState([]);
+
+  const [kpiLoading, setKpiLoading] = useState(false);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
+  const [audienceLoading, setAudienceLoading] = useState(false);
 
   // Campaign state
   const [campaigns, setCampaigns] = useState([]);
@@ -95,9 +105,156 @@ export default function Customers() {
     setRecipientSearch('');
   }, [form.audience, form.dateFilter]);
 
-  useEffect(() => { fetchData(); }, []);
-  useEffect(() => { if (tab === 'campaigns') fetchCampaigns(); }, [tab]);
-  useEffect(() => { setPage(1); }, [search]);
+  // Debounce search input
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Fetch stores list once on mount
+  useEffect(() => {
+    const fetchStores = async () => {
+      try {
+        const { data: storesList, error: storesErr } = await supabase
+          .from('stores')
+          .select('id, name')
+          .order('name');
+        if (storesErr) throw storesErr;
+        if (storesList) setStores(storesList);
+      } catch (e) {
+        console.error('Error fetching stores list:', e);
+      }
+    };
+    fetchStores();
+  }, []);
+
+  // Fetch directory data when pagination, sorting, search, or date filter changes
+  useEffect(() => {
+    const fetchDirectory = async () => {
+      setDirectoryLoading(true);
+      const { data, error } = await supabase.rpc('get_customers_directory', {
+        p_start: overviewDateFilter.start ? overviewDateFilter.start + 'T00:00:00' : null,
+        p_end: overviewDateFilter.end ? overviewDateFilter.end + 'T23:59:59' : null,
+        p_search: debouncedSearch,
+        p_sort_key: sortKey,
+        p_sort_dir: sortDir,
+        p_limit: PER_PAGE,
+        p_offset: (page - 1) * PER_PAGE,
+      });
+      if (!error && data) {
+        setDirectoryCustomers(data);
+        setTotalCount(Number(data[0]?.totalCount || 0));
+      } else {
+        setDirectoryCustomers([]);
+        setTotalCount(0);
+      }
+      setDirectoryLoading(false);
+    };
+    
+    // Skip loading directory if it's not complete custom range
+    const isIncomplete = overviewDateFilter.start && !overviewDateFilter.end;
+    if (!isIncomplete) {
+      fetchDirectory();
+    }
+  }, [page, debouncedSearch, sortKey, sortDir, overviewDateFilter]);
+
+  // Fetch KPIs and growth when date filter changes
+  useEffect(() => {
+    const fetchKpisAndGrowth = async () => {
+      setKpiLoading(true);
+      
+      let currentStart = null, currentEnd = null;
+      let previousStart = null, previousEnd = null;
+      let labelSuffix = 'vs last month';
+
+      const hasFilter = overviewDateFilter && (overviewDateFilter.start || overviewDateFilter.end);
+      if (hasFilter) {
+        const { start, end } = overviewDateFilter;
+        currentStart = start ? start + 'T00:00:00' : null;
+        currentEnd = end ? end + 'T23:59:59' : null;
+
+        if (start && end) {
+          const s = new Date(`${start}T00:00:00`);
+          const e = new Date(`${end}T23:59:59.999`);
+          const diffTime = Math.abs(e - s);
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          const prevS = new Date(s); prevS.setDate(s.getDate() - diffDays);
+          const prevE = new Date(s); prevE.setMilliseconds(-1);
+          previousStart = prevS.toISOString();
+          previousEnd = prevE.toISOString();
+
+          const isFullMonth = s.getDate() === 1 && new Date(e.getTime() + 1).getDate() === 1;
+          const startsOnFirst = s.getDate() === 1;
+          if (isFullMonth) labelSuffix = 'vs last month';
+          else if (startsOnFirst) labelSuffix = 'vs last month (MTD)';
+          else labelSuffix = `vs prev ${diffDays}d`;
+        }
+      } else {
+        const mtd = getMTDPeriods();
+        currentStart = mtd.current.start;
+        currentEnd = mtd.current.end;
+        previousStart = mtd.previous.start;
+        previousEnd = mtd.previous.end;
+        labelSuffix = 'vs last month (MTD)';
+      }
+
+      const [currentRes, previousRes] = await Promise.all([
+        supabase.rpc('get_customers_kpis', { p_start: currentStart, p_end: currentEnd }),
+        previousStart 
+          ? supabase.rpc('get_customers_kpis', { p_start: previousStart, p_end: previousEnd })
+          : Promise.resolve({ data: null })
+      ]);
+
+      const curr = currentRes.data || { totalCustomers: 0, totalSpent: 0, totalOrders: 0, newCustomers: 0, returningCustomers: 0, noEmailCount: 0 };
+      const prev = previousRes.data || { totalCustomers: 0, totalSpent: 0, totalOrders: 0, newCustomers: 0, returningCustomers: 0, noEmailCount: 0 };
+
+      const getPercentChange = (cVal, pVal) => {
+        if (!pVal || pVal === 0) return cVal > 0 ? 100 : 0;
+        return ((cVal - pVal) / pVal) * 100;
+      };
+
+      setKpis(curr);
+      setGrowth({
+        totalCustomers: { pct: getPercentChange(curr.totalCustomers, prev.totalCustomers), label: labelSuffix },
+        totalSpent: { pct: getPercentChange(curr.totalSpent, prev.totalSpent), label: labelSuffix },
+        totalOrders: { pct: getPercentChange(curr.totalOrders, prev.totalOrders), label: labelSuffix },
+        newCustomers: { pct: getPercentChange(curr.newCustomers, prev.newCustomers), label: labelSuffix },
+        returningCustomers: { pct: getPercentChange(curr.returningCustomers, prev.returningCustomers), label: labelSuffix }
+      });
+      setKpiLoading(false);
+      setLoading(false);
+    };
+
+    const isIncomplete = overviewDateFilter.start && !overviewDateFilter.end;
+    if (!isIncomplete) {
+      fetchKpisAndGrowth();
+    }
+  }, [overviewDateFilter]);
+
+  // Fetch campaign audience list when audience rules or campaign date filters change
+  useEffect(() => {
+    if (tab !== 'campaigns') return;
+    
+    const fetchCampaignAudience = async () => {
+      setAudienceLoading(true);
+      const { data, error } = await supabase.rpc('get_campaign_audience', {
+        p_audience: form.audience,
+        p_start: form.dateFilter?.start ? form.dateFilter.start + 'T00:00:00' : null,
+        p_end: form.dateFilter?.end ? form.dateFilter.end + 'T23:59:59' : null,
+      });
+      if (!error && data) {
+        setCampaignAudience(data);
+      } else {
+        setCampaignAudience([]);
+      }
+      setAudienceLoading(false);
+    };
+
+    const isCampaignFilterIncomplete = form.dateFilter && form.dateFilter.start && !form.dateFilter.end;
+    if (!isCampaignFilterIncomplete) {
+      fetchCampaignAudience();
+    }
+  }, [tab, form.audience, form.dateFilter]);
 
   // Auto-refresh logs for currently sending campaigns
   useEffect(() => {
@@ -139,269 +296,6 @@ export default function Customers() {
     return () => clearInterval(interval);
   }, [detailCampaign]);
 
-  const fetchData = async () => {
-    setLoading(true);
-    
-    // Fetch stores list
-    try {
-      const { data: storesList, error: storesErr } = await supabase
-        .from('stores')
-        .select('id, name')
-        .order('name');
-      if (storesErr) throw storesErr;
-      if (storesList) setStores(storesList);
-    } catch (e) {
-      console.error('Error fetching stores list:', e);
-    }
-    
-    let allOrders = [];
-    let pageNum = 0;
-    const PAGE_SIZE = 1000;
-    let hasMore = true;
-
-    while (hasMore) {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('id, customer_name, customer_email, customer_phone, total, created_at, status, payment_method, store_id, coupon_code')
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false })
-        .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
-
-      if (error) {
-        console.error('Error fetching orders chunk:', error);
-        hasMore = false;
-      } else if (!data || data.length === 0) {
-        hasMore = false;
-      } else {
-        allOrders = [...allOrders, ...data];
-        if (data.length < PAGE_SIZE) {
-          hasMore = false;
-        } else {
-          pageNum++;
-        }
-      }
-    }
-
-    if (allOrders.length > 0) {
-      setRawOrders(allOrders);
-      const map = {};
-      allOrders.forEach(o => {
-        const key = o.customer_phone || o.customer_email || o.customer_name;
-        if (!key) return;
-        if (!map[key]) {
-          map[key] = { 
-            id: key, 
-            name: o.customer_name, 
-            email: o.customer_email, 
-            phone: o.customer_phone, 
-            orders: 0, 
-            totalSpent: 0, 
-            lastOrder: null, 
-            hasPendingOrder: false, 
-            hasCancelledOrder: false, 
-            weekendOrders: 0, 
-            monthlySpent: 0,
-            ordersDetails: []
-          };
-        }
-        
-        map[key].ordersDetails.push({
-          id: o.id,
-          total: Number(o.total || 0),
-          created_at: o.created_at,
-          status: o.status,
-          payment_method: o.payment_method,
-          store_id: o.store_id,
-          coupon_code: o.coupon_code
-        });
-
-        if (o.status !== 'cancelled') {
-          map[key].totalSpent += Number(o.total || 0);
-          
-          // Track current calendar month spent for Top 20 customers of the month
-          const orderDate = new Date(o.created_at);
-          const now = new Date();
-          if (orderDate.getMonth() === now.getMonth() && orderDate.getFullYear() === now.getFullYear()) {
-            map[key].monthlySpent += Number(o.total || 0);
-          }
-        } else {
-          map[key].hasCancelledOrder = true;
-        }
-        if (o.status === 'pending') {
-          map[key].hasPendingOrder = true;
-        }
-        map[key].orders += 1;
-        
-        // Track weekend orders (Friday, Saturday, Sunday)
-        const date = new Date(o.created_at);
-        const day = date.getDay(); // 0 = Sunday, 5 = Friday, 6 = Saturday
-        if (day === 0 || day === 5 || day === 6) {
-          map[key].weekendOrders += 1;
-        }
-
-        const d = new Date(o.created_at).getTime();
-        if (!map[key].lastOrder || d > new Date(map[key].lastOrder).getTime()) map[key].lastOrder = o.created_at;
-      });
-      setAllCustomers(Object.values(map));
-    }
-    setLoading(false);
-  };
-
-  const { customers, kpis } = useMemo(() => {
-    const hasFilter = overviewDateFilter && (overviewDateFilter.start || overviewDateFilter.end);
-    if (!hasFilter) {
-      // All-time mode
-      const totalSpend = allCustomers.reduce((s, c) => s + c.totalSpent, 0);
-      const totalOrdersCount = allCustomers.reduce((s, c) => s + c.orders, 0);
-      const newCust = allCustomers.filter(c => c.orders === 1).length;
-      const retCust = allCustomers.filter(c => c.orders >= 2).length;
-      
-      return {
-        customers: allCustomers,
-        kpis: {
-          totalCustomers: allCustomers.length,
-          totalSpent: totalSpend,
-          totalOrders: totalOrdersCount,
-          newCustomers: newCust,
-          returningCustomers: retCust
-        }
-      };
-    }
-
-    // Date range filtered mode
-    const { start, end } = overviewDateFilter;
-    const rangeOrders = rawOrders.filter(o => {
-      if (!o.created_at) return false;
-      const orderDateStr = new Date(o.created_at).toLocaleDateString('en-CA');
-      if (start && orderDateStr < start) return false;
-      if (end && orderDateStr > end) return false;
-      return true;
-    });
-    const activeCustomerKeys = new Set(rangeOrders.map(o => o.customer_phone || o.customer_email || o.customer_name).filter(Boolean));
-    
-    // Total Spent in that range (excluding cancelled)
-    const rangeSpend = rangeOrders.filter(o => o.status !== 'cancelled').reduce((sum, o) => sum + Number(o.total || 0), 0);
-    
-    // Find the very first order date for every customer in all rawOrders
-    const customerFirstOrderDates = {};
-    rawOrders.forEach(o => {
-      const key = o.customer_phone || o.customer_email || o.customer_name;
-      if (!key) return;
-      const time = new Date(o.created_at).getTime();
-      if (!customerFirstOrderDates[key] || time < customerFirstOrderDates[key].time) {
-        customerFirstOrderDates[key] = { time, dateStr: new Date(o.created_at).toLocaleDateString('en-CA') };
-      }
-    });
-
-    const newCust = Array.from(activeCustomerKeys).filter(key => {
-      const firstDateStr = customerFirstOrderDates[key]?.dateStr;
-      if (!firstDateStr) return false;
-      if (start && firstDateStr < start) return false;
-      if (end && firstDateStr > end) return false;
-      return true;
-    }).length;
-    const retCust = activeCustomerKeys.size - newCust;
-
-    // The customers list for the directory table should be the full profiles of customers active in this range
-    const rangeCustomersList = allCustomers.filter(c => activeCustomerKeys.has(c.id));
-
-    return {
-      customers: rangeCustomersList,
-      kpis: {
-        totalCustomers: activeCustomerKeys.size,
-        totalSpent: rangeSpend,
-        totalOrders: rangeOrders.length,
-        newCustomers: newCust,
-        returningCustomers: retCust
-      }
-    };
-  }, [allCustomers, rawOrders, overviewDateFilter]);
-
-  const getMetricsForPeriod = (startStr, endStr) => {
-    const rangeOrders = rawOrders.filter(o => {
-      if (!o.created_at) return false;
-      const orderDateStr = new Date(o.created_at).toLocaleDateString('en-CA');
-      if (startStr && orderDateStr < startStr) return false;
-      if (endStr && orderDateStr > endStr) return false;
-      return true;
-    });
-
-    const activeCustomerKeys = new Set(rangeOrders.map(o => o.customer_phone || o.customer_email || o.customer_name).filter(Boolean));
-    const rangeSpend = rangeOrders.filter(o => o.status !== 'cancelled').reduce((sum, o) => sum + Number(o.total || 0), 0);
-    
-    const customerFirstOrderDates = {};
-    rawOrders.forEach(o => {
-      const key = o.customer_phone || o.customer_email || o.customer_name;
-      if (!key) return;
-      const time = new Date(o.created_at).getTime();
-      if (!customerFirstOrderDates[key] || time < customerFirstOrderDates[key].time) {
-        customerFirstOrderDates[key] = { time, dateStr: new Date(o.created_at).toLocaleDateString('en-CA') };
-      }
-    });
-
-    const newCust = Array.from(activeCustomerKeys).filter(key => {
-      const firstDateStr = customerFirstOrderDates[key]?.dateStr;
-      if (!firstDateStr) return false;
-      if (startStr && firstDateStr < startStr) return false;
-      if (endStr && firstDateStr > endStr) return false;
-      return true;
-    }).length;
-    
-    const retCust = activeCustomerKeys.size - newCust;
-
-    return {
-      totalCustomers: activeCustomerKeys.size,
-      totalSpent: rangeSpend,
-      totalOrders: rangeOrders.length,
-      newCustomers: newCust,
-      returningCustomers: retCust
-    };
-  };
-
-  const getPreviousPeriod = (startStr, endStr) => {
-    const sDate = new Date(startStr);
-    const eDate = new Date(endStr);
-    
-    // If current range starts on the 1st of the month, align the previous period's start to the 1st of the previous month
-    const startsOnFirst = sDate.getDate() === 1;
-    
-    if (startsOnFirst) {
-      const prevMonthStart = new Date(sDate.getFullYear(), sDate.getMonth() - 1, 1);
-      const lastDayOfCurrMonth = new Date(sDate.getFullYear(), sDate.getMonth() + 1, 0).getDate();
-      const lastDayOfPrevMonth = new Date(sDate.getFullYear(), sDate.getMonth(), 0).getDate();
-      
-      const isCurrFullMonth = eDate.getDate() === lastDayOfCurrMonth && sDate.getMonth() === eDate.getMonth() && sDate.getFullYear() === eDate.getFullYear();
-      
-      let prevEndDay;
-      if (isCurrFullMonth) {
-        prevEndDay = lastDayOfPrevMonth;
-      } else {
-        prevEndDay = Math.min(eDate.getDate(), lastDayOfPrevMonth);
-      }
-      
-      const prevMonthEnd = new Date(sDate.getFullYear(), sDate.getMonth() - 1, prevEndDay);
-      
-      return {
-        start: prevMonthStart.toLocaleDateString('en-CA'),
-        end: prevMonthEnd.toLocaleDateString('en-CA')
-      };
-    } else {
-      // Standard shift back by exact number of days
-      const diffTime = Math.abs(eDate - sDate);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-      
-      const prevStart = new Date(sDate);
-      prevStart.setDate(sDate.getDate() - diffDays);
-      const prevEnd = new Date(eDate);
-      prevEnd.setDate(eDate.getDate() - diffDays);
-      
-      return {
-        start: prevStart.toLocaleDateString('en-CA'),
-        end: prevEnd.toLocaleDateString('en-CA')
-      };
-    }
-  };
-
   const getMTDPeriods = () => {
     const today = new Date();
     const currentYear = today.getFullYear();
@@ -421,70 +315,6 @@ export default function Customers() {
       previous: { start: prevStart, end: prevEnd }
     };
   };
-
-  const getPercentChange = (currentVal, previousVal) => {
-    if (!previousVal) {
-      return currentVal > 0 ? 100 : 0;
-    }
-    return ((currentVal - previousVal) / previousVal) * 100;
-  };
-
-  const kpiChanges = useMemo(() => {
-    let currentMetrics, previousMetrics, labelSuffix;
-    
-    const hasFilter = overviewDateFilter && (overviewDateFilter.start || overviewDateFilter.end);
-    if (hasFilter) {
-      const { start, end } = overviewDateFilter;
-      currentMetrics = getMetricsForPeriod(start, end);
-      const prevPeriod = getPreviousPeriod(start, end);
-      previousMetrics = getMetricsForPeriod(prevPeriod.start, prevPeriod.end);
-      
-      const sDate = new Date(start);
-      const eDate = new Date(end);
-      
-      const isFullMonth = sDate.getDate() === 1 && 
-        new Date(eDate.getFullYear(), eDate.getMonth() + 1, 0).getDate() === eDate.getDate() && 
-        sDate.getMonth() === eDate.getMonth() && sDate.getFullYear() === eDate.getFullYear();
-        
-      const startsOnFirst = sDate.getDate() === 1;
-      
-      if (isFullMonth) {
-        labelSuffix = 'vs last month';
-      } else if (startsOnFirst) {
-        labelSuffix = 'vs last month (MTD)';
-      } else {
-        labelSuffix = 'vs prev period';
-      }
-    } else {
-      const mtd = getMTDPeriods();
-      currentMetrics = getMetricsForPeriod(mtd.current.start, mtd.current.end);
-      previousMetrics = getMetricsForPeriod(mtd.previous.start, mtd.previous.end);
-      labelSuffix = 'vs last month (MTD)';
-    }
-
-    return {
-      totalCustomers: {
-        pct: getPercentChange(currentMetrics.totalCustomers, previousMetrics.totalCustomers),
-        label: labelSuffix
-      },
-      totalSpent: {
-        pct: getPercentChange(currentMetrics.totalSpent, previousMetrics.totalSpent),
-        label: labelSuffix
-      },
-      totalOrders: {
-        pct: getPercentChange(currentMetrics.totalOrders, previousMetrics.totalOrders),
-        label: labelSuffix
-      },
-      newCustomers: {
-        pct: getPercentChange(currentMetrics.newCustomers, previousMetrics.newCustomers),
-        label: labelSuffix
-      },
-      returningCustomers: {
-        pct: getPercentChange(currentMetrics.returningCustomers, previousMetrics.returningCustomers),
-        label: labelSuffix
-      }
-    };
-  }, [rawOrders, overviewDateFilter]);
 
   const renderKPIBadge = (change) => {
     if (!change) return null;
@@ -508,141 +338,28 @@ export default function Customers() {
     setCampsLoading(false);
   };
 
-  const filtered = customers.filter(c =>
-    String(c.name || '').toLowerCase().includes(search.toLowerCase()) ||
-    String(c.email || '').toLowerCase().includes(search.toLowerCase()) ||
-    String(c.phone || '').toLowerCase().includes(search.toLowerCase())
-  );
+  const fullAudienceList = campaignAudience;
+  const audienceList = fullAudienceList.filter(c => !excludedEmails.has(c.email.trim().toLowerCase()));
+  const noEmailCount = kpis.noEmailCount || 0;
 
-  const sortedCustomers = useMemo(() => {
-    const list = [...filtered];
-    list.sort((a, b) => {
-      let av, bv;
-      if (sortKey === 'totalSpent') {
-        av = Number(a.totalSpent || 0);
-        bv = Number(b.totalSpent || 0);
-      } else if (sortKey === 'orders') {
-        av = Number(a.orders || 0);
-        bv = Number(b.orders || 0);
-      } else if (sortKey === 'lastOrder') {
-        av = a.lastOrder ? new Date(a.lastOrder).getTime() : 0;
-        bv = b.lastOrder ? new Date(b.lastOrder).getTime() : 0;
-      } else {
-        av = String(a[sortKey] || '').toLowerCase();
-        bv = String(b[sortKey] || '').toLowerCase();
-      }
-      
-      if (av < bv) return sortDir === 'asc' ? -1 : 1;
-      if (av > bv) return sortDir === 'asc' ? 1 : -1;
-      return 0;
+  const fetchAllForExport = async () => {
+    const { data } = await supabase.rpc('get_customers_directory', {
+      p_start: overviewDateFilter.start ? overviewDateFilter.start + 'T00:00:00' : null,
+      p_end: overviewDateFilter.end ? overviewDateFilter.end + 'T23:59:59' : null,
+      p_search: debouncedSearch,
+      p_sort_key: sortKey,
+      p_sort_dir: sortDir,
+      p_limit: 10000,
+      p_offset: 0
     });
-    return list;
-  }, [filtered, sortKey, sortDir]);
-
-  const pagedCustomers = sortedCustomers.slice((page - 1) * PER_PAGE, page * PER_PAGE);
-
-  const getAudience = (filter, dateFilter) => {
-    let list = allCustomers.filter(c => c.email && c.email.trim() !== '');
-    
-    // Deduplicate by email address automatically so each unique email only receives one campaign email
-    const seenEmails = new Set();
-    list = list.filter(c => {
-      const emailLower = c.email.trim().toLowerCase();
-      if (seenEmails.has(emailLower)) return false;
-      seenEmails.add(emailLower);
-      return true;
-    });
-    
-    // Apply Date range Filter (except for slipped_90, inactive_30, inactive_60, top_20_monthly which represent special logic)
-    const isSpecialSegment = ['slipped_90', 'inactive_30', 'inactive_60', 'top_20_monthly'].includes(filter);
-    if (!isSpecialSegment && dateFilter) {
-      const { start, end } = dateFilter;
-      if (start) {
-        list = list.filter(c => c.lastOrder && new Date(c.lastOrder).toLocaleDateString('en-CA') >= start);
-      }
-      if (end) {
-        list = list.filter(c => c.lastOrder && new Date(c.lastOrder).toLocaleDateString('en-CA') <= end);
-      }
-    }
-    
-    if (filter === 'vip_customers') {
-      list = list.filter(c => c.totalSpent >= 200000);
-    }
-    else if (filter === 'high_aov') {
-      list = list.filter(c => c.orders > 0 && (c.totalSpent / c.orders) >= 15000);
-    }
-    else if (filter === 'loyal_buyers') {
-      list = list.filter(c => c.orders >= 3);
-    }
-    else if (filter === 'top_20_monthly') {
-      const spentMap = {};
-      const { start, end } = dateFilter || {};
-      
-      rawOrders.forEach(o => {
-        if (o.status === 'cancelled') return;
-        const key = o.customer_phone || o.customer_email || o.customer_name;
-        if (!key) return;
-        
-        const orderDateStr = new Date(o.created_at).toLocaleDateString('en-CA');
-        if (start && orderDateStr < start) return;
-        if (end && orderDateStr > end) return;
-        
-        spentMap[key] = (spentMap[key] || 0) + Number(o.total || 0);
-      });
-      
-      // Filter list to only customers who spent something in the selected range, then sort by spent
-      let segmentList = list.filter(c => (spentMap[c.id] || 0) > 0);
-      segmentList = segmentList.map(c => ({
-        ...c,
-        rangeSpent: spentMap[c.id]
-      }));
-      segmentList.sort((a, b) => b.rangeSpent - a.rangeSpent);
-      
-      list = segmentList.slice(0, 20);
-    }
-    else if (filter === 'weekend_lovers') {
-      list = list.filter(c => c.weekendOrders && (c.weekendOrders / c.orders) >= 0.5);
-    }
-    else if (filter === 'slipped_90') {
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - 90);
-      list = list.filter(c => c.lastOrder && new Date(c.lastOrder) < cutoff);
-    }
-    else if (filter === 'inactive_30') {
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - 30);
-      list = list.filter(c => c.lastOrder && new Date(c.lastOrder) < cutoff);
-    }
-    else if (filter === 'inactive_60') {
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - 60);
-      list = list.filter(c => c.lastOrder && new Date(c.lastOrder) < cutoff);
-    }
-    else if (filter === 'top_10_percent') {
-      const sorted = [...list].sort((a, b) => b.totalSpent - a.totalSpent);
-      const limit = Math.ceil(sorted.length * 0.1);
-      const topIds = new Set(sorted.slice(0, limit).map(c => c.id));
-      list = list.filter(c => topIds.has(c.id));
-    }
-    else if (filter === 'one_order') {
-      list = list.filter(c => c.orders === 1);
-    }
-    else if (filter === 'abandoned_orders') {
-      list = list.filter(c => c.hasCancelledOrder);
-    }
-    
-    return list;
+    return data || [];
   };
 
-  const fullAudienceList = getAudience(form.audience, form.dateFilter);
-  const audienceList = fullAudienceList.filter(c => !excludedEmails.has(c.email.trim().toLowerCase()));
-  const noEmailCount = customers.filter(c => !c.email).length;
-
-  // ── Export ──────────────────────────────────────────────────────────────
-  const exportCSV = () => {
+  const exportCSV = async () => {
+    const list = await fetchAllForExport();
     const rows = [
       ['Name', 'Email', 'Phone', 'Orders', 'Total Spent (₦)', 'Last Order'],
-      ...customers.map(c => [
+      ...list.map(c => [
         c.name, c.email, c.phone,
         c.orders, c.totalSpent,
         c.lastOrder ? new Date(c.lastOrder).toLocaleDateString() : '',
@@ -655,11 +372,12 @@ export default function Customers() {
     a.click();
   };
 
-  const exportExcel = () => {
+  const exportExcel = async () => {
+    const list = await fetchAllForExport();
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
       ['Name', 'Email', 'Phone', 'Orders', 'Total Spent (₦)', 'Last Order'],
-      ...customers.map(c => [
+      ...list.map(c => [
         c.name, c.email, c.phone,
         c.orders, c.totalSpent,
         c.lastOrder ? new Date(c.lastOrder).toLocaleDateString() : '',
@@ -675,7 +393,7 @@ export default function Customers() {
       onConfirm: async () => {
         setConfirmAction(prev => ({ ...prev, isLoading: true }));
         await supabase.from('orders').update({ customer_name: 'Deleted Customer', customer_email: null }).eq('customer_phone', phone);
-        setAllCustomers(prev => prev.filter(c => c.id !== phone));
+        setDirectoryCustomers(prev => prev.filter(c => c.phone !== phone));
         showToast('Customer removed', '', 'success');
         setConfirmAction(null);
       }
@@ -1097,7 +815,7 @@ export default function Customers() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h2 style={{ fontFamily: "'Mona Sans','Mona-Sans','Helvetica Neue',sans-serif", fontSize: '1.4rem', fontWeight: 900, marginBottom: 4 }}>Customers</h2>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{customers.length} unique customers from order history.</p>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{totalCount} unique customers from order history.</p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button onClick={() => setTab('directory')} style={tabBtn(tab === 'directory')}>Directory</button>
@@ -1117,26 +835,26 @@ export default function Customers() {
               <div className="kpi-icon"><Users size={24} /></div>
               <div className="kpi-value">{kpis.totalCustomers}</div>
               <div className="kpi-label">Total Customers</div>
-              {renderKPIBadge(kpiChanges.totalCustomers)}
+              {renderKPIBadge(growth.totalCustomers)}
             </div>
 
             <div className="kpi-card yellow">
               <div className="kpi-icon"><Package size={24} /></div>
               <div className="kpi-value">{kpis.totalOrders}</div>
               <div className="kpi-label">Total Orders</div>
-              {renderKPIBadge(kpiChanges.totalOrders)}
+              {renderKPIBadge(growth.totalOrders)}
             </div>
             <div className="kpi-card blue">
               <div className="kpi-icon"><UserPlus size={24} /></div>
               <div className="kpi-value">{kpis.newCustomers}</div>
               <div className="kpi-label">New Customers</div>
-              {renderKPIBadge(kpiChanges.newCustomers)}
+              {renderKPIBadge(growth.newCustomers)}
             </div>
             <div className="kpi-card green">
               <div className="kpi-icon"><Repeat2 size={24} /></div>
               <div className="kpi-value">{kpis.returningCustomers}</div>
               <div className="kpi-label">Returning Customers</div>
-              {renderKPIBadge(kpiChanges.returningCustomers)}
+              {renderKPIBadge(growth.returningCustomers)}
             </div>
           </div>
 
@@ -1248,7 +966,7 @@ export default function Customers() {
                   </tr>
                 </thead>
                 <tbody>
-                  {pagedCustomers.map(c => (
+                  {directoryCustomers.map(c => (
                     <tr key={c.id}>
                       <td style={{ fontWeight: 700 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -1282,7 +1000,7 @@ export default function Customers() {
                       </td>
                     </tr>
                   ))}
-                  {filtered.length === 0 && (
+                  {directoryCustomers.length === 0 && (
                     <tr>
                       <td colSpan="7" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>No customers found.</td>
                     </tr>
@@ -1290,7 +1008,7 @@ export default function Customers() {
                 </tbody>
               </table>
             </div>
-            <Pagination page={page} total={filtered.length} perPage={PER_PAGE} onChange={setPage} />
+            <Pagination page={page} total={totalCount} perPage={PER_PAGE} onChange={setPage} />
           </div>
         </>
       )}

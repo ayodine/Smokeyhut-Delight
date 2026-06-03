@@ -114,21 +114,15 @@ export default function Inventory() {
 
   // ─── Core fetches ────────────────────────────────────────────────────────────
   const fetchItemsAndStock = async () => {
-    const [{ data: iData }, { data: mData }] = await Promise.all([
-      supabase.from('inventory_items').select('*').eq('is_active', true).order('name'),
-      supabase.from('inventory_movements').select('item_id, type, quantity'),
-    ]);
-
-    const iList = iData || [];
-    const mList = mData || [];
-
+    const { data, error } = await supabase.rpc('get_inventory_items_with_stock', { p_category: group });
+    if (error) {
+      console.error('[Inventory] Error loading stock:', error);
+      return;
+    }
+    const iList = data || [];
     const map = {};
-    iList.forEach(i => { map[i.id] = 0; });
-    mList.forEach(m => {
-      if (map[m.item_id] === undefined) map[m.item_id] = 0;
-      if      (m.type === 'IN')  map[m.item_id] += num(m.quantity);
-      else if (m.type === 'OUT') map[m.item_id] -= num(m.quantity);
-      else                       map[m.item_id] += num(m.quantity); // ADJUSTMENT (signed)
+    iList.forEach(i => {
+      map[i.id] = Number(i.current_stock || 0);
     });
 
     setItems(iList);
@@ -172,7 +166,7 @@ export default function Inventory() {
       await fetchItemsAndStock();
       setLoading(false);
     })();
-  }, []);
+  }, [group]);
 
   useEffect(() => {
     if (tab === 'movements') fetchMovements();
@@ -288,36 +282,32 @@ export default function Inventory() {
     const fromTs = reportFrom + 'T00:00:00';
     const toTs   = reportTo   + 'T23:59:59';
 
-    const [{ data: before }, { data: inRange }] = await Promise.all([
-      supabase.from('inventory_movements').select('item_id, type, quantity').lt('created_at', fromTs),
-      supabase.from('inventory_movements').select('item_id, type, quantity').gte('created_at', fromTs).lte('created_at', toTs),
-    ]);
-
-    const report = groupItems.map(item => {
-      const opening = (before || [])
-        .filter(m => m.item_id === item.id)
-        .reduce((s, m) => {
-          if (m.type === 'IN')  return s + num(m.quantity);
-          if (m.type === 'OUT') return s - num(m.quantity);
-          return s + num(m.quantity);
-        }, 0);
-
-      let inflow = 0, outflow = 0, adjustment = 0;
-      (inRange || []).filter(m => m.item_id === item.id).forEach(m => {
-        if      (m.type === 'IN')  inflow     += num(m.quantity);
-        else if (m.type === 'OUT') outflow    += num(m.quantity);
-        else                       adjustment += num(m.quantity);
-      });
-
-      return {
-        item,
-        opening:    Math.max(0, opening),
-        inflow,
-        outflow,
-        adjustment,
-        closing:    Math.max(0, opening + inflow - outflow + adjustment),
-      };
+    const { data, error } = await supabase.rpc('get_inventory_flow_report', {
+      p_category: group,
+      p_start: fromTs,
+      p_end: toTs,
     });
+
+    if (error) {
+      console.error('[Inventory] Error generating report:', error);
+      setReportLoading(false);
+      return;
+    }
+
+    const report = (data || []).map(r => ({
+      item: {
+        id: r.item_id,
+        name: r.name,
+        unit: r.unit,
+        low_stock_threshold: r.low_stock_threshold,
+        unit_cost: r.unit_cost,
+      },
+      opening: Number(r.opening || 0),
+      inflow: Number(r.inflow || 0),
+      outflow: Number(r.outflow || 0),
+      adjustment: Number(r.adjustment || 0),
+      closing: Number(r.closing || 0),
+    }));
 
     setReportData(report);
     setReportLoading(false);
