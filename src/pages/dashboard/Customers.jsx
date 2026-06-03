@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Users, DollarSign, Package, Trash2, Download, Mail, Send, Loader2, UserPlus, Repeat2, ChevronUp, ChevronDown, Search, Sparkles, X } from 'lucide-react';
+import { Users, DollarSign, Package, Trash2, Download, Mail, Send, Loader2, UserPlus, Repeat2, ChevronUp, ChevronDown, Search, Sparkles, X, TrendingUp, TrendingDown } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { SkelDashHeader, SkelKpiGrid, SkelTable } from '../../components/Skeleton';
 import Pagination from '../../components/Pagination';
@@ -316,6 +316,167 @@ export default function Customers() {
       }
     };
   }, [allCustomers, rawOrders, overviewDateFilter]);
+
+  const getMetricsForPeriod = (startStr, endStr) => {
+    const rangeOrders = rawOrders.filter(o => {
+      if (!o.created_at) return false;
+      const orderDateStr = new Date(o.created_at).toLocaleDateString('en-CA');
+      if (startStr && orderDateStr < startStr) return false;
+      if (endStr && orderDateStr > endStr) return false;
+      return true;
+    });
+
+    const activeCustomerKeys = new Set(rangeOrders.map(o => o.customer_phone || o.customer_email || o.customer_name).filter(Boolean));
+    const rangeSpend = rangeOrders.filter(o => o.status !== 'cancelled').reduce((sum, o) => sum + Number(o.total || 0), 0);
+    
+    const customerFirstOrderDates = {};
+    rawOrders.forEach(o => {
+      const key = o.customer_phone || o.customer_email || o.customer_name;
+      if (!key) return;
+      const time = new Date(o.created_at).getTime();
+      if (!customerFirstOrderDates[key] || time < customerFirstOrderDates[key].time) {
+        customerFirstOrderDates[key] = { time, dateStr: new Date(o.created_at).toLocaleDateString('en-CA') };
+      }
+    });
+
+    const newCust = Array.from(activeCustomerKeys).filter(key => {
+      const firstDateStr = customerFirstOrderDates[key]?.dateStr;
+      if (!firstDateStr) return false;
+      if (startStr && firstDateStr < startStr) return false;
+      if (endStr && firstDateStr > endStr) return false;
+      return true;
+    }).length;
+    
+    const retCust = activeCustomerKeys.size - newCust;
+
+    return {
+      totalCustomers: activeCustomerKeys.size,
+      totalSpent: rangeSpend,
+      totalOrders: rangeOrders.length,
+      newCustomers: newCust,
+      returningCustomers: retCust
+    };
+  };
+
+  const getPreviousPeriod = (startStr, endStr) => {
+    const sDate = new Date(startStr);
+    const eDate = new Date(endStr);
+    
+    const isFullMonth = sDate.getDate() === 1 && 
+      new Date(eDate.getFullYear(), eDate.getMonth() + 1, 0).getDate() === eDate.getDate() && 
+      sDate.getMonth() === eDate.getMonth() && sDate.getFullYear() === eDate.getFullYear();
+      
+    if (isFullMonth) {
+      const prevMonthStart = new Date(sDate.getFullYear(), sDate.getMonth() - 1, 1);
+      const prevMonthEnd = new Date(sDate.getFullYear(), sDate.getMonth(), 0);
+      return {
+        start: prevMonthStart.toLocaleDateString('en-CA'),
+        end: prevMonthEnd.toLocaleDateString('en-CA')
+      };
+    } else {
+      const diffTime = Math.abs(eDate - sDate);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+      
+      const prevStart = new Date(sDate);
+      prevStart.setDate(sDate.getDate() - diffDays);
+      const prevEnd = new Date(eDate);
+      prevEnd.setDate(eDate.getDate() - diffDays);
+      
+      return {
+        start: prevStart.toLocaleDateString('en-CA'),
+        end: prevEnd.toLocaleDateString('en-CA')
+      };
+    }
+  };
+
+  const getMTDPeriods = () => {
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth();
+    const currentDay = today.getDate();
+    
+    const currStart = new Date(currentYear, currentMonth, 1).toLocaleDateString('en-CA');
+    const currEnd = today.toLocaleDateString('en-CA');
+    
+    const prevStart = new Date(currentYear, currentMonth - 1, 1).toLocaleDateString('en-CA');
+    const lastDayOfPrevMonth = new Date(currentYear, currentMonth, 0).getDate();
+    const targetDay = Math.min(currentDay, lastDayOfPrevMonth);
+    const prevEnd = new Date(currentYear, currentMonth - 1, targetDay).toLocaleDateString('en-CA');
+    
+    return {
+      current: { start: currStart, end: currEnd },
+      previous: { start: prevStart, end: prevEnd }
+    };
+  };
+
+  const getPercentChange = (currentVal, previousVal) => {
+    if (!previousVal) {
+      return currentVal > 0 ? 100 : 0;
+    }
+    return ((currentVal - previousVal) / previousVal) * 100;
+  };
+
+  const kpiChanges = useMemo(() => {
+    let currentMetrics, previousMetrics, labelSuffix;
+    
+    const hasFilter = overviewDateFilter && (overviewDateFilter.start || overviewDateFilter.end);
+    if (hasFilter) {
+      const { start, end } = overviewDateFilter;
+      currentMetrics = getMetricsForPeriod(start, end);
+      const prevPeriod = getPreviousPeriod(start, end);
+      previousMetrics = getMetricsForPeriod(prevPeriod.start, prevPeriod.end);
+      
+      const sDate = new Date(start);
+      const eDate = new Date(end);
+      const isFullMonth = sDate.getDate() === 1 && 
+        new Date(eDate.getFullYear(), eDate.getMonth() + 1, 0).getDate() === eDate.getDate() && 
+        sDate.getMonth() === eDate.getMonth() && sDate.getFullYear() === eDate.getFullYear();
+      labelSuffix = isFullMonth ? 'vs last month' : 'vs prev period';
+    } else {
+      const mtd = getMTDPeriods();
+      currentMetrics = getMetricsForPeriod(mtd.current.start, mtd.current.end);
+      previousMetrics = getMetricsForPeriod(mtd.previous.start, mtd.previous.end);
+      labelSuffix = 'vs last month (MTD)';
+    }
+
+    return {
+      totalCustomers: {
+        pct: getPercentChange(currentMetrics.totalCustomers, previousMetrics.totalCustomers),
+        label: labelSuffix
+      },
+      totalSpent: {
+        pct: getPercentChange(currentMetrics.totalSpent, previousMetrics.totalSpent),
+        label: labelSuffix
+      },
+      totalOrders: {
+        pct: getPercentChange(currentMetrics.totalOrders, previousMetrics.totalOrders),
+        label: labelSuffix
+      },
+      newCustomers: {
+        pct: getPercentChange(currentMetrics.newCustomers, previousMetrics.newCustomers),
+        label: labelSuffix
+      },
+      returningCustomers: {
+        pct: getPercentChange(currentMetrics.returningCustomers, previousMetrics.returningCustomers),
+        label: labelSuffix
+      }
+    };
+  }, [rawOrders, overviewDateFilter]);
+
+  const renderKPIBadge = (change) => {
+    if (!change) return null;
+    const isPositive = change.pct >= 0;
+    const className = `kpi-change ${isPositive ? 'up' : 'down'}`;
+    const Icon = isPositive ? TrendingUp : TrendingDown;
+    
+    return (
+      <div className={className} style={{ gap: 4, alignSelf: 'flex-start' }}>
+        <Icon size={12} style={{ display: 'inline-block', verticalAlign: 'middle' }} />
+        <span>{isPositive ? '+' : ''}{change.pct.toFixed(1)}%</span>
+        <span style={{ opacity: 0.7, fontWeight: 500, marginLeft: 3 }}>{change.label}</span>
+      </div>
+    );
+  };
 
   const fetchCampaigns = async () => {
     setCampsLoading(true);
@@ -933,26 +1094,31 @@ export default function Customers() {
               <div className="kpi-icon"><Users size={24} /></div>
               <div className="kpi-value">{kpis.totalCustomers}</div>
               <div className="kpi-label">Total Customers</div>
+              {renderKPIBadge(kpiChanges.totalCustomers)}
             </div>
             <div className="kpi-card green">
               <div className="kpi-icon"><DollarSign size={24} /></div>
               <div className="kpi-value">{fmt(kpis.totalSpent)}</div>
               <div className="kpi-label">Total Spend</div>
+              {renderKPIBadge(kpiChanges.totalSpent)}
             </div>
             <div className="kpi-card yellow">
               <div className="kpi-icon"><Package size={24} /></div>
               <div className="kpi-value">{kpis.totalOrders}</div>
               <div className="kpi-label">Total Orders</div>
+              {renderKPIBadge(kpiChanges.totalOrders)}
             </div>
             <div className="kpi-card blue">
               <div className="kpi-icon"><UserPlus size={24} /></div>
               <div className="kpi-value">{kpis.newCustomers}</div>
               <div className="kpi-label">New Customers</div>
+              {renderKPIBadge(kpiChanges.newCustomers)}
             </div>
             <div className="kpi-card green">
               <div className="kpi-icon"><Repeat2 size={24} /></div>
               <div className="kpi-value">{kpis.returningCustomers}</div>
               <div className="kpi-label">Returning Customers</div>
+              {renderKPIBadge(kpiChanges.returningCustomers)}
             </div>
           </div>
 
