@@ -141,7 +141,12 @@ export default function Customers() {
         p_limit: PER_PAGE,
         p_offset: (page - 1) * PER_PAGE,
       });
-      if (!error && data) {
+      if (error) {
+        console.error('Error fetching directory:', error);
+        showToast('Error loading customer directory', error.message || 'Unknown error', 'error');
+        setDirectoryCustomers([]);
+        setTotalCount(0);
+      } else if (data) {
         setDirectoryCustomers(data);
         setTotalCount(Number(data[0]?.totalCount || 0));
       } else {
@@ -337,6 +342,12 @@ export default function Customers() {
     if (data) setCampaigns(data);
     setCampsLoading(false);
   };
+
+  useEffect(() => {
+    if (tab === 'campaigns') {
+      fetchCampaigns();
+    }
+  }, [tab]);
 
   const fullAudienceList = campaignAudience;
   const audienceList = fullAudienceList.filter(c => !excludedEmails.has(c.email.trim().toLowerCase()));
