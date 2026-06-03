@@ -73,6 +73,7 @@ export default function Customers() {
   const [kpis, setKpis] = useState({ totalCustomers: 0, totalSpent: 0, totalOrders: 0, newCustomers: 0, returningCustomers: 0, noEmailCount: 0 });
   const [growth, setGrowth] = useState({ totalCustomers: null, totalSpent: null, totalOrders: null, newCustomers: null, returningCustomers: null });
   const [campaignAudience, setCampaignAudience] = useState([]);
+  const [campaignProgress, setCampaignProgress] = useState(null);
 
   const [kpiLoading, setKpiLoading] = useState(false);
   const [directoryLoading, setDirectoryLoading] = useState(false);
@@ -520,58 +521,83 @@ export default function Customers() {
               console.error('Failed to reset logs status for retry:', resetErr);
             }
 
-            // Invoke edge function
-            let invokeErr = null;
-            try {
-              const { data: result, error } = await supabase.functions.invoke('send-campaign', {
+            const CHUNK_SIZE = 25;
+            let retriedSent = 0;
+            let retriedFailed = 0;
+            setCampaignProgress({ title: 'Retrying failed emails...', sent: 0, failed: 0, total: recipients.length });
+
+            for (let i = 0; i < recipients.length; i += CHUNK_SIZE) {
+              const chunk = recipients.slice(i, i + CHUNK_SIZE);
+              
+              const { data: chunkRes, error: invokeErr } = await supabase.functions.invoke('send-campaign', {
                 body: {
                   subject: campaign.subject,
                   body: campaign.body,
-                  recipients,
+                  recipients: chunk,
                   campaign_id: campaign.id,
                   retry: true
-                },
+                }
               });
-              if (error) invokeErr = error;
-            } catch (e) {
-              invokeErr = e;
+
+              if (invokeErr) {
+                console.error(`Edge function invoke error for retry batch starting at index ${i}:`, invokeErr);
+                retriedFailed += chunk.length;
+                const emailsInChunk = chunk.map(r => r.email.trim().toLowerCase());
+                await supabase
+                  .from('campaign_logs')
+                  .update({
+                    status: 'failed',
+                    error: invokeErr.message || 'SMTP Connection Timeout or Rate Limit exceeded'
+                  })
+                  .eq('campaign_id', campaign.id)
+                  .in('email', emailsInChunk);
+              } else {
+                retriedSent += chunkRes?.sent || 0;
+                retriedFailed += chunkRes?.failed || 0;
+              }
+
+              // Update progress state
+              setCampaignProgress({
+                title: `Retrying batch ${Math.floor(i / CHUNK_SIZE) + 1} of ${Math.ceil(recipients.length / CHUNK_SIZE)}...`,
+                sent: retriedSent,
+                failed: retriedFailed,
+                total: recipients.length
+              });
+
+              // Query DB logs to get final counts for the whole campaign
+              const { data: logs } = await supabase
+                .from('campaign_logs')
+                .select('*')
+                .eq('campaign_id', campaign.id);
+              
+              const actualSent = logs ? logs.filter(l => l.status === 'sent').length : 0;
+              const actualFailed = logs ? logs.filter(l => l.status === 'failed' && l.error !== 'Pending execution').length : 0;
+              const pendingCount = logs ? logs.filter(l => l.status === 'failed' && l.error === 'Pending execution').length : 0;
+
+              const isFinished = (i + CHUNK_SIZE) >= recipients.length;
+              let currentStatus = 'sending';
+              if (isFinished) {
+                currentStatus = pendingCount > 0 ? 'partial' : (actualFailed > 0 ? (actualSent > 0 ? 'partial' : 'failed') : 'sent');
+              }
+
+              await supabase.from('email_campaigns').update({
+                sent_count: actualSent,
+                failed_count: actualFailed,
+                status: currentStatus
+              }).eq('id', campaign.id);
+
+              if (detailCampaign && detailCampaign.id === campaign.id) {
+                setDetailCampaign(prev => prev ? { ...prev, sent_count: actualSent, failed_count: actualFailed, status: currentStatus } : null);
+                if (logs) setCampaignLogs(logs);
+              }
+              setCampaigns(prev => prev.map(c => c.id === campaign.id ? { ...c, sent_count: actualSent, failed_count: actualFailed, status: currentStatus } : c));
+
+              if (!isFinished) {
+                await new Promise(resolve => setTimeout(resolve, 1500));
+              }
             }
 
-            // Fetch actual logs to update final counts and status
-            const { data: logs } = await supabase
-              .from('campaign_logs')
-              .select('*')
-              .eq('campaign_id', campaign.id)
-              .order('created_at', { ascending: true });
-
-            const actualSent = logs ? logs.filter(l => l.status === 'sent').length : 0;
-            const actualFailed = logs ? logs.filter(l => l.status === 'failed' && l.error !== 'Pending execution').length : 0;
-            const pendingCount = logs ? logs.filter(l => l.status === 'failed' && l.error === 'Pending execution').length : 0;
-
-            let finalStatus = 'sent';
-            if (pendingCount > 0) {
-              finalStatus = 'partial';
-            } else if (actualFailed > 0) {
-              finalStatus = actualSent > 0 ? 'partial' : 'failed';
-            }
-
-            await supabase.from('email_campaigns').update({
-              sent_count: actualSent,
-              failed_count: actualFailed,
-              status: finalStatus,
-            }).eq('id', campaign.id);
-
-            if (detailCampaign && detailCampaign.id === campaign.id) {
-              setDetailCampaign(prev => prev ? { ...prev, sent_count: actualSent, failed_count: actualFailed, status: finalStatus } : null);
-              if (logs) setCampaignLogs(logs);
-            }
-            setCampaigns(prev => prev.map(c => c.id === campaign.id ? { ...c, sent_count: actualSent, failed_count: actualFailed, status: finalStatus } : c));
-
-            if (invokeErr) {
-              throw new Error(invokeErr.message || 'Retry failed partially');
-            }
-
-            showToast('Success', `Retry complete: ${actualSent} sent, ${actualFailed} failed`, 'success');
+            showToast('Success', 'Retry batch completed successfully', 'success');
           } catch (err) {
             // Mark campaign status/counts based on current database state
             const { data: logs } = await supabase
@@ -603,6 +629,7 @@ export default function Customers() {
             showToast('Error during retry', err.message, 'error');
           } finally {
             setSending(false);
+            setCampaignProgress(null);
             setConfirmAction(null);
           }
         }
@@ -672,47 +699,75 @@ export default function Customers() {
             }
           }
 
-          // 2. Invoke edge function — passes campaign_id so it can log each email
-          let invokeError = null;
-          try {
-            const { data: result, error } = await supabase.functions.invoke('send-campaign', {
-              body: { subject: form.subject, body: form.body, recipients, campaign_id: campaignId },
+          // 2. Invoke edge function in batches
+          const CHUNK_SIZE = 25;
+          let accumulatedSent = 0;
+          let accumulatedFailed = 0;
+          setCampaignProgress({ title: 'Sending Campaign...', sent: 0, failed: 0, total: recipients.length });
+
+          for (let i = 0; i < recipients.length; i += CHUNK_SIZE) {
+            const chunk = recipients.slice(i, i + CHUNK_SIZE);
+            
+            const { data: chunkRes, error: invokeErr } = await supabase.functions.invoke('send-campaign', {
+              body: {
+                subject: form.subject,
+                body: form.body,
+                recipients: chunk,
+                campaign_id: campaignId
+              }
             });
-            if (error) invokeError = error;
-          } catch (e) {
-            invokeError = e;
+
+            if (invokeErr) {
+              console.error(`Edge function invoke error for batch starting at index ${i}:`, invokeErr);
+              accumulatedFailed += chunk.length;
+              const emailsInChunk = chunk.map(r => r.email.trim().toLowerCase());
+              await supabase
+                .from('campaign_logs')
+                .update({
+                  status: 'failed',
+                  error: invokeErr.message || 'SMTP Connection Timeout or Rate Limit exceeded'
+                })
+                .eq('campaign_id', campaignId)
+                .in('email', emailsInChunk);
+            } else {
+              accumulatedSent += chunkRes?.sent || 0;
+              accumulatedFailed += chunkRes?.failed || 0;
+            }
+
+            // Update progress state
+            setCampaignProgress({
+              title: `Sending batch ${Math.floor(i / CHUNK_SIZE) + 1} of ${Math.ceil(recipients.length / CHUNK_SIZE)}...`,
+              sent: accumulatedSent,
+              failed: accumulatedFailed,
+              total: recipients.length
+            });
+
+            // Update the email_campaigns status/counts in real-time in the database
+            const isFinished = (i + CHUNK_SIZE) >= recipients.length;
+            let currentStatus = 'sending';
+            if (isFinished) {
+              currentStatus = accumulatedFailed > 0 ? (accumulatedSent > 0 ? 'partial' : 'failed') : 'sent';
+            }
+
+            await supabase
+              .from('email_campaigns')
+              .update({
+                sent_count: accumulatedSent,
+                failed_count: accumulatedFailed,
+                status: currentStatus
+              })
+              .eq('id', campaignId);
+            
+            fetchCampaigns();
+
+            if (!isFinished) {
+              await new Promise(resolve => setTimeout(resolve, 1500));
+            }
           }
 
-          // 3. Fetch actual logs to update final stats accurately
-          const { data: logs } = await supabase
-            .from('campaign_logs')
-            .select('status, error')
-            .eq('campaign_id', campaignId);
-
-          const actualSent = logs ? logs.filter(l => l.status === 'sent').length : 0;
-          const actualFailed = logs ? logs.filter(l => l.status === 'failed' && l.error !== 'Pending execution').length : 0;
-          const pendingCount = logs ? logs.filter(l => l.status === 'failed' && l.error === 'Pending execution').length : 0;
-
-          let finalStatus = 'sent';
-          if (pendingCount > 0) {
-            finalStatus = 'partial';
-          } else if (actualFailed > 0) {
-            finalStatus = actualSent > 0 ? 'partial' : 'failed';
-          }
-
-          await supabase.from('email_campaigns').update({
-            sent_count: actualSent,
-            failed_count: actualFailed,
-            status: finalStatus,
-          }).eq('id', campaignId);
-
-          if (invokeError) {
-            throw new Error(invokeError.message || 'Send failed partially');
-          }
-
-          setSendResult({ sent: actualSent, failed: actualFailed });
+          setSendResult({ sent: accumulatedSent, failed: accumulatedFailed });
           setForm({ name: '', subject: '', body: DEFAULT_CAMPAIGN_BODY, audience: 'all', dateFilter: { start: null, end: null } });
-          showToast('Success', `Campaign sent: ${actualSent} sent, ${actualFailed} failed`, 'success');
+          showToast('Success', `Campaign completed: ${accumulatedSent} sent, ${accumulatedFailed} failed`, 'success');
           fetchCampaigns();
         } catch (err) {
           // Mark campaign as failed/partial based on actual logs
@@ -741,6 +796,7 @@ export default function Customers() {
           fetchCampaigns();
         } finally {
           setSending(false);
+          setCampaignProgress(null);
           setConfirmAction(null);
         }
       }
@@ -1138,6 +1194,22 @@ export default function Customers() {
                   </button>
                 </div>
               </div>
+
+              {campaignProgress && (
+                <div style={{ width: '100%', marginTop: 12, padding: '12px 16px', background: 'var(--black2)', border: '1px solid var(--border-subtle)', borderRadius: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', fontWeight: 700 }}>
+                    <span style={{ color: 'var(--red)' }}>{campaignProgress.title || 'Sending Campaign...'}</span>
+                    <span style={{ color: 'var(--text)' }}>{campaignProgress.sent + campaignProgress.failed} / {campaignProgress.total} ({Math.round(((campaignProgress.sent + campaignProgress.failed) / campaignProgress.total) * 100)}%)</span>
+                  </div>
+                  <div style={{ height: 6, background: 'rgba(0,0,0,0.1)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', background: 'var(--red)', width: `${((campaignProgress.sent + campaignProgress.failed) / (campaignProgress.total || 1)) * 100}%`, transition: 'width 0.3s ease' }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                    <span style={{ color: '#16a34a', fontWeight: 600 }}>Delivered: {campaignProgress.sent}</span>
+                    <span style={{ color: '#dc2626', fontWeight: 600 }}>Failed: {campaignProgress.failed}</span>
+                  </div>
+                </div>
+              )}
 
               {/* COLLAPSIBLE MAILING LIST ACCORDION */}
               <div className="dash-card" style={{ margin: '20px 0 0 0', padding: '16px 20px', border: '1px solid var(--border-subtle)', boxShadow: '0 2px 8px rgba(0,0,0,0.01)' }}>
