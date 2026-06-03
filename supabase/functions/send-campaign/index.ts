@@ -60,17 +60,7 @@ serve(async (req) => {
       })
     }
 
-    // If this is a retry, delete previous failed logs to avoid duplicates and correct statistics
-    if (campaign_id && retry) {
-      const { error: deleteErr } = await serviceClient
-        .from('campaign_logs')
-        .delete()
-        .eq('campaign_id', campaign_id)
-        .eq('status', 'failed')
-      if (deleteErr) {
-        console.error('Failed to delete old failed logs:', deleteErr)
-      }
-    }
+
 
     // Connect to Gmail SMTP server securely via TLS (port 465) using deno-mailer
     const client = mailer.transporter({
@@ -150,13 +140,13 @@ serve(async (req) => {
       // Log this individual send attempt if a campaign_id was provided
       if (campaign_id) {
         try {
-          await serviceClient.from('campaign_logs').insert({
+          await serviceClient.from('campaign_logs').upsert({
             campaign_id,
             email: r.email,
             name: r.name || null,
             status: success ? 'sent' : 'failed',
             error: errorMsg ?? null,
-          })
+          }, { onConflict: 'campaign_id,email' })
         } catch (logErr) {
           // Never let logging failure break the send loop
           console.error('Failed to write campaign log:', logErr)

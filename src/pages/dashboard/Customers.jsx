@@ -114,11 +114,11 @@ export default function Customers() {
         setCampaignLogs(data);
         
         const actualSent = data.filter(log => log.status === 'sent').length;
-        const actualFailed = data.filter(log => log.status === 'failed').length;
-        const total = detailCampaign.recipient_count || 0;
+        const actualFailed = data.filter(log => log.status === 'failed' && log.error !== 'Pending execution').length;
+        const pendingCount = data.filter(log => log.status === 'failed' && log.error === 'Pending execution').length;
         
         let newStatus = 'sending';
-        if (actualSent + actualFailed >= total) {
+        if (pendingCount === 0) {
           newStatus = actualFailed > 0 ? (actualSent > 0 ? 'partial' : 'failed') : 'sent';
         }
         
@@ -514,12 +514,13 @@ export default function Customers() {
 
     if (logs.length > 0) {
       const actualSent = logs.filter(log => log.status === 'sent').length;
-      const actualFailed = logs.filter(log => log.status === 'failed').length;
+      const actualFailed = logs.filter(log => log.status === 'failed' && log.error !== 'Pending execution').length;
       const total = campaign.recipient_count || 0;
+      const pendingCount = logs.filter(log => log.status === 'failed' && log.error === 'Pending execution').length;
       
-      const expectedStatus = campaign.status === 'sending' 
+      const expectedStatus = campaign.status === 'sending' && pendingCount > 0
         ? 'sending' 
-        : (actualSent + actualFailed < total ? 'partial' : (actualFailed > 0 ? (actualSent > 0 ? 'partial' : 'failed') : 'sent'));
+        : (pendingCount > 0 ? 'partial' : (actualFailed > 0 ? (actualSent > 0 ? 'partial' : 'failed') : 'sent'));
         
       if (campaign.sent_count !== actualSent || campaign.failed_count !== actualFailed || campaign.status !== expectedStatus) {
         await supabase
@@ -551,35 +552,15 @@ export default function Customers() {
   const handleRetryFailed = async (campaign) => {
     setSending(true);
     try {
-      // Fetch all logs first to find who has received it
-      let logs = [];
-      if (detailCampaign && detailCampaign.id === campaign.id && campaignLogs.length > 0) {
-        logs = campaignLogs;
-      } else {
-        const { data, error } = await supabase
-          .from('campaign_logs')
-          .select('*')
-          .eq('campaign_id', campaign.id);
-        if (error) throw error;
-        logs = data || [];
-      }
+      // Query the database directly for logs with status === 'failed' (failed and unattempted)
+      const { data: failedLogs, error } = await supabase
+        .from('campaign_logs')
+        .select('*')
+        .eq('campaign_id', campaign.id)
+        .eq('status', 'failed');
 
-      const sentEmails = new Set(
-        logs.filter(log => log.status === 'sent').map(log => log.email.trim().toLowerCase())
-      );
-
-      // Resolve audience list
-      const campaignTime = new Date(campaign.created_at).getTime();
-      const fullList = getAudience(campaign.audience, null);
-      const historicalList = fullList.filter(c => {
-        if (c.ordersDetails && c.ordersDetails.length > 0) {
-          return c.ordersDetails.some(o => new Date(o.created_at).getTime() < campaignTime);
-        }
-        return false;
-      });
-      
-      // We retry anyone who hasn't been sent successfully yet
-      const toRetry = historicalList.filter(c => c.email && !sentEmails.has(c.email.trim().toLowerCase()));
+      if (error) throw error;
+      const toRetry = failedLogs || [];
 
       if (toRetry.length === 0) {
         showToast('Info', 'No undelivered recipients found for this campaign.', 'info');
@@ -595,9 +576,9 @@ export default function Customers() {
         onConfirm: async () => {
           setConfirmAction(prev => ({ ...prev, isLoading: true }));
           try {
-            const recipients = toRetry.map(c => ({
-              email: c.email,
-              name: c.name || ''
+            const recipients = toRetry.map(log => ({
+              email: log.email,
+              name: log.name || ''
             }));
 
             // Update status to sending
@@ -608,6 +589,22 @@ export default function Customers() {
 
             if (detailCampaign && detailCampaign.id === campaign.id) {
               setDetailCampaign(prev => ({ ...prev, status: 'sending' }));
+            }
+
+            // Reset all to-be-retried logs to 'Pending execution' in campaign_logs first
+            // to show them properly as pending in the UI during retry
+            const emailsToReset = toRetry.map(log => log.email.trim().toLowerCase());
+            const { error: resetErr } = await supabase
+              .from('campaign_logs')
+              .update({
+                status: 'failed',
+                error: 'Pending execution'
+              })
+              .eq('campaign_id', campaign.id)
+              .in('email', emailsToReset);
+
+            if (resetErr) {
+              console.error('Failed to reset logs status for retry:', resetErr);
             }
 
             // Invoke edge function
@@ -635,11 +632,11 @@ export default function Customers() {
               .order('created_at', { ascending: true });
 
             const actualSent = logs ? logs.filter(l => l.status === 'sent').length : 0;
-            const actualFailed = logs ? logs.filter(l => l.status === 'failed').length : 0;
-            const total = campaign.recipient_count || 0;
+            const actualFailed = logs ? logs.filter(l => l.status === 'failed' && l.error !== 'Pending execution').length : 0;
+            const pendingCount = logs ? logs.filter(l => l.status === 'failed' && l.error === 'Pending execution').length : 0;
 
             let finalStatus = 'sent';
-            if (actualSent + actualFailed < total) {
+            if (pendingCount > 0) {
               finalStatus = 'partial';
             } else if (actualFailed > 0) {
               finalStatus = actualSent > 0 ? 'partial' : 'failed';
@@ -651,50 +648,46 @@ export default function Customers() {
               status: finalStatus,
             }).eq('id', campaign.id);
 
+            if (detailCampaign && detailCampaign.id === campaign.id) {
+              setDetailCampaign(prev => prev ? { ...prev, sent_count: actualSent, failed_count: actualFailed, status: finalStatus } : null);
+              if (logs) setCampaignLogs(logs);
+            }
+            setCampaigns(prev => prev.map(c => c.id === campaign.id ? { ...c, sent_count: actualSent, failed_count: actualFailed, status: finalStatus } : c));
+
             if (invokeErr) {
               throw new Error(invokeErr.message || 'Retry failed partially');
             }
 
             showToast('Success', `Retry complete: ${actualSent} sent, ${actualFailed} failed`, 'success');
-            fetchCampaigns();
-
-            if (detailCampaign && detailCampaign.id === campaign.id) {
-              setDetailCampaign({
-                ...campaign,
-                sent_count: actualSent,
-                failed_count: actualFailed,
-                status: finalStatus
-              });
-              setCampaignLogs(logs || []);
-            }
           } catch (err) {
-            showToast('Error retrying campaign', err.message, 'error');
+            // Mark campaign status/counts based on current database state
             const { data: logs } = await supabase
               .from('campaign_logs')
               .select('*')
-              .eq('campaign_id', campaign.id)
-              .order('created_at', { ascending: true });
-              
+              .eq('campaign_id', campaign.id);
+
             const actualSent = logs ? logs.filter(l => l.status === 'sent').length : 0;
-            const actualFailed = logs ? logs.filter(l => l.status === 'failed').length : 0;
-            const total = campaign.recipient_count || 0;
-            
+            const actualFailed = logs ? logs.filter(l => l.status === 'failed' && l.error !== 'Pending execution').length : 0;
+            const pendingCount = logs ? logs.filter(l => l.status === 'failed' && l.error === 'Pending execution').length : 0;
+
             let finalStatus = 'failed';
-            if (actualSent > 0) {
-              finalStatus = (actualSent + actualFailed < total) ? 'partial' : 'failed';
+            if (actualSent > 0 || pendingCount > 0) {
+              finalStatus = 'partial';
             }
-            
+
             await supabase.from('email_campaigns').update({
               sent_count: actualSent,
               failed_count: actualFailed,
               status: finalStatus,
             }).eq('id', campaign.id);
-            
+
             if (detailCampaign && detailCampaign.id === campaign.id) {
               setDetailCampaign(prev => prev ? { ...prev, sent_count: actualSent, failed_count: actualFailed, status: finalStatus } : null);
-              setCampaignLogs(logs || []);
+              if (logs) setCampaignLogs(logs);
             }
-            fetchCampaigns();
+            setCampaigns(prev => prev.map(c => c.id === campaign.id ? { ...c, sent_count: actualSent, failed_count: actualFailed, status: finalStatus } : c));
+
+            showToast('Error during retry', err.message, 'error');
           } finally {
             setSending(false);
             setConfirmAction(null);
@@ -748,6 +741,24 @@ export default function Customers() {
           if (insertErr) throw new Error(insertErr.message);
           campaignId = campaignRow.id;
 
+          // 1.5 Pre-populate campaign_logs as 'failed' with 'Pending execution' in batches of 100
+          const batchSize = 100;
+          for (let i = 0; i < recipients.length; i += batchSize) {
+            const batch = recipients.slice(i, i + batchSize).map(r => ({
+              campaign_id: campaignId,
+              email: r.email,
+              name: r.name || null,
+              status: 'failed',
+              error: 'Pending execution'
+            }));
+            const { error: logErr } = await supabase
+              .from('campaign_logs')
+              .insert(batch);
+            if (logErr) {
+              throw new Error(`Failed to initialize campaign logs: ${logErr.message}`);
+            }
+          }
+
           // 2. Invoke edge function — passes campaign_id so it can log each email
           let invokeError = null;
           try {
@@ -762,15 +773,15 @@ export default function Customers() {
           // 3. Fetch actual logs to update final stats accurately
           const { data: logs } = await supabase
             .from('campaign_logs')
-            .select('status')
+            .select('status, error')
             .eq('campaign_id', campaignId);
 
           const actualSent = logs ? logs.filter(l => l.status === 'sent').length : 0;
-          const actualFailed = logs ? logs.filter(l => l.status === 'failed').length : 0;
-          const total = recipients.length;
+          const actualFailed = logs ? logs.filter(l => l.status === 'failed' && l.error !== 'Pending execution').length : 0;
+          const pendingCount = logs ? logs.filter(l => l.status === 'failed' && l.error === 'Pending execution').length : 0;
 
           let finalStatus = 'sent';
-          if (actualSent + actualFailed < total) {
+          if (pendingCount > 0) {
             finalStatus = 'partial';
           } else if (actualFailed > 0) {
             finalStatus = actualSent > 0 ? 'partial' : 'failed';
@@ -795,15 +806,16 @@ export default function Customers() {
           if (campaignId) {
             const { data: logs } = await supabase
               .from('campaign_logs')
-              .select('status')
+              .select('status, error')
               .eq('campaign_id', campaignId);
 
             const actualSent = logs ? logs.filter(l => l.status === 'sent').length : 0;
-            const actualFailed = logs ? logs.filter(l => l.status === 'failed').length : 0;
+            const actualFailed = logs ? logs.filter(l => l.status === 'failed' && l.error !== 'Pending execution').length : 0;
+            const pendingCount = logs ? logs.filter(l => l.status === 'failed' && l.error === 'Pending execution').length : 0;
             
             let finalStatus = 'failed';
-            if (actualSent > 0) {
-              finalStatus = (actualSent + actualFailed < recipients.length) ? 'partial' : 'failed';
+            if (actualSent > 0 || pendingCount > 0) {
+              finalStatus = 'partial';
             }
 
             await supabase.from('email_campaigns').update({
@@ -1838,28 +1850,16 @@ export default function Customers() {
                   </thead>
                   <tbody>
                     {(() => {
-                      const campaignTime = new Date(detailCampaign.created_at).getTime();
-                      const fullList = getAudience(detailCampaign.audience, null);
-                      const historicalList = fullList.filter(c => {
-                        if (c.ordersDetails && c.ordersDetails.length > 0) {
-                          return c.ordersDetails.some(o => new Date(o.created_at).getTime() < campaignTime);
+                      const allLogsToShow = campaignLogs.map(log => {
+                        if (log.status === 'failed' && log.error === 'Pending execution') {
+                          return {
+                            ...log,
+                            status: 'pending',
+                            error: 'Not attempted (Timeout/Interrupted)'
+                          };
                         }
-                        return false;
+                        return log;
                       });
-                      const loggedEmails = new Set(campaignLogs.map(l => l.email.trim().toLowerCase()));
-                      const remainingRecipients = historicalList.filter(c => c.email && !loggedEmails.has(c.email.trim().toLowerCase()));
-
-                      const allLogsToShow = [
-                        ...campaignLogs,
-                        ...remainingRecipients.map((c, index) => ({
-                          id: `remaining-${index}`,
-                          email: c.email,
-                          name: c.name || '',
-                          status: 'pending',
-                          error: 'Not attempted (Timeout/Interrupted)',
-                          created_at: detailCampaign.created_at
-                        }))
-                      ];
 
                       return allLogsToShow.map(log => (
                         <tr key={log.id}>
