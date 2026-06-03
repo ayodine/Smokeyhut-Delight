@@ -551,37 +551,46 @@ export default function Customers() {
   const handleRetryFailed = async (campaign) => {
     setSending(true);
     try {
-      // Fetch failed logs first if we don't have them
-      let failedLogs = [];
+      // Fetch all logs first to find who has received it
+      let logs = [];
       if (detailCampaign && detailCampaign.id === campaign.id && campaignLogs.length > 0) {
-        failedLogs = campaignLogs.filter(log => log.status === 'failed');
+        logs = campaignLogs;
       } else {
         const { data, error } = await supabase
           .from('campaign_logs')
           .select('*')
-          .eq('campaign_id', campaign.id)
-          .eq('status', 'failed');
+          .eq('campaign_id', campaign.id);
         if (error) throw error;
-        failedLogs = data || [];
+        logs = data || [];
       }
 
-      if (failedLogs.length === 0) {
-        showToast('Info', 'No failed recipients found for this campaign.', 'info');
+      const sentEmails = new Set(
+        logs.filter(log => log.status === 'sent').map(log => log.email.trim().toLowerCase())
+      );
+
+      // Resolve audience list
+      const fullList = getAudience(campaign.audience, null);
+      
+      // We retry anyone who hasn't been sent successfully yet
+      const toRetry = fullList.filter(c => c.email && !sentEmails.has(c.email.trim().toLowerCase()));
+
+      if (toRetry.length === 0) {
+        showToast('Info', 'No undelivered recipients found for this campaign.', 'info');
         setSending(false);
         return;
       }
 
       setConfirmAction({
-        title: 'Retry Failed Emails',
-        message: `Retry sending this campaign to ${failedLogs.length} failed recipient${failedLogs.length !== 1 ? 's' : ''}?`,
+        title: 'Retry Failed/Remaining Emails',
+        message: `Retry sending this campaign to ${toRetry.length} undelivered recipient${toRetry.length !== 1 ? 's' : ''}?`,
         isDestructive: false,
         confirmText: 'Retry Now',
         onConfirm: async () => {
           setConfirmAction(prev => ({ ...prev, isLoading: true }));
           try {
-            const recipients = failedLogs.map(log => ({
-              email: log.email,
-              name: log.name || ''
+            const recipients = toRetry.map(c => ({
+              email: c.email,
+              name: c.name || ''
             }));
 
             // Update status to sending
@@ -1682,7 +1691,7 @@ export default function Customers() {
                               >
                                 View Details
                               </button>
-                              {failed > 0 && (
+                              {(failed > 0 || remaining > 0) && (
                                 <button
                                   disabled={sending}
                                   onClick={() => handleRetryFailed(c)}
