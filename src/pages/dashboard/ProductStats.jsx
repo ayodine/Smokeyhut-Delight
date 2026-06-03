@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { DollarSign, ShoppingBag, TrendingUp, Users, ChevronRight, ArrowLeft, Search, X } from 'lucide-react';
+import { DollarSign, ShoppingBag, TrendingUp, TrendingDown, Users, ChevronRight, ArrowLeft, Search, X } from 'lucide-react';
 import { SkelKpiGrid, SkelTopListCard, SkelFilterPills, SkelTable } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import DashCalendar from '../../components/DashCalendar';
@@ -35,6 +35,38 @@ function getPeriodParams(key, customDate) {
     return { start: s ? s.toISOString() : null, end: e ? e.toISOString() : null };
   }
   return { start: null, end: null };
+}
+
+function getPreviousPeriodParams(key, customDate) {
+  const now = new Date();
+  if (key === 'today') {
+    const start = new Date(now); start.setDate(now.getDate() - 1); start.setHours(0, 0, 0, 0);
+    const end = new Date(now); end.setHours(0, 0, 0, 0);
+    return { start: start.toISOString(), end: end.toISOString(), label: 'vs yesterday' };
+  }
+  if (key === 'week') {
+    const start = new Date(now); start.setDate(now.getDate() - ((now.getDay() + 6) % 7) - 7); start.setHours(0, 0, 0, 0);
+    const end = new Date(now); end.setDate(now.getDate() - ((now.getDay() + 6) % 7)); end.setHours(0, 0, 0, 0);
+    return { start: start.toISOString(), end: end.toISOString(), label: 'vs last week' };
+  }
+  if (key === 'month') {
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth(), 1);
+    return { start: start.toISOString(), end: end.toISOString(), label: 'vs last month' };
+  }
+  if (key === 'custom' && customDate && customDate.start && customDate.end) {
+    const s = new Date(`${customDate.start}T00:00:00`);
+    const e = new Date(`${customDate.end}T23:59:59.999`);
+    const diffTime = Math.abs(e - s);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const start = new Date(s); start.setDate(s.getDate() - diffDays);
+    const end = new Date(s); end.setMilliseconds(-1);
+    return { start: start.toISOString(), end: end.toISOString(), label: `vs prev ${diffDays}d` };
+  }
+  // For 'all' or fallback
+  const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const end = new Date(now.getFullYear(), now.getMonth(), 1);
+  return { start: start.toISOString(), end: end.toISOString(), label: 'vs last month' };
 }
 
 function normalizeProductName(name) {
@@ -378,12 +410,34 @@ export default function Stats() {
       setDrillDown(null);
 
       const { start: startParam, end: endParam } = getPeriodParams(period, customDate);
-      const [kpisRes, listsRes] = await Promise.all([
+      const prevParams = getPreviousPeriodParams(period, customDate);
+
+      const [kpisRes, listsRes, prevKpisRes] = await Promise.all([
         supabase.rpc('get_product_stats_kpis',  { p_store_id: storeParam, p_start: startParam, p_end: endParam }),
         supabase.rpc('get_product_stats_lists', { p_store_id: storeParam, p_start: startParam, p_end: endParam }),
+        period === 'all' 
+          ? Promise.resolve({ data: null }) 
+          : supabase.rpc('get_product_stats_kpis',  { p_store_id: storeParam, p_start: prevParams.start, p_end: prevParams.end }),
       ]);
       if (cancelled) return;
-      if (kpisRes.error)  setKpiErr(true);  else setKpis(kpisRes.data);
+      
+      if (kpisRes.error) {
+        setKpiErr(true);
+      } else {
+        const currData = kpisRes.data || {};
+        let growth = null;
+        if (period !== 'all' && prevKpisRes.data) {
+          const revenue = currData.revenue ?? 0;
+          const prevRevenue = prevKpisRes.data.revenue ?? 0;
+          const pct = prevRevenue > 0 ? ((revenue - prevRevenue) / prevRevenue) * 100 : (revenue > 0 ? 100 : 0);
+          growth = { pct, label: prevParams.label };
+        }
+        setKpis({
+          ...currData,
+          growth
+        });
+      }
+      
       if (listsRes.error) {
         setListErr(true);
       } else {
@@ -447,6 +501,21 @@ export default function Stats() {
     }
   };
 
+  const renderKPIBadge = (change) => {
+    if (!change) return null;
+    const isPositive = change.pct >= 0;
+    const className = `kpi-change ${isPositive ? 'up' : 'down'}`;
+    const Icon = isPositive ? TrendingUp : TrendingDown;
+    
+    return (
+      <div className={className} style={{ gap: 4, alignSelf: 'flex-start' }}>
+        <Icon size={12} style={{ display: 'inline-block', verticalAlign: 'middle' }} />
+        <span>{isPositive ? '+' : ''}{change.pct.toFixed(1)}%</span>
+        <span style={{ opacity: 0.7, fontWeight: 500, marginLeft: 3 }}>{change.label}</span>
+      </div>
+    );
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div>
@@ -491,7 +560,8 @@ export default function Stats() {
             <div className="kpi-card green">
               <div className="kpi-icon"><DollarSign size={24} /></div>
               <div className="kpi-value">{kpiErr ? '—' : fmt(kpis?.revenue ?? 0)}</div>
-              <div className="kpi-label">Total Revenue</div>
+              <div className="kpi-label">Total Spend</div>
+              {renderKPIBadge(kpis?.growth)}
             </div>
             <div className="kpi-card blue">
               <div className="kpi-icon"><ShoppingBag size={24} /></div>

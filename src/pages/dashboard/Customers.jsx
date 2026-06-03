@@ -1119,12 +1119,7 @@ export default function Customers() {
               <div className="kpi-label">Total Customers</div>
               {renderKPIBadge(kpiChanges.totalCustomers)}
             </div>
-            <div className="kpi-card green">
-              <div className="kpi-icon"><DollarSign size={24} /></div>
-              <div className="kpi-value">{fmt(kpis.totalSpent)}</div>
-              <div className="kpi-label">Total Spend</div>
-              {renderKPIBadge(kpiChanges.totalSpent)}
-            </div>
+
             <div className="kpi-card yellow">
               <div className="kpi-icon"><Package size={24} /></div>
               <div className="kpi-value">{kpis.totalOrders}</div>
