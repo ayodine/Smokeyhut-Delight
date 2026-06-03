@@ -507,7 +507,7 @@ export default function Customers() {
 
             // Reset all to-be-retried logs to 'Pending execution' in campaign_logs first
             // to show them properly as pending in the UI during retry
-            const emailsToReset = toRetry.map(log => log.email.trim().toLowerCase());
+            const emailsToReset = toRetry.map(log => log.email.trim());
             const { error: resetErr } = await supabase
               .from('campaign_logs')
               .update({
@@ -542,7 +542,7 @@ export default function Customers() {
               if (invokeErr) {
                 console.error(`Edge function invoke error for retry batch starting at index ${i}:`, invokeErr);
                 retriedFailed += chunk.length;
-                const emailsInChunk = chunk.map(r => r.email.trim().toLowerCase());
+                const emailsInChunk = chunk.map(r => r.email.trim());
                 await supabase
                   .from('campaign_logs')
                   .update({
@@ -720,7 +720,7 @@ export default function Customers() {
             if (invokeErr) {
               console.error(`Edge function invoke error for batch starting at index ${i}:`, invokeErr);
               accumulatedFailed += chunk.length;
-              const emailsInChunk = chunk.map(r => r.email.trim().toLowerCase());
+              const emailsInChunk = chunk.map(r => r.email.trim());
               await supabase
                 .from('campaign_logs')
                 .update({

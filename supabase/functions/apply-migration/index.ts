@@ -22,6 +22,16 @@ serve(async (req) => {
       ALTER TABLE campaign_logs
       ADD CONSTRAINT unique_campaign_email UNIQUE (campaign_id, email)
     `);
+
+    // Add update policy on campaign_logs
+    await conn.queryObject(`
+      DROP POLICY IF EXISTS "Auth update campaign_logs" ON public.campaign_logs;
+      CREATE POLICY "Auth update campaign_logs"
+        ON public.campaign_logs FOR UPDATE
+        USING (auth.role() = 'authenticated')
+        WITH CHECK (auth.role() = 'authenticated')
+    `);
+
     conn.release();
     await pool.end();
     return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });

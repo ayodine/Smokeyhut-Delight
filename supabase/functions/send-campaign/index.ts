@@ -140,16 +140,19 @@ serve(async (req) => {
       // Log this individual send attempt if a campaign_id was provided
       if (campaign_id) {
         try {
-          await serviceClient.from('campaign_logs').upsert({
+          const { error: upsertErr } = await serviceClient.from('campaign_logs').upsert({
             campaign_id,
             email: r.email,
             name: r.name || null,
             status: success ? 'sent' : 'failed',
             error: errorMsg ?? null,
           }, { onConflict: 'campaign_id,email' })
+          if (upsertErr) {
+            console.error(`Failed to upsert campaign log for ${r.email}:`, upsertErr)
+          }
         } catch (logErr) {
           // Never let logging failure break the send loop
-          console.error('Failed to write campaign log:', logErr)
+          console.error('Failed to write campaign log (exception):', logErr)
         }
       }
     }
