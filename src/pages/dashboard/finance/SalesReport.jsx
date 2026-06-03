@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { TrendingUp, TrendingDown, DollarSign, ShoppingBag, Truck, Tag, Calendar, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../../lib/supabase';
@@ -34,6 +35,7 @@ const STATUS_COLORS = {
 };
 
 export default function SalesReport() {
+  const { selectedStore } = useOutletContext() || {};
   const [period, setPeriod] = useState('month');
   const [customDate, setCustomDate] = useState({ start: null, end: null });
   const [loading, setLoading] = useState(true);
@@ -42,7 +44,7 @@ export default function SalesReport() {
     orderCount: 0, breakdown: [],
   });
 
-  useEffect(() => { load(); }, [period, customDate]);
+  useEffect(() => { load(); }, [period, customDate, selectedStore]);
 
   const load = async () => {
     // Only run if range selection is complete or cleared
@@ -51,49 +53,117 @@ export default function SalesReport() {
 
     setLoading(true);
     const since = getStartDate(period);
+    const storeParam = selectedStore && selectedStore !== 'all' ? Number(selectedStore) : null;
 
-    let ordersQ = supabase
-      .from('orders')
-      .select('id, status, delivery_fee, coupon_discount, created_at, order_items(price, qty)')
-      .is('deleted_at', null);
-      
-    if (period === 'custom' && customDate && customDate.start && customDate.end) {
-      const start = new Date(`${customDate.start}T00:00:00`);
-      const end = new Date(`${customDate.end}T23:59:59.999`);
-      ordersQ = ordersQ.gte('created_at', start.toISOString()).lte('created_at', end.toISOString());
-    } else if (since) {
-      ordersQ = ordersQ.gte('created_at', since);
+    try {
+      // 1. Try to fetch aggregates from the get_sales_report_data RPC
+      const { data: rpcData, error: rpcError } = await supabase.rpc('get_sales_report_data', {
+        p_store_id: storeParam,
+        p_start: period === 'custom' && customDate && customDate.start ? new Date(`${customDate.start}T00:00:00`).toISOString() : since,
+        p_end: period === 'custom' && customDate && customDate.end ? new Date(`${customDate.end}T23:59:59.999`).toISOString() : null
+      });
+
+      if (rpcError) throw rpcError;
+
+      // Calculate total expenses for the period
+      let expensesQ = supabase.from('expenses').select('amount, date');
+      if (period === 'custom' && customDate && customDate.start && customDate.end) {
+        expensesQ = expensesQ.gte('date', customDate.start).lte('date', customDate.end);
+      } else if (since) {
+        expensesQ = expensesQ.gte('date', since.split('T')[0]);
+      }
+      const { data: expenses, error: expError } = await expensesQ;
+      if (expError) throw expError;
+
+      const totalExpenses = (expenses || []).reduce((s, e) => s + Number(e.amount || 0), 0);
+
+      setData({
+        revenue: rpcData.revenue || 0,
+        deliveryFees: rpcData.deliveryFees || 0,
+        discounts: rpcData.discounts || 0,
+        expenses: totalExpenses,
+        orderCount: rpcData.orderCount || 0,
+        breakdown: rpcData.breakdown || [],
+      });
+    } catch (err) {
+      console.warn('RPC failed or is not available. Falling back to batch client-side query:', err);
+
+      // 2. Client-side batch fetching fallback (bypasses 1000 row limit)
+      let allOrders = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+
+      while (hasMore) {
+        let ordersQ = supabase
+          .from('orders')
+          .select('id, status, delivery_fee, coupon_discount, created_at, store_id, order_items(price, qty)')
+          .is('deleted_at', null)
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (storeParam !== null) {
+          ordersQ = ordersQ.eq('store_id', storeParam);
+        }
+
+        if (period === 'custom' && customDate && customDate.start && customDate.end) {
+          const start = new Date(`${customDate.start}T00:00:00`);
+          const end = new Date(`${customDate.end}T23:59:59.999`);
+          ordersQ = ordersQ.gte('created_at', start.toISOString()).lte('created_at', end.toISOString());
+        } else if (since) {
+          ordersQ = ordersQ.gte('created_at', since);
+        }
+
+        const { data: batchOrders, error: batchError } = await ordersQ;
+        if (batchError) throw batchError;
+
+        allOrders = [...allOrders, ...(batchOrders || [])];
+        
+        if ((batchOrders || []).length < pageSize) {
+          hasMore = false;
+        } else {
+          page++;
+        }
+      }
+
+      // Query expenses
+      let expensesQ = supabase.from('expenses').select('amount, date');
+      if (period === 'custom' && customDate && customDate.start && customDate.end) {
+        expensesQ = expensesQ.gte('date', customDate.start).lte('date', customDate.end);
+      } else if (since) {
+        expensesQ = expensesQ.gte('date', since.split('T')[0]);
+      }
+      const { data: expenses, error: expError } = await expensesQ;
+      if (expError) throw expError;
+
+      const totalExpenses = (expenses || []).reduce((s, e) => s + Number(e.amount || 0), 0);
+
+      const nonCancelled = allOrders.filter(o => o.status !== 'cancelled');
+
+      let revenue = 0, deliveryFees = 0, discounts = 0;
+      nonCancelled.forEach(o => {
+        revenue      += (o.order_items || []).reduce((s, i) => s + i.price * i.qty, 0);
+        deliveryFees += o.delivery_fee || 0;
+        discounts    += o.coupon_discount || 0;
+      });
+
+      const statusList = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
+      const breakdown = statusList.map(status => {
+        const group = allOrders.filter(o => o.status === status);
+        const total = group.reduce((s, o) => s + (o.order_items || []).reduce((si, i) => si + i.price * i.qty, 0), 0);
+        return { status, count: group.length, total };
+      });
+
+      setData({
+        revenue,
+        deliveryFees,
+        discounts,
+        expenses: totalExpenses,
+        orderCount: nonCancelled.length,
+        breakdown,
+      });
+    } finally {
+      setLoading(false);
     }
-
-    let expensesQ = supabase.from('expenses').select('amount, date');
-    if (period === 'custom' && customDate && customDate.start && customDate.end) {
-      expensesQ = expensesQ.gte('date', customDate.start).lte('date', customDate.end);
-    } else if (since) {
-      expensesQ = expensesQ.gte('date', since.split('T')[0]);
-    }
-
-    const [{ data: orders }, { data: expenses }] = await Promise.all([ordersQ, expensesQ]);
-
-    const nonCancelled = (orders || []).filter(o => o.status !== 'cancelled');
-
-    let revenue = 0, deliveryFees = 0, discounts = 0;
-    nonCancelled.forEach(o => {
-      revenue    += (o.order_items || []).reduce((s, i) => s + i.price * i.qty, 0);
-      deliveryFees += o.delivery_fee || 0;
-      discounts    += o.coupon_discount || 0;
-    });
-
-    const totalExpenses = (expenses || []).reduce((s, e) => s + Number(e.amount || 0), 0);
-
-    const statusList = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
-    const breakdown = statusList.map(status => {
-      const group = (orders || []).filter(o => o.status === status);
-      const total = group.reduce((s, o) => s + (o.order_items || []).reduce((si, i) => si + i.price * i.qty, 0), 0);
-      return { status, count: group.length, total };
-    });
-
-    setData({ revenue, deliveryFees, discounts, expenses: totalExpenses, orderCount: nonCancelled.length, breakdown });
-    setLoading(false);
   };
 
   const grossRevenue = data.revenue + data.deliveryFees - data.discounts;

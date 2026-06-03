@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { DollarSign, Package, Truck, Store, Download, ChevronUp, ChevronDown } from 'lucide-react';
+import { DollarSign, Package, Truck, Store, Download, ChevronUp, ChevronDown, TrendingUp, TrendingDown } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { SkelKpiGrid, SkelTable, SkelDashHeader, SkelFilterPills, SkelChart } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import { useOutletContext } from 'react-router-dom';
+import DashCalendar from '../../components/DashCalendar';
 
 const fmt = (n) => '₦' + n.toLocaleString();
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -27,11 +28,145 @@ function getStartDate(period) {
   }
 }
 
+function getPeriodDateRanges(period, customDate) {
+  const now = new Date();
+  let currentStart = null;
+  let currentEnd = now;
+  let previousStart = null;
+  let previousEnd = null;
+  let labelSuffix = '';
+
+  if (period === 'custom' && customDate && customDate.start && customDate.end) {
+    currentStart = new Date(`${customDate.start}T00:00:00`);
+    currentEnd = new Date(`${customDate.end}T23:59:59.999`);
+    const diffTime = Math.abs(currentEnd - currentStart);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    previousStart = new Date(currentStart);
+    previousStart.setDate(currentStart.getDate() - diffDays);
+    previousEnd = new Date(currentStart);
+    previousEnd.setMilliseconds(-1);
+    labelSuffix = `vs prev ${diffDays}d`;
+  } else {
+    switch (period) {
+      case 'today': {
+        const todayStart = new Date(now);
+        todayStart.setHours(0, 0, 0, 0);
+        currentStart = todayStart;
+        
+        const yesterdayStart = new Date(todayStart);
+        yesterdayStart.setDate(todayStart.getDate() - 1);
+        previousStart = yesterdayStart;
+        previousEnd = todayStart;
+        labelSuffix = 'vs yesterday';
+        break;
+      }
+      case 'week': {
+        const thisWeekStart = new Date(now);
+        thisWeekStart.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+        thisWeekStart.setHours(0, 0, 0, 0);
+        currentStart = thisWeekStart;
+        
+        const lastWeekStart = new Date(thisWeekStart);
+        lastWeekStart.setDate(thisWeekStart.getDate() - 7);
+        previousStart = lastWeekStart;
+        previousEnd = thisWeekStart;
+        labelSuffix = 'vs last week';
+        break;
+      }
+      case 'month': {
+        const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        currentStart = thisMonthStart;
+        
+        const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        previousStart = lastMonthStart;
+        previousEnd = thisMonthStart;
+        labelSuffix = 'vs last month';
+        break;
+      }
+      case 'year': {
+        const thisYearStart = new Date(now.getFullYear(), 0, 1);
+        currentStart = thisYearStart;
+        
+        const lastYearStart = new Date(now.getFullYear() - 1, 0, 1);
+        previousStart = lastYearStart;
+        previousEnd = thisYearStart;
+        labelSuffix = 'vs last year';
+        break;
+      }
+      case 'all':
+      default: {
+        const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        currentStart = thisMonthStart;
+        
+        const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        previousStart = lastMonthStart;
+        
+        const lastDayOfPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0).getDate();
+        const targetDay = Math.min(now.getDate(), lastDayOfPrevMonth);
+        const prevMonthEnd = new Date(now.getFullYear(), now.getMonth() - 1, targetDay, now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+        previousEnd = prevMonthEnd;
+        labelSuffix = 'vs last month (MTD)';
+        break;
+      }
+    }
+  }
+
+  return {
+    current: { start: currentStart, end: currentEnd },
+    previous: { start: previousStart, end: previousEnd },
+    labelSuffix
+  };
+}
+
 const EMPTY_KPIS = { revenue: 0, order_count: 0, pending_shipments: 0 };
+
+const getKpisForRange = async (sp, start, end) => {
+  const now = new Date();
+  try {
+    if (!start) {
+      const { data, error } = await supabase.rpc('get_overview_kpis', { p_store_id: sp, p_start: null });
+      if (error) throw error;
+      return data || EMPTY_KPIS;
+    }
+    if (!end || end >= now) {
+      const { data, error } = await supabase.rpc('get_overview_kpis', { p_store_id: sp, p_start: start.toISOString() });
+      if (error) throw error;
+      return data || EMPTY_KPIS;
+    }
+    const [startRes, endRes] = await Promise.all([
+      supabase.rpc('get_overview_kpis', { p_store_id: sp, p_start: start.toISOString() }),
+      supabase.rpc('get_overview_kpis', { p_store_id: sp, p_start: end.toISOString() }),
+    ]);
+    if (startRes.error) throw startRes.error;
+    if (endRes.error) throw endRes.error;
+    const sData = startRes.data || EMPTY_KPIS;
+    const eData = endRes.data || EMPTY_KPIS;
+    return {
+      revenue: sData.revenue - eData.revenue,
+      order_count: sData.order_count - eData.order_count,
+      pending_shipments: sData.pending_shipments
+    };
+  } catch (err) {
+    console.warn('RPC failed, falling back to client-side query:', err);
+    let q = supabase.from('orders').select('status, total, created_at').is('deleted_at', null);
+    if (sp !== null) q = q.eq('store_id', sp);
+    if (start) q = q.gte('created_at', start.toISOString());
+    if (end) q = q.lt('created_at', end.toISOString());
+    const { data } = await q;
+    const rows = data || [];
+    return {
+      revenue: rows.filter(o => ['shipped', 'out_for_delivery', 'arrived', 'delivered'].includes(o.status)).reduce((s, o) => s + Number(o.total || 0), 0),
+      order_count: rows.filter(o => ['shipped', 'out_for_delivery', 'arrived', 'delivered'].includes(o.status)).length,
+      pending_shipments: rows.filter(o => ['pending', 'processing'].includes(o.status)).length,
+    };
+  }
+};
 
 export default function Overview() {
   const { selectedStore } = useOutletContext() || {};
   const [kpis, setKpis] = useState(EMPTY_KPIS);
+  const [growth, setGrowth] = useState({ revenue: null, orders: null });
   const [chartData, setChartData] = useState([0, 0, 0, 0, 0, 0, 0]);
   const [recentOrders, setRecentOrders] = useState([]);
   const [stores, setStores] = useState(0);
@@ -39,27 +174,35 @@ export default function Overview() {
   const [kpiLoading, setKpiLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [period, setPeriod] = useState('all');
+  const [customDate, setCustomDate] = useState({ start: null, end: null });
   const [sortKey, setSortKey] = useState('created_at');
   const [sortDir, setSortDir] = useState('desc');
 
+  const renderKPIBadge = (change) => {
+    if (!change) return null;
+    const isPositive = change.pct >= 0;
+    const className = `kpi-change ${isPositive ? 'up' : 'down'}`;
+    const Icon = isPositive ? TrendingUp : TrendingDown;
+    
+    return (
+      <div className={className} style={{ gap: 4, alignSelf: 'flex-start' }}>
+        <Icon size={12} style={{ display: 'inline-block', verticalAlign: 'middle' }} />
+        <span>{isPositive ? '+' : ''}{change.pct.toFixed(1)}%</span>
+        <span style={{ opacity: 0.7, fontWeight: 500, marginLeft: 3 }}>{change.label}</span>
+      </div>
+    );
+  };
+
   // Full load on store change (fetches chart + stores + KPIs + recent)
-  useEffect(() => { fetchAll(period); }, [selectedStore]);
+  useEffect(() => { fetchAll(period, customDate); }, [selectedStore]);
 
   // Lightweight re-fetch of KPIs + recent orders when period changes
   useEffect(() => {
-    if (!loading) fetchPeriodData(period);
-  }, [period]);
+    if (!loading) fetchPeriodData(period, customDate);
+  }, [period, customDate]);
 
   const storeParam = () =>
     selectedStore && selectedStore !== 'all' ? Number(selectedStore) : null;
-
-  // Helper: build a minimal unlimited query for fallback KPI computation
-  const buildKpiFallback = (sp, startDate) => {
-    let q = supabase.from('orders').select('status, total, created_at').is('deleted_at', null);
-    if (sp !== null) q = q.eq('store_id', sp);
-    if (startDate) q = q.gte('created_at', startDate.toISOString());
-    return q;
-  };
 
   // Helper: compute weekly chart from an array of order rows
   const computeWeeklyChart = (rows) => {
@@ -77,10 +220,56 @@ export default function Overview() {
     });
   };
 
-  const fetchAll = async (p) => {
+  const fetchKpisAndGrowth = async (p, sp, customD) => {
+    const ranges = getPeriodDateRanges(p, customD);
+    
+    const primaryStart = p === 'all' ? null : ranges.current.start;
+    const primaryEnd = p === 'all' ? null : ranges.current.end;
+    
+    const growthCurrStart = ranges.current.start;
+    const growthCurrEnd = ranges.current.end;
+    const growthPrevStart = ranges.previous.start;
+    const growthPrevEnd = ranges.previous.end;
+    
+    const [primaryKpis, growthCurrKpis, growthPrevKpis] = await Promise.all([
+      getKpisForRange(sp, primaryStart, primaryEnd),
+      p === 'all' ? getKpisForRange(sp, growthCurrStart, growthCurrEnd) : Promise.resolve(null),
+      getKpisForRange(sp, growthPrevStart, growthPrevEnd),
+    ]);
+    
+    const currentForGrowth = p === 'all' ? growthCurrKpis : primaryKpis;
+    
+    const getPercentChange = (currentVal, previousVal) => {
+      if (!previousVal) {
+        return currentVal > 0 ? 100 : 0;
+      }
+      return ((currentVal - previousVal) / previousVal) * 100;
+    };
+    
+    const revenuePct = getPercentChange(currentForGrowth.revenue, growthPrevKpis.revenue);
+    const ordersPct = getPercentChange(currentForGrowth.order_count, growthPrevKpis.order_count);
+    
+    return {
+      kpis: primaryKpis,
+      growth: {
+        revenue: { pct: revenuePct, label: ranges.labelSuffix },
+        orders: { pct: ordersPct, label: ranges.labelSuffix }
+      }
+    };
+  };
+
+  const fetchAll = async (p, customD) => {
     setLoading(true);
     const sp = storeParam();
-    const startDate = getStartDate(p);
+    
+    let startDate = null;
+    let endDate = null;
+    if (p === 'custom' && customD && customD.start && customD.end) {
+      startDate = new Date(`${customD.start}T00:00:00`);
+      endDate = new Date(`${customD.end}T23:59:59.999`);
+    } else {
+      startDate = getStartDate(p);
+    }
 
     // Week bounds for chart fallback
     const now = new Date();
@@ -96,6 +285,7 @@ export default function Overview() {
       .limit(10);
     if (sp !== null) recentQuery = recentQuery.eq('store_id', sp);
     if (startDate) recentQuery = recentQuery.gte('created_at', startDate.toISOString());
+    if (endDate) recentQuery = recentQuery.lte('created_at', endDate.toISOString());
 
     let chartFallbackQuery = supabase
       .from('orders')
@@ -105,28 +295,19 @@ export default function Overview() {
       .gte('created_at', weekStart.toISOString());
     if (sp !== null) chartFallbackQuery = chartFallbackQuery.eq('store_id', sp);
 
-    const [kpisRes, chartRes, recentRes, storesRes, kpiFallbackRes, chartFallbackRes] = await Promise.all([
-      supabase.rpc('get_overview_kpis', { p_store_id: sp, p_start: startDate?.toISOString() ?? null }),
+    const [kpiGrowthRes, chartRes, recentRes, storesRes, chartFallbackRes] = await Promise.all([
+      fetchKpisAndGrowth(p, sp, customD),
       supabase.rpc('get_weekly_revenue_chart', { p_store_id: sp }),
       recentQuery,
       supabase.from('stores').select('id', { count: 'exact' }),
-      buildKpiFallback(sp, startDate),
       chartFallbackQuery,
     ]);
 
     setRecentOrders(recentRes.data || []);
     if (storesRes.data) setStores(storesRes.data.length);
 
-    if (kpisRes.data) {
-      setKpis(kpisRes.data);
-    } else {
-      const rows = kpiFallbackRes.data || [];
-      setKpis({
-        revenue:           rows.filter(o => ['shipped', 'out_for_delivery', 'arrived', 'delivered'].includes(o.status)).reduce((s, o) => s + Number(o.total || 0), 0),
-        order_count:       rows.filter(o => ['shipped', 'out_for_delivery', 'arrived', 'delivered'].includes(o.status)).length,
-        pending_shipments: rows.filter(o => ['pending', 'processing'].includes(o.status)).length,
-      });
-    }
+    setKpis(kpiGrowthRes.kpis);
+    setGrowth(kpiGrowthRes.growth);
 
     if (chartRes.data) {
       setChartData(chartRes.data);
@@ -137,10 +318,21 @@ export default function Overview() {
     setLoading(false);
   };
 
-  const fetchPeriodData = async (p) => {
+  const fetchPeriodData = async (p, customD) => {
+    const isCustomDateIncomplete = p === 'custom' && customD && customD.start && !customD.end;
+    if (isCustomDateIncomplete) return;
+
     setKpiLoading(true);
     const sp = storeParam();
-    const startDate = getStartDate(p);
+    
+    let startDate = null;
+    let endDate = null;
+    if (p === 'custom' && customD && customD.start && customD.end) {
+      startDate = new Date(`${customD.start}T00:00:00`);
+      endDate = new Date(`${customD.end}T23:59:59.999`);
+    } else {
+      startDate = getStartDate(p);
+    }
 
     let recentQuery = supabase
       .from('orders')
@@ -150,25 +342,16 @@ export default function Overview() {
       .limit(10);
     if (sp !== null) recentQuery = recentQuery.eq('store_id', sp);
     if (startDate) recentQuery = recentQuery.gte('created_at', startDate.toISOString());
+    if (endDate) recentQuery = recentQuery.lte('created_at', endDate.toISOString());
 
-    const [kpisRes, recentRes, kpiFallbackRes] = await Promise.all([
-      supabase.rpc('get_overview_kpis', { p_store_id: sp, p_start: startDate?.toISOString() ?? null }),
+    const [kpiGrowthRes, recentRes] = await Promise.all([
+      fetchKpisAndGrowth(p, sp, customD),
       recentQuery,
-      buildKpiFallback(sp, startDate),
     ]);
 
     setRecentOrders(recentRes.data || []);
-
-    if (kpisRes.data) {
-      setKpis(kpisRes.data);
-    } else {
-      const rows = kpiFallbackRes.data || [];
-      setKpis({
-        revenue:           rows.filter(o => ['shipped', 'out_for_delivery', 'arrived', 'delivered'].includes(o.status)).reduce((s, o) => s + Number(o.total || 0), 0),
-        order_count:       rows.filter(o => ['shipped', 'out_for_delivery', 'arrived', 'delivered'].includes(o.status)).length,
-        pending_shipments: rows.filter(o => ['pending', 'processing'].includes(o.status)).length,
-      });
-    }
+    setKpis(kpiGrowthRes.kpis);
+    setGrowth(kpiGrowthRes.growth);
     setKpiLoading(false);
   };
 
@@ -205,8 +388,17 @@ export default function Overview() {
     setExporting(true);
     try {
       const sp = storeParam();
-      const startDate = getStartDate(period);
-      const periodLabel = PERIODS.find(p => p.value === period)?.label || period;
+      let startDate = null;
+      let endDate = null;
+      if (period === 'custom' && customDate && customDate.start && customDate.end) {
+        startDate = new Date(`${customDate.start}T00:00:00`);
+        endDate = new Date(`${customDate.end}T23:59:59.999`);
+      } else {
+        startDate = getStartDate(period);
+      }
+      const periodLabel = period === 'custom' && customDate && customDate.start && customDate.end
+        ? `Date: ${new Date(customDate.start).toLocaleDateString()} to ${new Date(customDate.end).toLocaleDateString()}`
+        : (PERIODS.find(p => p.value === period)?.label || period);
 
       let exportQuery = supabase
         .from('orders')
@@ -215,6 +407,7 @@ export default function Overview() {
         .order('created_at', { ascending: false });
       if (sp !== null) exportQuery = exportQuery.eq('store_id', sp);
       if (startDate) exportQuery = exportQuery.gte('created_at', startDate.toISOString());
+      if (endDate) exportQuery = exportQuery.lte('created_at', endDate.toISOString());
 
       const { data: exportOrders } = await exportQuery;
 
@@ -288,11 +481,11 @@ export default function Overview() {
       </div>
 
       {/* Period filter */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 24, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 24, flexWrap: 'wrap', alignItems: 'center' }}>
         {PERIODS.map(p => (
           <button
             key={p.value}
-            onClick={() => setPeriod(p.value)}
+            onClick={() => { setPeriod(p.value); setCustomDate({ start: null, end: null }); }}
             style={{
               padding: '7px 16px', borderRadius: 20,
               border: `1px solid ${period === p.value ? 'var(--red)' : 'var(--border-subtle)'}`,
@@ -303,6 +496,17 @@ export default function Overview() {
             }}
           >{p.label}</button>
         ))}
+        <DashCalendar
+          range={true}
+          value={customDate}
+          onChange={v => { setCustomDate(v); if (v && (v.start || v.end)) setPeriod('custom'); }}
+          placeholder="Pick a date range"
+        />
+        {((customDate && (customDate.start || customDate.end)) || period === 'custom') && (
+          <button onClick={() => { setCustomDate({ start: null, end: null }); setPeriod('all'); }} style={{ background: 'none', border: 'none', fontSize: '0.8rem', color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 600 }}>
+            Clear dates
+          </button>
+        )}
       </div>
 
       {/* KPIs */}
@@ -311,13 +515,13 @@ export default function Overview() {
           <div className="kpi-icon"><DollarSign size={24} /></div>
           <div className="kpi-value">{fmt(kpis.revenue)}</div>
           <div className="kpi-label">Total Revenue</div>
-          <div className="kpi-change up">{PERIODS.find(p => p.value === period)?.label}</div>
+          {renderKPIBadge(growth.revenue)}
         </div>
         <div className="kpi-card blue">
           <div className="kpi-icon"><Package size={24} /></div>
           <div className="kpi-value">{kpis.order_count}</div>
           <div className="kpi-label">Orders</div>
-          <div className="kpi-change up">{PERIODS.find(p => p.value === period)?.label}</div>
+          {renderKPIBadge(growth.orders)}
         </div>
         <div className="kpi-card yellow">
           <div className="kpi-icon"><Truck size={24} /></div>

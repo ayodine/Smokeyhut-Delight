@@ -362,18 +362,31 @@ export default function Customers() {
     const sDate = new Date(startStr);
     const eDate = new Date(endStr);
     
-    const isFullMonth = sDate.getDate() === 1 && 
-      new Date(eDate.getFullYear(), eDate.getMonth() + 1, 0).getDate() === eDate.getDate() && 
-      sDate.getMonth() === eDate.getMonth() && sDate.getFullYear() === eDate.getFullYear();
-      
-    if (isFullMonth) {
+    // If current range starts on the 1st of the month, align the previous period's start to the 1st of the previous month
+    const startsOnFirst = sDate.getDate() === 1;
+    
+    if (startsOnFirst) {
       const prevMonthStart = new Date(sDate.getFullYear(), sDate.getMonth() - 1, 1);
-      const prevMonthEnd = new Date(sDate.getFullYear(), sDate.getMonth(), 0);
+      const lastDayOfCurrMonth = new Date(sDate.getFullYear(), sDate.getMonth() + 1, 0).getDate();
+      const lastDayOfPrevMonth = new Date(sDate.getFullYear(), sDate.getMonth(), 0).getDate();
+      
+      const isCurrFullMonth = eDate.getDate() === lastDayOfCurrMonth && sDate.getMonth() === eDate.getMonth() && sDate.getFullYear() === eDate.getFullYear();
+      
+      let prevEndDay;
+      if (isCurrFullMonth) {
+        prevEndDay = lastDayOfPrevMonth;
+      } else {
+        prevEndDay = Math.min(eDate.getDate(), lastDayOfPrevMonth);
+      }
+      
+      const prevMonthEnd = new Date(sDate.getFullYear(), sDate.getMonth() - 1, prevEndDay);
+      
       return {
         start: prevMonthStart.toLocaleDateString('en-CA'),
         end: prevMonthEnd.toLocaleDateString('en-CA')
       };
     } else {
+      // Standard shift back by exact number of days
       const diffTime = Math.abs(eDate - sDate);
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
       
@@ -428,10 +441,20 @@ export default function Customers() {
       
       const sDate = new Date(start);
       const eDate = new Date(end);
+      
       const isFullMonth = sDate.getDate() === 1 && 
         new Date(eDate.getFullYear(), eDate.getMonth() + 1, 0).getDate() === eDate.getDate() && 
         sDate.getMonth() === eDate.getMonth() && sDate.getFullYear() === eDate.getFullYear();
-      labelSuffix = isFullMonth ? 'vs last month' : 'vs prev period';
+        
+      const startsOnFirst = sDate.getDate() === 1;
+      
+      if (isFullMonth) {
+        labelSuffix = 'vs last month';
+      } else if (startsOnFirst) {
+        labelSuffix = 'vs last month (MTD)';
+      } else {
+        labelSuffix = 'vs prev period';
+      }
     } else {
       const mtd = getMTDPeriods();
       currentMetrics = getMetricsForPeriod(mtd.current.start, mtd.current.end);

@@ -396,15 +396,29 @@ export default function Checkout() {
                   )}
                 </div>
                 {selectedMatch && (
-                  <div style={{ padding: '10px 14px', background: 'rgba(192,32,31,0.05)', border: '1.5px solid rgba(192,32,31,0.2)', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <CheckCircle size={15} color="#c0201f" />
-                      <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#111' }}>{selectedMatch.area ? selectedMatch.area.name : selectedMatch.zone?.name}</span>
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ padding: '10px 14px', background: 'rgba(192,32,31,0.05)', border: '1.5px solid rgba(192,32,31,0.2)', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <CheckCircle size={15} color="#c0201f" />
+                        <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#111' }}>{selectedMatch.area ? selectedMatch.area.name : selectedMatch.zone?.name}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontWeight: 800, fontSize: '0.85rem', color: '#c0201f' }}>{deliveryFee === 0 ? 'Free' : fmt(deliveryFee)}</span>
+                        <button onClick={() => { setSelectedMatch(null); setLocationQuery(''); inputRef.current?.focus(); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888', fontSize: '0.78rem', fontWeight: 700 }}>Change</button>
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontWeight: 800, fontSize: '0.85rem', color: '#c0201f' }}>{deliveryFee === 0 ? 'Free' : fmt(deliveryFee)}</span>
-                      <button onClick={() => { setSelectedMatch(null); setLocationQuery(''); inputRef.current?.focus(); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888', fontSize: '0.78rem', fontWeight: 700 }}>Change</button>
-                    </div>
+                    {/* Zone note/alias banner — shown when admin has added notes to this area */}
+                    {selectedMatch.area?.aliases?.length > 0 && (
+                      <div style={{ marginTop: 8, padding: '10px 13px', background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 10, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                        <span style={{ fontSize: '1rem', flexShrink: 0, lineHeight: 1.2 }}>📍</span>
+                        <div>
+                          <div style={{ fontWeight: 800, fontSize: '0.72rem', color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Delivery Notice</div>
+                          {selectedMatch.area.aliases.map((note, i) => (
+                            <p key={i} style={{ fontSize: '0.8rem', color: '#78350f', lineHeight: 1.5, margin: 0, marginTop: i > 0 ? 4 : 0 }}>{note}</p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
                 <input value={form.address} onChange={set('address')} onBlur={() => setTouched(t => ({ ...t, address: true }))} placeholder="Street address *"

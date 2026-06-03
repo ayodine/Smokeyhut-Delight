@@ -139,8 +139,17 @@ export default function DeliveryZones() {
               </div>
             </div>
             <div className="form-group" style={{ marginBottom: 16 }}>
-              <label>Aliases (comma-separated, optional)</label>
-              <input value={form.aliases} onChange={e => setForm(p => ({ ...p, aliases: e.target.value }))} placeholder="abule-egba, abule egba road" />
+              <label>Customer Notice / Aliases <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.8rem' }}>(optional)</span></label>
+              <textarea
+                value={form.aliases}
+                onChange={e => setForm(p => ({ ...p, aliases: e.target.value }))}
+                placeholder="e.g. DELIVERY IS WITHIN 24HOURS / YOU ARE PICKING UP AT THE PARK"
+                rows={3}
+                style={{ resize: 'vertical', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' }}
+              />
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.4 }}>
+                Each line or comma-separated entry is both a <strong>search alias</strong> and a <strong>customer notice</strong> shown at checkout when this area is selected.
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
               <button className="btn-secondary" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '12px' }} onClick={() => setEditingId(null)}>
