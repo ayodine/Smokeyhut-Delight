@@ -38,8 +38,8 @@ export default function ConfirmModal({
 
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
           <div style={{ 
-            background: isDestructive ? 'rgba(220, 38, 38, 0.1)' : 'rgba(59, 130, 246, 0.1)', 
-            color: isDestructive ? '#ef4444' : '#3b82f6', 
+            background: isDestructive ? 'rgba(220, 38, 38, 0.1)' : 'rgba(192, 32, 31, 0.1)', 
+            color: isDestructive ? '#ef4444' : 'var(--red)', 
             padding: 12, 
             borderRadius: '50%',
             flexShrink: 0
@@ -58,6 +58,8 @@ export default function ConfirmModal({
           <button 
             onClick={onClose}
             disabled={isLoading}
+            onMouseEnter={e => { if (!isLoading) { e.currentTarget.style.background = 'var(--black2)'; e.currentTarget.style.borderColor = '#d1d5db'; } }}
+            onMouseLeave={e => { if (!isLoading) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'var(--border-subtle)'; } }}
             style={{ 
               padding: '10px 20px', 
               borderRadius: 8, 
@@ -66,7 +68,8 @@ export default function ConfirmModal({
               color: 'var(--text)', 
               fontWeight: 700, 
               cursor: 'pointer', 
-              fontFamily: "'DM Sans',sans-serif" 
+              fontFamily: "'DM Sans',sans-serif",
+              transition: 'all 0.2s ease'
             }}
           >
             {cancelText}
@@ -74,18 +77,21 @@ export default function ConfirmModal({
           <button 
             onClick={onConfirm}
             disabled={isLoading}
+            onMouseEnter={e => { if (!isLoading) e.currentTarget.style.background = 'var(--red-light)'; }}
+            onMouseLeave={e => { if (!isLoading) e.currentTarget.style.background = 'var(--red)'; }}
             style={{ 
               padding: '10px 20px', 
               borderRadius: 8, 
               border: 'none', 
-              background: isDestructive ? 'var(--red)' : '#3b82f6', 
+              background: 'var(--red)', 
               color: '#fff', 
               fontWeight: 700, 
               cursor: isLoading ? 'not-allowed' : 'pointer', 
               fontFamily: "'DM Sans',sans-serif",
               display: 'flex',
               alignItems: 'center',
-              gap: 8
+              gap: 8,
+              transition: 'background 0.2s ease'
             }}
           >
             {isLoading && <Loader2 size={16} className="spin" />}
