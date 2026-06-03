@@ -426,15 +426,42 @@ export default function Stats() {
       } else {
         const currData = kpisRes.data || {};
         let growth = null;
+        let unitsGrowth = null;
+        let aovGrowth = null;
+        let customersGrowth = null;
         if (period !== 'all' && prevKpisRes.data) {
+          const prevData = prevKpisRes.data || {};
+          
+          // Revenue / Total Spend growth
           const revenue = currData.revenue ?? 0;
-          const prevRevenue = prevKpisRes.data.revenue ?? 0;
+          const prevRevenue = prevData.revenue ?? 0;
           const pct = prevRevenue > 0 ? ((revenue - prevRevenue) / prevRevenue) * 100 : (revenue > 0 ? 100 : 0);
           growth = { pct, label: prevParams.label };
+
+          // Total Units Sold growth
+          const units = currData.units_sold ?? 0;
+          const prevUnits = prevData.units_sold ?? 0;
+          const unitsPct = prevUnits > 0 ? ((units - prevUnits) / prevUnits) * 100 : (units > 0 ? 100 : 0);
+          unitsGrowth = { pct: unitsPct, label: prevParams.label };
+
+          // Average Order Value (AOV) growth
+          const currAOV = currData.order_count > 0 ? (currData.revenue ?? 0) / currData.order_count : 0;
+          const prevAOV = prevData.order_count > 0 ? (prevData.revenue ?? 0) / prevData.order_count : 0;
+          const aovPct = prevAOV > 0 ? ((currAOV - prevAOV) / prevAOV) * 100 : (currAOV > 0 ? 100 : 0);
+          aovGrowth = { pct: aovPct, label: prevParams.label };
+
+          // Unique Customers growth
+          const customers = currData.unique_customers ?? 0;
+          const prevCustomers = prevData.unique_customers ?? 0;
+          const customersPct = prevCustomers > 0 ? ((customers - prevCustomers) / prevCustomers) * 100 : (customers > 0 ? 100 : 0);
+          customersGrowth = { pct: customersPct, label: prevParams.label };
         }
         setKpis({
           ...currData,
-          growth
+          growth,
+          unitsGrowth,
+          aovGrowth,
+          customersGrowth
         });
       }
       
@@ -567,16 +594,19 @@ export default function Stats() {
               <div className="kpi-icon"><ShoppingBag size={24} /></div>
               <div className="kpi-value">{kpiErr ? '—' : fmtNum(kpis?.units_sold ?? 0)}</div>
               <div className="kpi-label">Total Units Sold</div>
+              {renderKPIBadge(kpis?.unitsGrowth)}
             </div>
             <div className="kpi-card yellow">
               <div className="kpi-icon"><TrendingUp size={24} /></div>
               <div className="kpi-value">{kpiErr ? '—' : fmt(avgOrder)}</div>
               <div className="kpi-label">Average Order Value</div>
+              {renderKPIBadge(kpis?.aovGrowth)}
             </div>
             <div className="kpi-card red">
               <div className="kpi-icon"><Users size={24} /></div>
               <div className="kpi-value">{kpiErr ? '—' : fmtNum(kpis?.unique_customers ?? 0)}</div>
               <div className="kpi-label">Unique Customers</div>
+              {renderKPIBadge(kpis?.customersGrowth)}
             </div>
           </div>
 
