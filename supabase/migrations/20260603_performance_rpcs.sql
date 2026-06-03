@@ -146,16 +146,16 @@ BEGIN
   RETURN QUERY
   WITH customer_orders_all_time AS (
     SELECT
-      COALESCE(customer_phone, customer_email, customer_name) AS c_id,
-      customer_name,
-      customer_email,
-      customer_phone,
-      id AS order_id,
-      total,
-      status,
-      created_at
-    FROM orders
-    WHERE deleted_at IS NULL
+      COALESCE(o.customer_phone, o.customer_email, o.customer_name) AS c_id,
+      o.customer_name,
+      o.customer_email,
+      o.customer_phone,
+      o.id AS order_id,
+      o.total,
+      o.status,
+      o.created_at
+    FROM orders o
+    WHERE o.deleted_at IS NULL
   ),
   active_customers AS (
     SELECT DISTINCT c_id
@@ -327,16 +327,16 @@ BEGIN
   RETURN QUERY
   WITH customer_orders_all_time AS (
     SELECT
-      COALESCE(customer_phone, customer_email, customer_name) AS c_id,
-      customer_name,
-      customer_email,
-      customer_phone,
-      id AS order_id,
-      total,
-      status,
-      created_at
-    FROM orders
-    WHERE deleted_at IS NULL
+      COALESCE(o.customer_phone, o.customer_email, o.customer_name) AS c_id,
+      o.customer_name,
+      o.customer_email,
+      o.customer_phone,
+      o.id AS order_id,
+      o.total,
+      o.status,
+      o.created_at
+    FROM orders o
+    WHERE o.deleted_at IS NULL
   ),
   aggregated AS (
     SELECT
