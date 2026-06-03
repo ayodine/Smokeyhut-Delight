@@ -569,10 +569,17 @@ export default function Customers() {
       );
 
       // Resolve audience list
+      const campaignTime = new Date(campaign.created_at).getTime();
       const fullList = getAudience(campaign.audience, null);
+      const historicalList = fullList.filter(c => {
+        if (c.ordersDetails && c.ordersDetails.length > 0) {
+          return c.ordersDetails.some(o => new Date(o.created_at).getTime() < campaignTime);
+        }
+        return false;
+      });
       
       // We retry anyone who hasn't been sent successfully yet
-      const toRetry = fullList.filter(c => c.email && !sentEmails.has(c.email.trim().toLowerCase()));
+      const toRetry = historicalList.filter(c => c.email && !sentEmails.has(c.email.trim().toLowerCase()));
 
       if (toRetry.length === 0) {
         showToast('Info', 'No undelivered recipients found for this campaign.', 'info');
@@ -1830,29 +1837,56 @@ export default function Customers() {
                     </tr>
                   </thead>
                   <tbody>
-                    {campaignLogs.map(log => (
-                      <tr key={log.id}>
-                        <td style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{log.email}</td>
-                        <td style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{log.name || '—'}</td>
-                        <td>
-                          <span style={{
-                            padding: '3px 10px', borderRadius: 20, fontSize: '0.7rem', fontWeight: 800,
-                            textTransform: 'uppercase', letterSpacing: '0.04em', display: 'inline-block',
-                            ...(log.status === 'sent'
-                              ? { background: 'rgba(22,163,74,0.08)', color: '#16a34a', border: '1px solid rgba(22,163,74,0.2)' }
-                              : { background: 'rgba(239,68,68,0.08)', color: '#dc2626', border: '1px solid rgba(239,68,68,0.2)' })
-                          }}>
-                            {log.status}
-                          </span>
-                        </td>
-                        <td style={{ fontSize: '0.78rem', color: '#dc2626', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {log.error || '—'}
-                        </td>
-                        <td style={{ fontSize: '0.78rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                          {new Date(log.created_at).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                        </td>
-                      </tr>
-                    ))}
+                    {(() => {
+                      const campaignTime = new Date(detailCampaign.created_at).getTime();
+                      const fullList = getAudience(detailCampaign.audience, null);
+                      const historicalList = fullList.filter(c => {
+                        if (c.ordersDetails && c.ordersDetails.length > 0) {
+                          return c.ordersDetails.some(o => new Date(o.created_at).getTime() < campaignTime);
+                        }
+                        return false;
+                      });
+                      const loggedEmails = new Set(campaignLogs.map(l => l.email.trim().toLowerCase()));
+                      const remainingRecipients = historicalList.filter(c => c.email && !loggedEmails.has(c.email.trim().toLowerCase()));
+
+                      const allLogsToShow = [
+                        ...campaignLogs,
+                        ...remainingRecipients.map((c, index) => ({
+                          id: `remaining-${index}`,
+                          email: c.email,
+                          name: c.name || '',
+                          status: 'pending',
+                          error: 'Not attempted (Timeout/Interrupted)',
+                          created_at: detailCampaign.created_at
+                        }))
+                      ];
+
+                      return allLogsToShow.map(log => (
+                        <tr key={log.id}>
+                          <td style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{log.email}</td>
+                          <td style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{log.name || '—'}</td>
+                          <td>
+                            <span style={{
+                              padding: '3px 10px', borderRadius: 20, fontSize: '0.7rem', fontWeight: 800,
+                              textTransform: 'uppercase', letterSpacing: '0.04em', display: 'inline-block',
+                              ...(log.status === 'sent'
+                                ? { background: 'rgba(22,163,74,0.08)', color: '#16a34a', border: '1px solid rgba(22,163,74,0.2)' }
+                                : log.status === 'pending'
+                                ? { background: 'rgba(107,114,128,0.08)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }
+                                : { background: 'rgba(239,68,68,0.08)', color: '#dc2626', border: '1px solid rgba(239,68,68,0.2)' })
+                            }}>
+                              {log.status}
+                            </span>
+                          </td>
+                          <td style={{ fontSize: '0.78rem', color: log.status === 'pending' ? 'var(--text-muted)' : '#dc2626', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {log.error || '—'}
+                          </td>
+                          <td style={{ fontSize: '0.78rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                            {log.status === 'pending' ? '—' : new Date(log.created_at).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                          </td>
+                        </tr>
+                      ));
+                    })()}
                   </tbody>
                 </table>
               )}
