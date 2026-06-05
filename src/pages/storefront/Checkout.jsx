@@ -574,7 +574,7 @@ export default function Checkout() {
                 style={{ width: 18, height: 18, cursor: 'pointer', accentColor: '#c0201f', flexShrink: 0 }}
               />
               <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#111' }}>
-                I confirm I have transferred {fmt(amountToPayNow)} for my food
+                I confirm I have transferred {fmt(amountToPayNow)}
               </span>
             </label>
           </div>
