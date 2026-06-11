@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Users, DollarSign, Package, Trash2, Download, Mail, Send, Loader2, UserPlus, Repeat2, ChevronUp, ChevronDown, Search, Sparkles, X, TrendingUp, TrendingDown } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Users, DollarSign, Package, Trash2, Download, Mail, Send, Loader2, UserPlus, Repeat2, ChevronUp, ChevronDown, Search, Sparkles, X, TrendingUp, TrendingDown, Crown, Star, User, Copy, Phone, MapPin, Calendar } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { SkelDashHeader, SkelKpiGrid, SkelTable } from '../../components/Skeleton';
 import Pagination from '../../components/Pagination';
@@ -24,7 +24,10 @@ Shop now at smokeyhutdelight.com
 
 const AUDIENCE_OPTIONS = [
   { value: 'all',                  label: 'All customers with email' },
-  { value: 'vip_customers',        label: 'VIP Customers (₦200,000+ spent)' },
+  { value: 'vip',                  label: 'Segment: VIP Customers' },
+  { value: 'standard',             label: 'Segment: Standard Customers' },
+  { value: 'regular',              label: 'Segment: Regular Customers' },
+  { value: 'vip_customers',        label: 'VIP Customers (₦200,000+ spent - Legacy)' },
   { value: 'high_aov',             label: 'Big Basket Buyers (AOV ₦15,000+)' },
   { value: 'loyal_buyers',         label: 'Loyal Repeat Buyers (3+ orders)' },
   { value: 'top_20_monthly',       label: 'Top 20 Customers' },
@@ -67,6 +70,29 @@ export default function Customers() {
   const [sortKey, setSortKey] = useState('lastOrder');
   const [sortDir, setSortDir] = useState('desc');
 
+  // Customer Group/Tier state
+  const [groupTimeframe, setGroupTimeframe] = useState('all_time');
+  const [groupFilter, setGroupFilter] = useState('all');
+  const [groupCounts, setGroupCounts] = useState({ vip: 0, standard: 0, regular: 0 });
+
+  // Customer profile drawer & tiers navigation state
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [customerOrders, setCustomerOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [activeTierTab, setActiveTierTab] = useState('vip');
+
+  // Sync groupFilter with activeTierTab when in tiers view, or reset when in directory view
+  useEffect(() => {
+    if (tab === 'tiers') {
+      setGroupFilter(activeTierTab);
+      setPage(1);
+    } else if (tab === 'directory') {
+      setGroupFilter('all');
+      setGroupTimeframe('all_time');
+      setPage(1);
+    }
+  }, [tab, activeTierTab]);
+
   // Server-side loaded data
   const [directoryCustomers, setDirectoryCustomers] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -89,7 +115,6 @@ export default function Customers() {
   const [confirmAction, setConfirmAction] = useState(null);
   const [excludedEmails, setExcludedEmails] = useState(new Set());
   const [recipientSearch, setRecipientSearch] = useState('');
-  const [stores, setStores] = useState([]);
   const [mailingListExpanded, setMailingListExpanded] = useState(false);
   // Campaign detail / logs
   const [detailCampaign, setDetailCampaign] = useState(null);
@@ -112,22 +137,22 @@ export default function Customers() {
     return () => clearTimeout(t);
   }, [search]);
 
-  // Fetch stores list once on mount
+  // Fetch customer group counts when timeframe changes
   useEffect(() => {
-    const fetchStores = async () => {
-      try {
-        const { data: storesList, error: storesErr } = await supabase
-          .from('stores')
-          .select('id, name')
-          .order('name');
-        if (storesErr) throw storesErr;
-        if (storesList) setStores(storesList);
-      } catch (e) {
-        console.error('Error fetching stores list:', e);
+    const fetchGroupCounts = async () => {
+      const { data, error } = await supabase.rpc('get_customer_group_counts', {
+        p_group_timeframe: groupTimeframe,
+      });
+      if (!error && data && data.length > 0) {
+        setGroupCounts({
+          vip: Number(data[0].vip_count || 0),
+          standard: Number(data[0].standard_count || 0),
+          regular: Number(data[0].regular_count || 0),
+        });
       }
     };
-    fetchStores();
-  }, []);
+    fetchGroupCounts();
+  }, [groupTimeframe]);
 
   // Fetch directory data when pagination, sorting, search, or date filter changes
   useEffect(() => {
@@ -141,6 +166,8 @@ export default function Customers() {
         p_sort_dir: sortDir,
         p_limit: PER_PAGE,
         p_offset: (page - 1) * PER_PAGE,
+        p_group_timeframe: groupTimeframe,
+        p_group_filter: groupFilter,
       });
       if (error) {
         console.error('Error fetching directory:', error);
@@ -148,8 +175,20 @@ export default function Customers() {
         setDirectoryCustomers([]);
         setTotalCount(0);
       } else if (data) {
-        setDirectoryCustomers(data);
-        setTotalCount(Number(data[0]?.totalCount || 0));
+        const mapped = data.map(item => ({
+          id: item.agg_id,
+          name: item.agg_name,
+          email: item.agg_email,
+          phone: item.agg_phone,
+          orders: Number(item.agg_orders),
+          totalSpent: Number(item.agg_total_spent),
+          lastOrder: item.agg_last_order,
+          customer_group: item.customer_group,
+          cnt: Number(item.cnt)
+        }));
+        setDirectoryCustomers(mapped);
+        const countVal = mapped[0]?.cnt ?? 0;
+        setTotalCount(countVal);
       } else {
         setDirectoryCustomers([]);
         setTotalCount(0);
@@ -162,7 +201,7 @@ export default function Customers() {
     if (!isIncomplete) {
       fetchDirectory();
     }
-  }, [page, debouncedSearch, sortKey, sortDir, overviewDateFilter]);
+  }, [page, debouncedSearch, sortKey, sortDir, overviewDateFilter, groupTimeframe, groupFilter, showToast]);
 
   // Fetch KPIs and growth when date filter changes
   useEffect(() => {
@@ -249,7 +288,16 @@ export default function Customers() {
         p_end: form.dateFilter?.end ? form.dateFilter.end + 'T23:59:59' : null,
       });
       if (!error && data) {
-        setCampaignAudience(data);
+        const mapped = data.map(item => ({
+          id: item.agg_id,
+          name: item.agg_name,
+          email: item.agg_email,
+          phone: item.agg_phone,
+          orders: Number(item.agg_orders),
+          totalSpent: Number(item.agg_total_spent),
+          lastOrder: item.agg_last_order
+        }));
+        setCampaignAudience(mapped);
       } else {
         setCampaignAudience([]);
       }
@@ -412,6 +460,30 @@ export default function Customers() {
     });
   };
 
+  const openCustomerDrawer = async (customer) => {
+    setSelectedCustomer(customer);
+    setCustomerOrders([]);
+    setOrdersLoading(true);
+    
+    let query = supabase.from('orders').select('*, order_items(*)').is('deleted_at', null);
+    if (customer.phone) {
+      query = query.eq('customer_phone', customer.phone);
+    } else if (customer.email) {
+      query = query.eq('customer_email', customer.email);
+    } else {
+      query = query.eq('customer_name', customer.name);
+    }
+    
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (!error && data) {
+      setCustomerOrders(data);
+    } else {
+      console.error('Error fetching customer orders:', error);
+      showToast('Error loading orders', error?.message || 'Unknown error', 'error');
+    }
+    setOrdersLoading(false);
+  };
+
   // ── View campaign detail logs ─────────────────────────────────────────────
   const viewCampaignDetail = async (campaign) => {
     setDetailCampaign(campaign);
@@ -429,7 +501,6 @@ export default function Customers() {
     if (logs.length > 0) {
       const actualSent = logs.filter(log => log.status === 'sent').length;
       const actualFailed = logs.filter(log => log.status === 'failed' && log.error !== 'Pending execution').length;
-      const total = campaign.recipient_count || 0;
       const pendingCount = logs.filter(log => log.status === 'failed' && log.error === 'Pending execution').length;
       
       const expectedStatus = campaign.status === 'sending' && pendingCount > 0
@@ -816,7 +887,7 @@ export default function Customers() {
     setSendingTest(true);
     try {
       const recipients = [{ email: testEmail, name: 'Test Customer' }];
-      const { data: result, error } = await supabase.functions.invoke('send-campaign', {
+      const { error } = await supabase.functions.invoke('send-campaign', {
         body: { subject: `[TEST] ${form.subject}`, body: form.body, recipients },
       });
 
@@ -856,12 +927,6 @@ export default function Customers() {
     height: '38px', boxSizing: 'border-box',
   });
 
-  const selectStyle = {
-    appearance: 'none', WebkitAppearance: 'none',
-    paddingRight: 36, backgroundImage: SVG_ARROW,
-    backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center',
-  };
-
   const handleSort = (key) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortKey(key); setSortDir('asc'); }
@@ -886,6 +951,7 @@ export default function Customers() {
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button onClick={() => setTab('directory')} style={tabBtn(tab === 'directory')}>Directory</button>
+          <button onClick={() => { setTab('tiers'); setActiveTierTab('vip'); }} style={tabBtn(tab === 'tiers')}>Customer Tiers</button>
           {canManage && (
             <button onClick={() => setTab('campaigns')} style={tabBtn(tab === 'campaigns')}>
               <Mail size={14} /> Email Campaigns
@@ -897,33 +963,38 @@ export default function Customers() {
       {/* ── DIRECTORY TAB ── */}
       {tab === 'directory' && (
         <>
-          <div className="kpi-grid" style={{ marginBottom: 24 }}>
-            <div className="kpi-card blue">
-              <div className="kpi-icon"><Users size={24} /></div>
-              <div className="kpi-value">{kpis.totalCustomers}</div>
-              <div className="kpi-label">Total Customers</div>
-              {renderKPIBadge(growth.totalCustomers)}
-            </div>
+          {/* KPI Cards Grid */}
+          {kpiLoading ? (
+            <div style={{ marginBottom: 24 }}><SkelKpiGrid count={4} /></div>
+          ) : (
+            <div className="kpi-grid" style={{ marginBottom: 24 }}>
+              <div className="kpi-card blue">
+                <div className="kpi-icon"><Users size={24} /></div>
+                <div className="kpi-value">{kpis.totalCustomers}</div>
+                <div className="kpi-label">Total Customers</div>
+                {renderKPIBadge(growth.totalCustomers)}
+              </div>
 
-            <div className="kpi-card yellow">
-              <div className="kpi-icon"><Package size={24} /></div>
-              <div className="kpi-value">{kpis.totalOrders}</div>
-              <div className="kpi-label">Total Orders</div>
-              {renderKPIBadge(growth.totalOrders)}
+              <div className="kpi-card yellow">
+                <div className="kpi-icon"><Package size={24} /></div>
+                <div className="kpi-value">{kpis.totalOrders}</div>
+                <div className="kpi-label">Total Orders</div>
+                {renderKPIBadge(growth.totalOrders)}
+              </div>
+              <div className="kpi-card blue">
+                <div className="kpi-icon"><UserPlus size={24} /></div>
+                <div className="kpi-value">{kpis.newCustomers}</div>
+                <div className="kpi-label">New Customers</div>
+                {renderKPIBadge(growth.newCustomers)}
+              </div>
+              <div className="kpi-card green">
+                <div className="kpi-icon"><Repeat2 size={24} /></div>
+                <div className="kpi-value">{kpis.returningCustomers}</div>
+                <div className="kpi-label">Returning Customers</div>
+                {renderKPIBadge(growth.returningCustomers)}
+              </div>
             </div>
-            <div className="kpi-card blue">
-              <div className="kpi-icon"><UserPlus size={24} /></div>
-              <div className="kpi-value">{kpis.newCustomers}</div>
-              <div className="kpi-label">New Customers</div>
-              {renderKPIBadge(growth.newCustomers)}
-            </div>
-            <div className="kpi-card green">
-              <div className="kpi-icon"><Repeat2 size={24} /></div>
-              <div className="kpi-value">{kpis.returningCustomers}</div>
-              <div className="kpi-label">Returning Customers</div>
-              {renderKPIBadge(growth.returningCustomers)}
-            </div>
-          </div>
+          )}
 
           <div style={{
             display: 'flex',
@@ -983,7 +1054,344 @@ export default function Customers() {
               />
             </div>
             
-            {/* Sorting controls & Actions */}
+            {/* Actions */}
+            <div style={{
+              display: 'flex',
+              gap: 8,
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              justifyContent: 'flex-end',
+              flex: '1 1 auto',
+              minWidth: '280px'
+            }}>
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                <button onClick={exportCSV} style={dlBtn('#0284c7')}><Download size={14} /> CSV</button>
+                <button onClick={exportExcel} style={dlBtn('#16a34a')}><Download size={14} /> Excel</button>
+              </div>
+            </div>
+          </div>
+
+          <div className="dash-card" style={{ padding: '16px 12px', overflow: 'hidden' }}>
+            {directoryLoading ? (
+              <SkelTable rows={8} cols={8} />
+            ) : (
+              <div className="dash-table-wrapper" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                <table className="dash-table" style={{ width: '100%', minWidth: '750px', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th onClick={() => handleSort('name')} style={thStyle('name')}>Name <SortIcon col="name" /></th>
+                    <th>Email</th>
+                    <th>Phone</th>
+                    <th>Tier</th>
+                    <th onClick={() => handleSort('orders')} style={thStyle('orders')}>Orders <SortIcon col="orders" /></th>
+                    <th onClick={() => handleSort('totalSpent')} style={thStyle('totalSpent')}>Total Spent <SortIcon col="totalSpent" /></th>
+                    <th onClick={() => handleSort('lastOrder')} style={thStyle('lastOrder')}>Last Order <SortIcon col="lastOrder" /></th>
+                    <th style={{ textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {directoryCustomers.map(c => (
+                    <tr key={c.id}>
+                      <td style={{ fontWeight: 700 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span 
+                            style={{ 
+                              cursor: 'pointer', 
+                              color: 'var(--red)', 
+                              textDecoration: 'underline', 
+                              textDecorationColor: 'transparent', 
+                              transition: 'all 0.2s' 
+                            }}
+                            onMouseEnter={e => e.target.style.textDecorationColor = 'var(--red)'}
+                            onMouseLeave={e => e.target.style.textDecorationColor = 'transparent'}
+                            onClick={() => openCustomerDrawer(c)}
+                          >
+                            {c.name}
+                          </span>
+                          <span style={{
+                            fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
+                            padding: '2px 8px', borderRadius: 20, flexShrink: 0,
+                            ...(c.orders === 1
+                              ? { background: '#dbeafe', color: '#1d4ed8' }
+                              : { background: '#dcfce7', color: '#15803d' })
+                          }}>
+                            {c.orders === 1 ? 'New' : 'Returning'}
+                          </span>
+                        </div>
+                      </td>
+                      <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.email}>
+                        {c.email || <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{c.phone || '—'}</td>
+                      <td>
+                        {c.customer_group === 'vip' && (
+                          <span style={{
+                            fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
+                            padding: '4px 10px', borderRadius: 20, whiteSpace: 'nowrap',
+                            background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a',
+                            display: 'inline-flex', alignItems: 'center', gap: 4
+                          }}>
+                            <Crown size={11} /> VIP
+                          </span>
+                        )}
+                        {c.customer_group === 'standard' && (
+                          <span style={{
+                            fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
+                            padding: '4px 10px', borderRadius: 20, whiteSpace: 'nowrap',
+                            background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd',
+                            display: 'inline-flex', alignItems: 'center', gap: 4
+                          }}>
+                            <Star size={11} /> Standard
+                          </span>
+                        )}
+                        {c.customer_group === 'regular' && (
+                          <span style={{
+                            fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
+                            padding: '4px 10px', borderRadius: 20, whiteSpace: 'nowrap',
+                            background: '#f3f4f6', color: '#4b5563', border: '1px solid #e5e7eb',
+                            display: 'inline-flex', alignItems: 'center', gap: 4
+                          }}>
+                            <User size={11} /> Regular
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ fontWeight: 705 }}>{c.orders}</td>
+                      <td style={{ fontWeight: 705, color: 'var(--green)', whiteSpace: 'nowrap' }}>{fmt(c.totalSpent)}</td>
+                      <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                        {c.lastOrder ? new Date(c.lastOrder).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Never'}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
+                          <button
+                            onClick={() => openCustomerDrawer(c)}
+                            style={{
+                              background: 'var(--white)',
+                              border: '1px solid var(--border-subtle)',
+                              borderRadius: 8,
+                              padding: '6px 14px',
+                              cursor: 'pointer',
+                              fontSize: '0.78rem',
+                              fontWeight: 750,
+                              color: 'var(--text-muted)',
+                              whiteSpace: 'nowrap',
+                              transition: 'all 0.2s',
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(192,32,31,0.4)'; e.currentTarget.style.color = 'var(--red)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
+                          >
+                            View Profile
+                          </button>
+                          {canDelete && (
+                            <button
+                              onClick={() => handleDelete(c.phone)}
+                              style={{
+                                background: 'rgba(192,32,31,0.06)',
+                                border: '1px solid rgba(192,32,31,0.2)',
+                                borderRadius: 8,
+                                padding: '6px 10px',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.background = 'var(--red)'; e.currentTarget.style.borderColor = 'var(--red)'; e.currentTarget.style.color = '#fff'; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(192,32,31,0.06)'; e.currentTarget.style.borderColor = 'rgba(192,32,31,0.2)'; e.currentTarget.style.color = 'var(--red)'; }}
+                              title="Delete Customer"
+                            >
+                              <Trash2 size={14} style={{ display: 'block' }} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {directoryCustomers.length === 0 && (
+                    <tr>
+                      <td colSpan="8" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>No customers found.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            )}
+            <Pagination page={page} total={totalCount} perPage={PER_PAGE} onChange={setPage} />
+          </div>
+        </>
+      )}
+
+      {/* ── CUSTOMER TIERS TAB ── */}
+      {tab === 'tiers' && (
+        <>
+          {/* Interactive Tier Sub-tabs (VIP, Standard, Regular Cards) */}
+          {/* Interactive Tier Sub-tabs (VIP, Standard, Regular Cards) */}
+          <div className="kpi-grid" style={{ marginBottom: 24 }}>
+            {/* VIP Card */}
+            <div 
+              onClick={() => setActiveTierTab('vip')}
+              className="kpi-card"
+              style={{
+                cursor: 'pointer',
+                borderColor: activeTierTab === 'vip' ? 'var(--red)' : undefined,
+                background: activeTierTab === 'vip' ? 'rgba(192, 32, 31, 0.03)' : undefined,
+                boxShadow: activeTierTab === 'vip' ? '0 8px 24px rgba(192, 32, 31, 0.08)' : undefined,
+                transform: activeTierTab === 'vip' ? 'translateY(-2px)' : undefined,
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+              }}
+            >
+              <div className="kpi-icon" style={{ background: '#fef3c7', color: '#b45309', marginBottom: 20 }}>
+                <Crown size={24} />
+              </div>
+              <div className="kpi-value">{groupCounts.vip}</div>
+              <div className="kpi-label">VIP Customers</div>
+              
+              <div style={{
+                position: 'absolute', top: 24, right: 24,
+                background: activeTierTab === 'vip' ? 'rgba(192, 32, 31, 0.1)' : 'var(--card-bg2)',
+                color: activeTierTab === 'vip' ? 'var(--red)' : 'var(--text-muted)',
+                fontWeight: 800,
+                fontSize: '0.72rem',
+                padding: '4px 10px',
+                borderRadius: '20px',
+                border: '1px solid var(--border-subtle)',
+                whiteSpace: 'nowrap'
+              }} title="Spend requirement">
+                {groupTimeframe === 'week' ? '₦15k+' : groupTimeframe === 'month' ? '₦40k+' : '₦150k+'}
+              </div>
+            </div>
+
+            {/* Standard Card */}
+            <div 
+              onClick={() => setActiveTierTab('standard')}
+              className="kpi-card"
+              style={{
+                cursor: 'pointer',
+                borderColor: activeTierTab === 'standard' ? 'var(--red)' : undefined,
+                background: activeTierTab === 'standard' ? 'rgba(192, 32, 31, 0.03)' : undefined,
+                boxShadow: activeTierTab === 'standard' ? '0 8px 24px rgba(192, 32, 31, 0.08)' : undefined,
+                transform: activeTierTab === 'standard' ? 'translateY(-2px)' : undefined,
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+              }}
+            >
+              <div className="kpi-icon" style={{ background: '#e0f2fe', color: '#0369a1', marginBottom: 20 }}>
+                <Star size={24} />
+              </div>
+              <div className="kpi-value">{groupCounts.standard}</div>
+              <div className="kpi-label">Standard Customers</div>
+              
+              <div style={{
+                position: 'absolute', top: 24, right: 24,
+                background: activeTierTab === 'standard' ? 'rgba(192, 32, 31, 0.1)' : 'var(--card-bg2)',
+                color: activeTierTab === 'standard' ? 'var(--red)' : 'var(--text-muted)',
+                fontWeight: 800,
+                fontSize: '0.72rem',
+                padding: '4px 10px',
+                borderRadius: '20px',
+                border: '1px solid var(--border-subtle)',
+                whiteSpace: 'nowrap'
+              }} title="Spend requirement">
+                {groupTimeframe === 'week' ? '₦5k+' : groupTimeframe === 'month' ? '₦15k+' : '₦50k+'}
+              </div>
+            </div>
+
+            {/* Regular Card */}
+            <div 
+              onClick={() => setActiveTierTab('regular')}
+              className="kpi-card"
+              style={{
+                cursor: 'pointer',
+                borderColor: activeTierTab === 'regular' ? 'var(--red)' : undefined,
+                background: activeTierTab === 'regular' ? 'rgba(192, 32, 31, 0.03)' : undefined,
+                boxShadow: activeTierTab === 'regular' ? '0 8px 24px rgba(192, 32, 31, 0.08)' : undefined,
+                transform: activeTierTab === 'regular' ? 'translateY(-2px)' : undefined,
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+              }}
+            >
+              <div className="kpi-icon" style={{ background: '#f3f4f6', color: '#4b5563', marginBottom: 20 }}>
+                <User size={24} />
+              </div>
+              <div className="kpi-value">{groupCounts.regular}</div>
+              <div className="kpi-label">Regular Customers</div>
+              
+              <div style={{
+                position: 'absolute', top: 24, right: 24,
+                background: activeTierTab === 'regular' ? 'rgba(192, 32, 31, 0.1)' : 'var(--card-bg2)',
+                color: activeTierTab === 'regular' ? 'var(--red)' : 'var(--text-muted)',
+                fontWeight: 800,
+                fontSize: '0.72rem',
+                padding: '4px 10px',
+                borderRadius: '20px',
+                border: '1px solid var(--border-subtle)',
+                whiteSpace: 'nowrap'
+              }} title="Spend requirement">
+                Regular
+              </div>
+            </div>
+          </div>
+
+          {/* Filters Bar */}
+          <div style={{
+            display: 'flex',
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 16,
+            flexWrap: 'wrap',
+            gap: 12,
+            width: '100%'
+          }}>
+            <div style={{
+              display: 'flex',
+              gap: 10,
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              flex: '1 1 auto',
+              minWidth: '280px'
+            }}>
+              <div style={{ position: 'relative', width: 220, height: '38px' }}>
+                <Search
+                  size={16}
+                  color="var(--text-muted)"
+                  style={{
+                    position: 'absolute',
+                    left: 12,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    pointerEvents: 'none'
+                  }}
+                />
+                <input
+                  className="dash-search"
+                  placeholder="Search tier customers..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  style={{
+                    margin: 0,
+                    width: '100%',
+                    height: '100%',
+                    boxSizing: 'border-box',
+                    paddingLeft: 38,
+                    textAlign: 'left'
+                  }}
+                />
+              </div>
+              
+              <CustomSelect
+                value={groupTimeframe}
+                onChange={e => {
+                  setGroupTimeframe(e.target.value);
+                  setPage(1);
+                }}
+                options={[
+                  { value: 'all_time', label: 'Group: All-Time Tiers' },
+                  { value: 'month', label: 'Group: Last 30 Days Tiers' },
+                  { value: 'week', label: 'Group: Last 7 Days Tiers' },
+                ]}
+                style={{ width: 180, height: '38px', boxSizing: 'border-box' }}
+              />
+            </div>
+
             <div style={{
               display: 'flex',
               gap: 10,
@@ -1018,6 +1426,7 @@ export default function Customers() {
             </div>
           </div>
 
+          {/* Tiers Table View */}
           <div className="dash-card" style={{ padding: '16px 12px', overflow: 'hidden' }}>
             <div className="dash-table-wrapper" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
               <table className="dash-table" style={{ width: '100%', minWidth: '750px', borderCollapse: 'collapse' }}>
@@ -1026,6 +1435,7 @@ export default function Customers() {
                     <th onClick={() => handleSort('name')} style={thStyle('name')}>Name <SortIcon col="name" /></th>
                     <th>Email</th>
                     <th>Phone</th>
+                    <th>Tier</th>
                     <th onClick={() => handleSort('orders')} style={thStyle('orders')}>Orders <SortIcon col="orders" /></th>
                     <th onClick={() => handleSort('totalSpent')} style={thStyle('totalSpent')}>Total Spent <SortIcon col="totalSpent" /></th>
                     <th onClick={() => handleSort('lastOrder')} style={thStyle('lastOrder')}>Last Order <SortIcon col="lastOrder" /></th>
@@ -1037,39 +1447,122 @@ export default function Customers() {
                     <tr key={c.id}>
                       <td style={{ fontWeight: 700 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          <span>{c.name}</span>
-                          <span style={{
-                            fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
-                            padding: '2px 8px', borderRadius: 20, flexShrink: 0,
-                            ...(c.orders === 1
-                              ? { background: '#dbeafe', color: '#1d4ed8' }
-                              : { background: '#dcfce7', color: '#15803d' })
-                          }}>
-                            {c.orders === 1 ? 'New' : 'Returning'}
+                          <span 
+                            style={{ 
+                              cursor: 'pointer', 
+                              color: 'var(--red)', 
+                              textDecoration: 'underline', 
+                              textDecorationColor: 'transparent', 
+                              transition: 'all 0.2s' 
+                            }}
+                            onMouseEnter={e => e.target.style.textDecorationColor = 'var(--red)'}
+                            onMouseLeave={e => e.target.style.textDecorationColor = 'transparent'}
+                            onClick={() => openCustomerDrawer(c)}
+                          >
+                            {c.name}
                           </span>
+                          {c.orders === 1 && (
+                            <span style={{
+                              fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
+                              padding: '2px 8px', borderRadius: 20, flexShrink: 0,
+                              background: '#dbeafe', color: '#1d4ed8'
+                            }}>
+                              New
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.email}>
                         {c.email || <span style={{ color: 'var(--text-muted)' }}>—</span>}
                       </td>
                       <td style={{ whiteSpace: 'nowrap' }}>{c.phone || '—'}</td>
-                      <td style={{ fontWeight: 600 }}>{c.orders}</td>
-                      <td style={{ fontWeight: 700, color: 'var(--green)', whiteSpace: 'nowrap' }}>{fmt(c.totalSpent)}</td>
-                      <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                        {c.lastOrder ? new Date(c.lastOrder).toLocaleDateString() : 'Never'}
-                      </td>
-                      <td style={{ textAlign: 'right' }}>
-                        {canDelete && (
-                          <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)', padding: '4px 8px' }} onClick={() => handleDelete(c.phone)}>
-                            <Trash2 size={16} />
-                          </button>
+                      <td>
+                        {c.customer_group === 'vip' && (
+                          <span style={{
+                            fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
+                            padding: '4px 10px', borderRadius: 20, whiteSpace: 'nowrap',
+                            background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a',
+                            display: 'inline-flex', alignItems: 'center', gap: 4
+                          }}>
+                            <Crown size={11} /> VIP
+                          </span>
                         )}
+                        {c.customer_group === 'standard' && (
+                          <span style={{
+                            fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
+                            padding: '4px 10px', borderRadius: 20, whiteSpace: 'nowrap',
+                            background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd',
+                            display: 'inline-flex', alignItems: 'center', gap: 4
+                          }}>
+                            <Star size={11} /> Standard
+                          </span>
+                        )}
+                        {c.customer_group === 'regular' && (
+                          <span style={{
+                            fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
+                            padding: '4px 10px', borderRadius: 20, whiteSpace: 'nowrap',
+                            background: '#f3f4f6', color: '#4b5563', border: '1px solid #e5e7eb',
+                            display: 'inline-flex', alignItems: 'center', gap: 4
+                          }}>
+                            <User size={11} /> Regular
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ fontWeight: 705 }}>{c.orders}</td>
+                      <td style={{ fontWeight: 705, color: 'var(--green)', whiteSpace: 'nowrap' }}>{fmt(c.totalSpent)}</td>
+                      <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                        {c.lastOrder ? new Date(c.lastOrder).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Never'}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
+                          <button
+                            onClick={() => openCustomerDrawer(c)}
+                            style={{
+                              background: 'var(--white)',
+                              border: '1px solid var(--border-subtle)',
+                              borderRadius: 8,
+                              padding: '6px 14px',
+                              cursor: 'pointer',
+                              fontSize: '0.78rem',
+                              fontWeight: 750,
+                              color: 'var(--text-muted)',
+                              whiteSpace: 'nowrap',
+                              transition: 'all 0.2s',
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(192,32,31,0.4)'; e.currentTarget.style.color = 'var(--red)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
+                          >
+                            View Profile
+                          </button>
+                          {canDelete && (
+                            <button
+                              onClick={() => handleDelete(c.phone)}
+                              style={{
+                                background: 'rgba(192,32,31,0.06)',
+                                border: '1px solid rgba(192,32,31,0.2)',
+                                borderRadius: 8,
+                                padding: '6px 10px',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.background = 'var(--red)'; e.currentTarget.style.borderColor = 'var(--red)'; e.currentTarget.style.color = '#fff'; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(192,32,31,0.06)'; e.currentTarget.style.borderColor = 'rgba(192,32,31,0.2)'; e.currentTarget.style.color = 'var(--red)'; }}
+                              title="Delete Customer"
+                            >
+                              <Trash2 size={14} style={{ display: 'block' }} />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
                   {directoryCustomers.length === 0 && (
                     <tr>
-                      <td colSpan="7" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>No customers found.</td>
+                      <td colSpan="8" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>No customers found.</td>
                     </tr>
                   )}
                 </tbody>
@@ -1355,75 +1848,84 @@ export default function Customers() {
                             display: 'flex', flexDirection: 'column', gap: 8,
                             paddingRight: 4
                           }}>
-                            {fullAudienceList.length === 0 && (
-                              <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
-                                No recipients in the selected audience segment.
+                            {audienceLoading ? (
+                              <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                <Loader2 size={16} className="spin" style={{ display: 'inline-block', marginRight: 8, verticalAlign: 'middle' }} />
+                                Loading audience preview...
                               </div>
-                            )}
+                            ) : (
+                              <>
+                                {fullAudienceList.length === 0 && (
+                                  <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                                    No recipients in the selected audience segment.
+                                  </div>
+                                )}
 
-                            {fullAudienceList.length > 0 && searched.length === 0 && (
-                              <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
-                                No match found for "{recipientSearch}"
-                              </div>
-                            )}
+                                {fullAudienceList.length > 0 && searched.length === 0 && (
+                                  <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                                    No match found for "{recipientSearch}"
+                                  </div>
+                                )}
 
-                            {searched.map(c => {
-                              const emailKey = c.email.trim().toLowerCase();
-                              const isExcluded = excludedEmails.has(emailKey);
-                              
-                              return (
-                                <div
-                                  key={c.id}
-                                  style={{
-                                    display: 'flex', alignItems: 'center', justifySpace: 'between',
-                                    padding: '10px 12px', background: isExcluded ? 'rgba(0,0,0,0.03)' : 'var(--black2)',
-                                    borderRadius: 8, border: '1px solid var(--border-subtle)',
-                                    opacity: isExcluded ? 0.55 : 1, transition: 'all 0.15s'
-                                  }}
-                                >
-                                  <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, flex: 1 }}>
-                                    <input
-                                      type="checkbox"
-                                      checked={!isExcluded}
-                                      onChange={() => {
-                                        const next = new Set(excludedEmails);
-                                        if (isExcluded) {
-                                          next.delete(emailKey);
-                                        } else {
-                                          next.add(emailKey);
-                                        }
-                                        setExcludedEmails(next);
-                                      }}
+                                {searched.map(c => {
+                                  const emailKey = c.email.trim().toLowerCase();
+                                  const isExcluded = excludedEmails.has(emailKey);
+                                  
+                                  return (
+                                    <div
+                                      key={c.id}
                                       style={{
-                                        width: '16px',
-                                        height: '16px',
-                                        marginRight: '12px',
-                                        cursor: 'pointer',
-                                        accentColor: 'var(--red)',
-                                        flexShrink: 0
+                                        display: 'flex', alignItems: 'center', justifySpace: 'between',
+                                        padding: '10px 12px', background: isExcluded ? 'rgba(0,0,0,0.03)' : 'var(--black2)',
+                                        borderRadius: 8, border: '1px solid var(--border-subtle)',
+                                        opacity: isExcluded ? 0.55 : 1, transition: 'all 0.15s'
                                       }}
-                                    />
-                                    <div style={{ minWidth: 0, flex: 1, paddingRight: 12 }}>
-                                      <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {c.name || 'Anonymous Customer'}
-                                      </div>
-                                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
-                                        {c.email}
-                                      </div>
-                                      <div style={{ fontSize: '0.72rem', color: 'var(--red)', fontWeight: 600, marginTop: 4 }}>
-                                        {form.audience === 'top_20_monthly' ? (
-                                          form.dateFilter && (form.dateFilter.start || form.dateFilter.end)
-                                            ? `₦${Number(c.rangeSpent || 0).toLocaleString()} spent in range`
-                                            : `₦${Number(c.rangeSpent || c.totalSpent || 0).toLocaleString()} spent (all-time)`
-                                        ) : (
-                                          `₦${Number(c.totalSpent || 0).toLocaleString()} total spent · ${c.orders} order${c.orders !== 1 ? 's' : ''}`
-                                        )}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, flex: 1 }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={!isExcluded}
+                                          onChange={() => {
+                                            const next = new Set(excludedEmails);
+                                            if (isExcluded) {
+                                              next.delete(emailKey);
+                                            } else {
+                                              next.add(emailKey);
+                                            }
+                                            setExcludedEmails(next);
+                                          }}
+                                          style={{
+                                            width: '16px',
+                                            height: '16px',
+                                            marginRight: '12px',
+                                            cursor: 'pointer',
+                                            accentColor: 'var(--red)',
+                                            flexShrink: 0
+                                          }}
+                                        />
+                                        <div style={{ minWidth: 0, flex: 1, paddingRight: 12 }}>
+                                          <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {c.name || 'Anonymous Customer'}
+                                          </div>
+                                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
+                                            {c.email}
+                                          </div>
+                                          <div style={{ fontSize: '0.72rem', color: 'var(--red)', fontWeight: 600, marginTop: 4 }}>
+                                            {form.audience === 'top_20_monthly' ? (
+                                              form.dateFilter && (form.dateFilter.start || form.dateFilter.end)
+                                                ? `₦${Number(c.rangeSpent || 0).toLocaleString()} spent in range`
+                                                : `₦${Number(c.rangeSpent || c.totalSpent || 0).toLocaleString()} spent (all-time)`
+                                            ) : (
+                                              `₦${Number(c.totalSpent || 0).toLocaleString()} total spent · ${c.orders} order${c.orders !== 1 ? 's' : ''}`
+                                            )}
+                                          </div>
+                                        </div>
                                       </div>
                                     </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
+                                  );
+                                })}
+                              </>
+                            )}
                           </div>
                         </>
                       );
@@ -1736,6 +2238,249 @@ export default function Customers() {
         onClose={() => setConfirmAction(null)} 
         {...confirmAction} 
       />
+
+      {/* ── Customer Profile Drawer ── */}
+      <div 
+        className={`dash-drawer-overlay ${selectedCustomer ? 'open' : ''}`} 
+        onClick={() => setSelectedCustomer(null)}
+      />
+      <div className={`dash-drawer ${selectedCustomer ? 'open' : ''}`}>
+        {selectedCustomer && (
+          <>
+            <div className="dash-drawer-header">
+              <div>
+                <h3 style={{ margin: 0, fontFamily: "'Mona Sans', sans-serif", fontSize: '1.2rem', color: 'var(--red)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <User size={20} /> Customer Profile
+                </h3>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+                  Detailed history and customer information
+                </p>
+              </div>
+              <button className="dash-drawer-close" onClick={() => setSelectedCustomer(null)}><X size={16} /></button>
+            </div>
+
+            <div className="dash-drawer-content" style={{ display: 'flex', flexDirection: 'column', gap: 20, height: '100%', overflow: 'hidden' }}>
+              {/* Profile Overview */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, background: 'var(--card-bg2)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 16 }}>
+                <div style={{
+                  width: 56, height: 56, borderRadius: '50%',
+                  background: 'var(--red)', color: '#fff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '1.25rem', fontWeight: 800, flexShrink: 0
+                }}>
+                  {(() => {
+                    const name = selectedCustomer.name || '';
+                    return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
+                  })()}
+                </div>
+                <div>
+                  <div style={{ fontWeight: 850, fontSize: '1.1rem', color: 'var(--text)', marginBottom: 4 }}>
+                    {selectedCustomer.name}
+                  </div>
+                  <div>
+                    {selectedCustomer.customer_group === 'vip' && (
+                      <span style={{
+                        fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
+                        padding: '3px 8px', borderRadius: 20,
+                        background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a',
+                        display: 'inline-flex', alignItems: 'center', gap: 4
+                      }}>
+                        <Crown size={11} /> VIP Member
+                      </span>
+                    )}
+                    {selectedCustomer.customer_group === 'standard' && (
+                      <span style={{
+                        fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
+                        padding: '3px 8px', borderRadius: 20,
+                        background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd',
+                        display: 'inline-flex', alignItems: 'center', gap: 4
+                      }}>
+                        <Star size={11} /> Standard Member
+                      </span>
+                    )}
+                    {selectedCustomer.customer_group === 'regular' && (
+                      <span style={{
+                        fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
+                        padding: '3px 8px', borderRadius: 20,
+                        background: '#f3f4f6', color: '#4b5563', border: '1px solid #e5e7eb',
+                        display: 'inline-flex', alignItems: 'center', gap: 4
+                      }}>
+                        <User size={11} /> Regular Member
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Contact Details */}
+              <div style={{ background: 'var(--white)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 16 }}>
+                <h4 style={{ margin: '0 0 12px 0', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  Contact Information
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: '0.88rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}><Mail size={14} /> Email:</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontWeight: 650 }}>{selectedCustomer.email || '—'}</span>
+                      {selectedCustomer.email && (
+                        <button 
+                          onClick={() => {
+                            navigator.clipboard.writeText(selectedCustomer.email);
+                            showToast('Copied', 'Email copied to clipboard', 'success');
+                          }}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
+                          title="Copy Email"
+                        >
+                          <Copy size={12} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}><Phone size={14} /> Phone:</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontWeight: 650 }}>{selectedCustomer.phone || '—'}</span>
+                      {selectedCustomer.phone && (
+                        <button 
+                          onClick={() => {
+                            navigator.clipboard.writeText(selectedCustomer.phone);
+                            showToast('Copied', 'Phone number copied to clipboard', 'success');
+                          }}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
+                          title="Copy Phone"
+                        >
+                          <Copy size={12} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, borderTop: '1px solid var(--border-subtle)', paddingTop: 10 }}>
+                    <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}><MapPin size={14} /> Primary Address:</span>
+                    <span style={{ fontWeight: 600, color: 'var(--text)', lineHeight: '1.4' }}>
+                      {customerOrders[0]?.delivery_address || 'No address registered.'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Stat Boxes */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                <div style={{ background: 'var(--card-bg2)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, marginBottom: 4 }}>Spent</div>
+                  <div style={{ fontWeight: 900, fontSize: '1.05rem', color: 'var(--green)' }}>{fmt(selectedCustomer.totalSpent)}</div>
+                </div>
+                <div style={{ background: 'var(--card-bg2)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, marginBottom: 4 }}>Orders</div>
+                  <div style={{ fontWeight: 900, fontSize: '1.05rem', color: 'var(--text)' }}>{selectedCustomer.orders}</div>
+                </div>
+                <div style={{ background: 'var(--card-bg2)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, marginBottom: 4 }}>AOV</div>
+                  <div style={{ fontWeight: 900, fontSize: '1.05rem', color: 'var(--text)' }}>
+                    {fmt(selectedCustomer.orders > 0 ? selectedCustomer.totalSpent / selectedCustomer.orders : 0)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Recent Orders List (Optimized height to stretch with flexbox) */}
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+                <h4 style={{ margin: '0 0 10px 0', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                  Recent Orders {ordersLoading && <Loader2 size={12} className="spin" style={{ marginLeft: 6 }} />}
+                </h4>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, overflowY: 'auto', paddingRight: 4 }}>
+                  {ordersLoading ? (
+                    <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>Loading customer orders...</div>
+                  ) : customerOrders.length === 0 ? (
+                    <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', background: 'var(--card-bg2)', borderRadius: 12, border: '1px dashed var(--border-subtle)' }}>
+                      No orders found.
+                    </div>
+                  ) : (
+                    customerOrders.map(order => (
+                      <div key={order.id} style={{ background: 'var(--card-bg2)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 4 }}>
+                          <span style={{ fontWeight: 800, fontSize: '0.85rem', color: 'var(--text)' }}>#{order.id}</span>
+                          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <Calendar size={12} />
+                            {new Date(order.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}
+                          </span>
+                        </div>
+                        
+                        {/* Order Items */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8, paddingLeft: 6, borderLeft: '2px solid var(--border-subtle)' }}>
+                          {(order.order_items || []).map((item, idx) => (
+                            <div key={idx} style={{ fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between' }}>
+                              <span><strong style={{ color: 'var(--text)' }}>{item.qty}x</strong> {item.name}</span>
+                              <span style={{ color: 'var(--text-muted)' }}>{fmt(item.price * item.qty)}</span>
+                            </div>
+                          ))}
+                        </div>
+                        
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem', borderTop: '1px solid rgba(0,0,0,0.04)', paddingTop: 6 }}>
+                          <span className={`status-badge ${order.status}`} style={{ transform: 'scale(0.85)', transformOrigin: 'left center' }}>{order.status}</span>
+                          <strong style={{ color: 'var(--text)', fontSize: '0.88rem' }}>{fmt(order.total)}</strong>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Drawer Footer */}
+            <div className="dash-drawer-footer">
+              {canDelete && (
+                <button
+                  onClick={() => { handleDelete(selectedCustomer.phone); setSelectedCustomer(null); }}
+                  style={{
+                    background: 'rgba(192,32,31,0.06)',
+                    border: '1px solid rgba(192,32,31,0.2)',
+                    borderRadius: 8,
+                    padding: '8px 16px',
+                    cursor: 'pointer',
+                    fontSize: '0.8rem',
+                    fontWeight: 750,
+                    color: 'var(--red)',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--red)'; e.currentTarget.style.color = '#fff'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(192,32,31,0.06)'; e.currentTarget.style.color = 'var(--red)'; }}
+                >
+                  Delete Customer
+                </button>
+              )}
+              
+              <button
+                onClick={() => {
+                  setTab('campaigns');
+                  setForm(f => ({
+                    ...f,
+                    name: `Direct Campaign for ${selectedCustomer.name}`,
+                    subject: `Special Update for ${selectedCustomer.name}`,
+                    body: `Hi ${selectedCustomer.name},\n\nWe wanted to reach out to you...`
+                  }));
+                  setSelectedCustomer(null);
+                }}
+                style={{
+                  background: 'var(--red)',
+                  border: '1px solid var(--red)',
+                  borderRadius: 8,
+                  padding: '8px 16px',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  fontWeight: 750,
+                  color: '#fff',
+                  marginLeft: 'auto',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(192,32,31,0.9)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'var(--red)'; }}
+              >
+                Compose Campaign
+              </button>
+            </div>
+          </>
+        )}
+      </div>
 
       {/* ── Campaign Log Detail Modal ── */}
       {detailCampaign && (
