@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, DollarSign, Package, Trash2, Download, Mail, Send, Loader2, UserPlus, Repeat2, ChevronUp, ChevronDown, Search, Sparkles, X, TrendingUp, TrendingDown, Crown, Star, User, Copy, Phone, MapPin, Calendar } from 'lucide-react';
+import { Users, DollarSign, Package, Trash2, Download, Mail, Send, Loader2, UserPlus, Repeat2, ChevronUp, ChevronDown, Search, Sparkles, X, TrendingUp, TrendingDown, Crown, Star, User, Copy, Phone, MapPin, Calendar, MessageCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { SkelDashHeader, SkelKpiGrid, SkelTable } from '../../components/Skeleton';
 import Pagination from '../../components/Pagination';
@@ -21,6 +21,36 @@ Use code SAVE20 at checkout.
 Shop now at smokeyhutdelight.com
 
 — The Smokeyhut Delight Team`;
+
+const SINGLE_EMAIL_TEMPLATES = [
+  {
+    name: 'Checking In',
+    subject: 'Thinking of you from Smokeyhut Delight!',
+    body: (name) => `Hi ${name},\n\nIt's been a while since your last order, and we miss you! We wanted to check in and see how you're doing. Let us know if you have any questions or feedback. Hope to grill for you again soon!\n\nBest,\nThe Smokeyhut Delight Team`
+  },
+  {
+    name: 'Win Back Promo',
+    subject: 'We miss you! Here is 15% off your next order 🎁',
+    body: (name) => `Hi ${name},\n\nWe haven't seen you in a bit, so we wanted to treat you to 15% off your next meal! Use the coupon code MISSYOU at checkout.\n\nShop now at smokeyhutdelight.com\n\nHope to see you soon!\n\nBest,\nThe Smokeyhut Delight Team`
+  },
+  {
+    name: 'Feedback Inquiry',
+    subject: "We'd love your feedback on your experience",
+    body: (name) => `Hi ${name},\n\nAs one of our valued customers, your opinion is extremely important to us. How was your last experience with Smokeyhut Delight? We would love to hear your thoughts so we can improve.\n\nThank you for your time!\n\nWarm regards,\nThe Smokeyhut Delight Team`
+  }
+];
+
+const formatWhatsAppLink = (phone) => {
+  if (!phone) return '';
+  let clean = phone.replace(/\D/g, '');
+  if (clean.startsWith('0')) {
+    clean = '234' + clean.substring(1);
+  }
+  if (clean.length === 10 && !clean.startsWith('234')) {
+    clean = '234' + clean;
+  }
+  return `https://wa.me/${clean}`;
+};
 
 const AUDIENCE_OPTIONS = [
   { value: 'all',                  label: 'All customers with email' },
@@ -80,6 +110,10 @@ export default function Customers() {
   const [customerOrders, setCustomerOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [activeTierTab, setActiveTierTab] = useState('vip');
+  const [drawerMode, setDrawerMode] = useState('profile'); // 'profile' or 'email'
+  const [singleEmailSubject, setSingleEmailSubject] = useState('');
+  const [singleEmailBody, setSingleEmailBody] = useState('');
+  const [sendingSingleEmail, setSendingSingleEmail] = useState(false);
 
   // Sync groupFilter with activeTierTab when in tiers view, or reset when in directory view
   useEffect(() => {
@@ -462,6 +496,9 @@ export default function Customers() {
 
   const openCustomerDrawer = async (customer) => {
     setSelectedCustomer(customer);
+    setDrawerMode('profile');
+    setSingleEmailSubject('');
+    setSingleEmailBody('');
     setCustomerOrders([]);
     setOrdersLoading(true);
     
@@ -2248,235 +2285,530 @@ export default function Customers() {
         {selectedCustomer && (
           <>
             <div className="dash-drawer-header">
-              <div>
-                <h3 style={{ margin: 0, fontFamily: "'Mona Sans', sans-serif", fontSize: '1.2rem', color: 'var(--red)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <User size={20} /> Customer Profile
-                </h3>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
-                  Detailed history and customer information
-                </p>
-              </div>
+              {drawerMode === 'email' ? (
+                <>
+                  <div>
+                    <h3 style={{ margin: 0, fontFamily: "'Mona Sans', sans-serif", fontSize: '1.2rem', color: 'var(--red)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Mail size={20} /> Direct Email
+                    </h3>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+                      Reach out to {selectedCustomer.name} directly via email
+                    </p>
+                  </div>
+                  <button 
+                    onClick={() => setDrawerMode('profile')} 
+                    style={{ 
+                      background: 'var(--black2)', 
+                      border: '1px solid var(--border-subtle)', 
+                      borderRadius: 8, 
+                      cursor: 'pointer', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      padding: '6px 12px',
+                      fontSize: '0.78rem', 
+                      fontWeight: 750, 
+                      color: 'var(--text)', 
+                      marginRight: 10,
+                      marginLeft: 'auto',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--red)'}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-subtle)'}
+                  >
+                    Back
+                  </button>
+                </>
+              ) : (
+                <div>
+                  <h3 style={{ margin: 0, fontFamily: "'Mona Sans', sans-serif", fontSize: '1.2rem', color: 'var(--red)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <User size={20} /> Customer Profile
+                  </h3>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+                    Detailed history and customer information
+                  </p>
+                </div>
+              )}
               <button className="dash-drawer-close" onClick={() => setSelectedCustomer(null)}><X size={16} /></button>
             </div>
 
             <div className="dash-drawer-content" style={{ display: 'flex', flexDirection: 'column', gap: 20, height: '100%', overflow: 'hidden' }}>
-              {/* Profile Overview */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16, background: 'var(--card-bg2)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 16 }}>
-                <div style={{
-                  width: 56, height: 56, borderRadius: '50%',
-                  background: 'var(--red)', color: '#fff',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '1.25rem', fontWeight: 800, flexShrink: 0
-                }}>
-                  {(() => {
-                    const name = selectedCustomer.name || '';
-                    return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
-                  })()}
-                </div>
-                <div>
-                  <div style={{ fontWeight: 850, fontSize: '1.1rem', color: 'var(--text)', marginBottom: 4 }}>
-                    {selectedCustomer.name}
-                  </div>
+              {drawerMode === 'email' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16, height: '100%', overflowY: 'auto', paddingRight: 4 }}>
+                  {/* Recipient Field */}
                   <div>
-                    {selectedCustomer.customer_group === 'vip' && (
-                      <span style={{
-                        fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
-                        padding: '3px 8px', borderRadius: 20,
-                        background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a',
-                        display: 'inline-flex', alignItems: 'center', gap: 4
-                      }}>
-                        <Crown size={11} /> VIP Member
-                      </span>
-                    )}
-                    {selectedCustomer.customer_group === 'standard' && (
-                      <span style={{
-                        fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
-                        padding: '3px 8px', borderRadius: 20,
-                        background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd',
-                        display: 'inline-flex', alignItems: 'center', gap: 4
-                      }}>
-                        <Star size={11} /> Standard Member
-                      </span>
-                    )}
-                    {selectedCustomer.customer_group === 'regular' && (
-                      <span style={{
-                        fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
-                        padding: '3px 8px', borderRadius: 20,
-                        background: '#f3f4f6', color: '#4b5563', border: '1px solid #e5e7eb',
-                        display: 'inline-flex', alignItems: 'center', gap: 4
-                      }}>
-                        <User size={11} /> Regular Member
-                      </span>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 6 }}>Recipient Email</label>
+                    <input
+                      disabled
+                      value={selectedCustomer.email || 'No email address registered.'}
+                      className="premium-input"
+                      style={{ background: 'var(--card-bg2)', cursor: 'not-allowed', width: '100%', boxSizing: 'border-box' }}
+                    />
+                    {!selectedCustomer.email && (
+                      <p style={{ fontSize: '0.75rem', color: 'var(--red)', marginTop: 4, fontWeight: 600 }}>
+                        ⚠️ Cannot send email: Customer has no email address.
+                      </p>
                     )}
                   </div>
-                </div>
-              </div>
 
-              {/* Contact Details */}
-              <div style={{ background: 'var(--white)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 16 }}>
-                <h4 style={{ margin: '0 0 12px 0', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  Contact Information
-                </h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: '0.88rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}><Mail size={14} /> Email:</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontWeight: 650 }}>{selectedCustomer.email || '—'}</span>
-                      {selectedCustomer.email && (
-                        <button 
-                          onClick={() => {
-                            navigator.clipboard.writeText(selectedCustomer.email);
-                            showToast('Copied', 'Email copied to clipboard', 'success');
-                          }}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
-                          title="Copy Email"
-                        >
-                          <Copy size={12} />
-                        </button>
-                      )}
+                  {/* Templates Quick Selection */}
+                  {selectedCustomer.email && (
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 8 }}>Quick Templates</label>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {SINGLE_EMAIL_TEMPLATES.map((tmpl) => (
+                          <button
+                            key={tmpl.name}
+                            onClick={() => {
+                              setSingleEmailSubject(tmpl.subject);
+                              setSingleEmailBody(tmpl.body(selectedCustomer.name));
+                            }}
+                            style={{
+                              background: 'var(--white)',
+                              border: '1px solid var(--border-subtle)',
+                              borderRadius: 20,
+                              padding: '4px 12px',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              color: 'var(--text)',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={e => {
+                              e.currentTarget.style.borderColor = 'var(--red)';
+                              e.currentTarget.style.color = 'var(--red)';
+                            }}
+                            onMouseLeave={e => {
+                              e.currentTarget.style.borderColor = 'var(--border-subtle)';
+                              e.currentTarget.style.color = 'var(--text)';
+                            }}
+                          >
+                            {tmpl.name}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}><Phone size={14} /> Phone:</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontWeight: 650 }}>{selectedCustomer.phone || '—'}</span>
-                      {selectedCustomer.phone && (
-                        <button 
-                          onClick={() => {
-                            navigator.clipboard.writeText(selectedCustomer.phone);
-                            showToast('Copied', 'Phone number copied to clipboard', 'success');
-                          }}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
-                          title="Copy Phone"
-                        >
-                          <Copy size={12} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, borderTop: '1px solid var(--border-subtle)', paddingTop: 10 }}>
-                    <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}><MapPin size={14} /> Primary Address:</span>
-                    <span style={{ fontWeight: 600, color: 'var(--text)', lineHeight: '1.4' }}>
-                      {customerOrders[0]?.delivery_address || 'No address registered.'}
-                    </span>
-                  </div>
-                </div>
-              </div>
+                  )}
 
-              {/* Stat Boxes */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-                <div style={{ background: 'var(--card-bg2)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, textAlign: 'center' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, marginBottom: 4 }}>Spent</div>
-                  <div style={{ fontWeight: 900, fontSize: '1.05rem', color: 'var(--green)' }}>{fmt(selectedCustomer.totalSpent)}</div>
-                </div>
-                <div style={{ background: 'var(--card-bg2)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, textAlign: 'center' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, marginBottom: 4 }}>Orders</div>
-                  <div style={{ fontWeight: 900, fontSize: '1.05rem', color: 'var(--text)' }}>{selectedCustomer.orders}</div>
-                </div>
-                <div style={{ background: 'var(--card-bg2)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, textAlign: 'center' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, marginBottom: 4 }}>AOV</div>
-                  <div style={{ fontWeight: 900, fontSize: '1.05rem', color: 'var(--text)' }}>
-                    {fmt(selectedCustomer.orders > 0 ? selectedCustomer.totalSpent / selectedCustomer.orders : 0)}
+                  {/* Subject Field */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 6 }}>Subject</label>
+                    <input
+                      placeholder="Enter email subject..."
+                      value={singleEmailSubject}
+                      onChange={e => setSingleEmailSubject(e.target.value)}
+                      className="premium-input"
+                      disabled={!selectedCustomer.email || sendingSingleEmail}
+                      style={{ width: '100%', boxSizing: 'border-box' }}
+                    />
+                  </div>
+
+                  {/* Message Body Field */}
+                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 180 }}>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 6 }}>Message Body</label>
+                    <textarea
+                      placeholder="Write your email here..."
+                      value={singleEmailBody}
+                      onChange={e => setSingleEmailBody(e.target.value)}
+                      className="premium-input"
+                      style={{ flex: 1, minHeight: 180, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5, width: '100%', boxSizing: 'border-box' }}
+                      disabled={!selectedCustomer.email || sendingSingleEmail}
+                    />
                   </div>
                 </div>
-              </div>
-
-              {/* Recent Orders List (Optimized height to stretch with flexbox) */}
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-                <h4 style={{ margin: '0 0 10px 0', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                  Recent Orders {ordersLoading && <Loader2 size={12} className="spin" style={{ marginLeft: 6 }} />}
-                </h4>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, overflowY: 'auto', paddingRight: 4 }}>
-                  {ordersLoading ? (
-                    <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>Loading customer orders...</div>
-                  ) : customerOrders.length === 0 ? (
-                    <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', background: 'var(--card-bg2)', borderRadius: 12, border: '1px dashed var(--border-subtle)' }}>
-                      No orders found.
+              ) : (
+                <>
+                  {/* Profile Overview */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16, background: 'var(--card-bg2)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 16 }}>
+                    <div style={{
+                      width: 56, height: 56, borderRadius: '50%',
+                      background: 'var(--red)', color: '#fff',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '1.25rem', fontWeight: 800, flexShrink: 0
+                    }}>
+                      {(() => {
+                        const name = selectedCustomer.name || '';
+                        return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
+                      })()}
                     </div>
-                  ) : (
-                    customerOrders.map(order => (
-                      <div key={order.id} style={{ background: 'var(--card-bg2)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 4 }}>
-                          <span style={{ fontWeight: 800, fontSize: '0.85rem', color: 'var(--text)' }}>#{order.id}</span>
-                          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <Calendar size={12} />
-                            {new Date(order.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}
+                    <div>
+                      <div style={{ fontWeight: 850, fontSize: '1.1rem', color: 'var(--text)', marginBottom: 4 }}>
+                        {selectedCustomer.name}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                        {selectedCustomer.customer_group === 'vip' && (
+                          <span style={{
+                            fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
+                            padding: '3px 8px', borderRadius: 20,
+                            background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a',
+                            display: 'inline-flex', alignItems: 'center', gap: 4
+                          }}>
+                            <Crown size={11} /> VIP Member
                           </span>
-                        </div>
-                        
-                        {/* Order Items */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8, paddingLeft: 6, borderLeft: '2px solid var(--border-subtle)' }}>
-                          {(order.order_items || []).map((item, idx) => (
-                            <div key={idx} style={{ fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between' }}>
-                              <span><strong style={{ color: 'var(--text)' }}>{item.qty}x</strong> {item.name}</span>
-                              <span style={{ color: 'var(--text-muted)' }}>{fmt(item.price * item.qty)}</span>
-                            </div>
-                          ))}
-                        </div>
-                        
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem', borderTop: '1px solid rgba(0,0,0,0.04)', paddingTop: 6 }}>
-                          <span className={`status-badge ${order.status}`} style={{ transform: 'scale(0.85)', transformOrigin: 'left center' }}>{order.status}</span>
-                          <strong style={{ color: 'var(--text)', fontSize: '0.88rem' }}>{fmt(order.total)}</strong>
+                        )}
+                        {selectedCustomer.customer_group === 'standard' && (
+                          <span style={{
+                            fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
+                            padding: '3px 8px', borderRadius: 20,
+                            background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd',
+                            display: 'inline-flex', alignItems: 'center', gap: 4
+                          }}>
+                            <Star size={11} /> Standard Member
+                          </span>
+                        )}
+                        {selectedCustomer.customer_group === 'regular' && (
+                          <span style={{
+                            fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
+                            padding: '3px 8px', borderRadius: 20,
+                            background: '#f3f4f6', color: '#4b5563', border: '1px solid #e5e7eb',
+                            display: 'inline-flex', alignItems: 'center', gap: 4
+                          }}>
+                            <User size={11} /> Regular Member
+                          </span>
+                        )}
+
+                        {/* Dynamic Active Status Retention Badge */}
+                        {(() => {
+                          if (!selectedCustomer.lastOrder) {
+                            return (
+                              <span style={{
+                                fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
+                                padding: '3px 8px', borderRadius: 20,
+                                background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca',
+                                display: 'inline-flex', alignItems: 'center'
+                              }}>
+                                Churned
+                              </span>
+                            );
+                          }
+                          const lastDate = new Date(selectedCustomer.lastOrder);
+                          const now = new Date();
+                          const lastMidnight = new Date(lastDate.getFullYear(), lastDate.getMonth(), lastDate.getDate());
+                          const nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                          const diffDays = Math.floor((nowMidnight - lastMidnight) / (1000 * 60 * 60 * 24));
+                          
+                          if (diffDays <= 30) {
+                            return (
+                              <span style={{
+                                fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
+                                padding: '3px 8px', borderRadius: 20,
+                                background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0',
+                                display: 'inline-flex', alignItems: 'center'
+                              }}>
+                                Active
+                              </span>
+                            );
+                          } else if (diffDays <= 60) {
+                            return (
+                              <span style={{
+                                fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
+                                padding: '3px 8px', borderRadius: 20,
+                                background: '#fef9c3', color: '#854d0e', border: '1px solid #fef08a',
+                                display: 'inline-flex', alignItems: 'center'
+                              }}>
+                                Inactive
+                              </span>
+                            );
+                          } else if (diffDays <= 90) {
+                            return (
+                              <span style={{
+                                fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
+                                padding: '3px 8px', borderRadius: 20,
+                                background: '#ffedd5', color: '#9a3412', border: '1px solid #fed7aa',
+                                display: 'inline-flex', alignItems: 'center'
+                              }}>
+                                Slipped
+                              </span>
+                            );
+                          } else {
+                            return (
+                              <span style={{
+                                fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.03em',
+                                padding: '3px 8px', borderRadius: 20,
+                                background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca',
+                                display: 'inline-flex', alignItems: 'center'
+                              }}>
+                                Churned
+                              </span>
+                            );
+                          }
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Contact Details */}
+                  <div style={{ background: 'var(--white)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 16 }}>
+                    <h4 style={{ margin: '0 0 12px 0', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      Contact Information
+                    </h4>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: '0.88rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}><Mail size={14} /> Email:</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontWeight: 650 }}>{selectedCustomer.email || '—'}</span>
+                          {selectedCustomer.email && (
+                            <button 
+                              onClick={() => {
+                                navigator.clipboard.writeText(selectedCustomer.email);
+                                showToast('Copied', 'Email copied to clipboard', 'success');
+                              }}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
+                              title="Copy Email"
+                            >
+                              <Copy size={12} />
+                            </button>
+                          )}
                         </div>
                       </div>
-                    ))
-                  )}
-                </div>
-              </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}><Phone size={14} /> Phone:</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontWeight: 650 }}>{selectedCustomer.phone || '—'}</span>
+                          {selectedCustomer.phone && (
+                            <button 
+                              onClick={() => {
+                                navigator.clipboard.writeText(selectedCustomer.phone);
+                                showToast('Copied', 'Phone number copied to clipboard', 'success');
+                              }}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
+                              title="Copy Phone"
+                            >
+                              <Copy size={12} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, borderTop: '1px solid var(--border-subtle)', paddingTop: 10 }}>
+                        <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}><MapPin size={14} /> Primary Address:</span>
+                        <span style={{ fontWeight: 600, color: 'var(--text)', lineHeight: '1.4' }}>
+                          {customerOrders[0]?.delivery_address || 'No address registered.'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Stat Boxes (2x2 Grid with Last Purchase) */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+                    <div style={{ background: 'var(--card-bg2)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, textAlign: 'center' }}>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, marginBottom: 4 }}>Spent</div>
+                      <div style={{ fontWeight: 900, fontSize: '1.05rem', color: 'var(--green)' }}>{fmt(selectedCustomer.totalSpent)}</div>
+                    </div>
+                    <div style={{ background: 'var(--card-bg2)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, textAlign: 'center' }}>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, marginBottom: 4 }}>Orders</div>
+                      <div style={{ fontWeight: 900, fontSize: '1.05rem', color: 'var(--text)' }}>{selectedCustomer.orders}</div>
+                    </div>
+                    <div style={{ background: 'var(--card-bg2)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, textAlign: 'center' }}>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, marginBottom: 4 }}>AOV</div>
+                      <div style={{ fontWeight: 900, fontSize: '1.05rem', color: 'var(--text)' }}>
+                        {fmt(selectedCustomer.orders > 0 ? selectedCustomer.totalSpent / selectedCustomer.orders : 0)}
+                      </div>
+                    </div>
+                    <div style={{ background: 'var(--card-bg2)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12, textAlign: 'center' }}>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, marginBottom: 4 }}>Last Purchase</div>
+                      <div style={{ fontWeight: 900, fontSize: '0.92rem', color: 'var(--text)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={selectedCustomer.lastOrder ? new Date(selectedCustomer.lastOrder).toLocaleDateString() : 'Never'}>
+                        {(() => {
+                          if (!selectedCustomer.lastOrder) return 'Never';
+                          const lastDate = new Date(selectedCustomer.lastOrder);
+                          const now = new Date();
+                          const lastMidnight = new Date(lastDate.getFullYear(), lastDate.getMonth(), lastDate.getDate());
+                          const nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                          const diffTime = nowMidnight - lastMidnight;
+                          const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                          if (diffDays <= 0) return 'Today';
+                          if (diffDays === 1) return 'Yesterday';
+                          return `${diffDays}d ago`;
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Recent Orders List (Optimized height to stretch with flexbox) */}
+                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+                    <h4 style={{ margin: '0 0 10px 0', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                      Recent Orders {ordersLoading && <Loader2 size={12} className="spin" style={{ marginLeft: 6 }} />}
+                    </h4>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, overflowY: 'auto', paddingRight: 4 }}>
+                      {ordersLoading ? (
+                        <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>Loading customer orders...</div>
+                      ) : customerOrders.length === 0 ? (
+                        <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', background: 'var(--card-bg2)', borderRadius: 12, border: '1px dashed var(--border-subtle)' }}>
+                          No orders found.
+                        </div>
+                      ) : (
+                        customerOrders.map(order => (
+                          <div key={order.id} style={{ background: 'var(--card-bg2)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 4 }}>
+                              <span style={{ fontWeight: 800, fontSize: '0.85rem', color: 'var(--text)' }}>#{order.id}</span>
+                              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <Calendar size={12} />
+                                {new Date(order.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}
+                              </span>
+                            </div>
+                            
+                            {/* Order Items */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8, paddingLeft: 6, borderLeft: '2px solid var(--border-subtle)' }}>
+                              {(order.order_items || []).map((item, idx) => (
+                                <div key={idx} style={{ fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between' }}>
+                                  <span><strong style={{ color: 'var(--text)' }}>{item.qty}x</strong> {item.name}</span>
+                                  <span style={{ color: 'var(--text-muted)' }}>{fmt(item.price * item.qty)}</span>
+                                </div>
+                              ))}
+                            </div>
+                            
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem', borderTop: '1px solid rgba(0,0,0,0.04)', paddingTop: 6 }}>
+                              <span className={`status-badge ${order.status}`} style={{ transform: 'scale(0.85)', transformOrigin: 'left center' }}>{order.status}</span>
+                              <strong style={{ color: 'var(--text)', fontSize: '0.88rem' }}>{fmt(order.total)}</strong>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Drawer Footer */}
-            <div className="dash-drawer-footer">
-              {canDelete && (
-                <button
-                  onClick={() => { handleDelete(selectedCustomer.phone); setSelectedCustomer(null); }}
-                  style={{
-                    background: 'rgba(192,32,31,0.06)',
-                    border: '1px solid rgba(192,32,31,0.2)',
-                    borderRadius: 8,
-                    padding: '8px 16px',
-                    cursor: 'pointer',
-                    fontSize: '0.8rem',
-                    fontWeight: 750,
-                    color: 'var(--red)',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--red)'; e.currentTarget.style.color = '#fff'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(192,32,31,0.06)'; e.currentTarget.style.color = 'var(--red)'; }}
-                >
-                  Delete Customer
-                </button>
+            <div className="dash-drawer-footer" style={{ gap: 10 }}>
+              {drawerMode === 'email' ? (
+                <>
+                  <button
+                    onClick={() => setDrawerMode('profile')}
+                    style={{
+                      background: 'var(--white)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: 8,
+                      padding: '8px 16px',
+                      cursor: 'pointer',
+                      fontSize: '0.8rem',
+                      fontWeight: 750,
+                      color: 'var(--text-muted)',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.2)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; }}
+                  >
+                    Cancel
+                  </button>
+                  
+                  <button
+                    disabled={!selectedCustomer.email || !singleEmailSubject.trim() || !singleEmailBody.trim() || sendingSingleEmail}
+                    onClick={async () => {
+                      setSendingSingleEmail(true);
+                      try {
+                        const recipients = [{ email: selectedCustomer.email, name: selectedCustomer.name || '' }];
+                        const { data, error } = await supabase.functions.invoke('send-campaign', {
+                          body: { subject: singleEmailSubject, body: singleEmailBody, recipients },
+                        });
+
+                        if (error) throw new Error(error.message || 'Send failed');
+                        
+                        if (data?.failed > 0) {
+                          throw new Error('SMTP send failed. Please check the recipient email address.');
+                        }
+
+                        showToast('Success', `Email sent successfully to ${selectedCustomer.name}`, 'success');
+                        setDrawerMode('profile');
+                      } catch (err) {
+                        showToast('Error sending email', err.message, 'error');
+                      } finally {
+                        setSendingSingleEmail(false);
+                      }
+                    }}
+                    style={{
+                      background: (!selectedCustomer.email || !singleEmailSubject.trim() || !singleEmailBody.trim() || sendingSingleEmail) ? '#9ca3af' : 'var(--red)',
+                      border: 'none',
+                      borderRadius: 8,
+                      padding: '8px 20px',
+                      cursor: (!selectedCustomer.email || !singleEmailSubject.trim() || !singleEmailBody.trim() || sendingSingleEmail) ? 'not-allowed' : 'pointer',
+                      fontSize: '0.8rem',
+                      fontWeight: 750,
+                      color: '#fff',
+                      marginLeft: 'auto',
+                      transition: 'all 0.2s',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6
+                    }}
+                    onMouseEnter={e => { if (selectedCustomer.email && singleEmailSubject.trim() && singleEmailBody.trim() && !sendingSingleEmail) e.currentTarget.style.background = 'rgba(192,32,31,0.9)'; }}
+                    onMouseLeave={e => { if (selectedCustomer.email && singleEmailSubject.trim() && singleEmailBody.trim() && !sendingSingleEmail) e.currentTarget.style.background = 'var(--red)'; }}
+                  >
+                    {sendingSingleEmail ? (
+                      <>
+                        <Loader2 size={14} className="spin" /> Sending...
+                      </>
+                    ) : (
+                      <>
+                        <Send size={14} /> Send Email
+                      </>
+                    )}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <a
+                    href={selectedCustomer.phone ? formatWhatsAppLink(selectedCustomer.phone) : undefined}
+                    target={selectedCustomer.phone ? "_blank" : undefined}
+                    rel="noopener noreferrer"
+                    onClick={e => {
+                      if (!selectedCustomer.phone) {
+                        e.preventDefault();
+                        showToast('Info', 'Customer has no phone number registered.', 'info');
+                      }
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      background: selectedCustomer.phone ? '#25D366' : '#9ca3af',
+                      border: 'none',
+                      borderRadius: 8,
+                      padding: '8px 16px',
+                      cursor: selectedCustomer.phone ? 'pointer' : 'not-allowed',
+                      fontSize: '0.8rem',
+                      fontWeight: 750,
+                      color: '#fff',
+                      textDecoration: 'none',
+                      transition: 'all 0.2s',
+                      boxSizing: 'border-box'
+                    }}
+                    onMouseEnter={e => { if (selectedCustomer.phone) { e.currentTarget.style.background = '#128C7E'; } }}
+                    onMouseLeave={e => { if (selectedCustomer.phone) { e.currentTarget.style.background = '#25D366'; } }}
+                  >
+                    <MessageCircle size={14} /> WhatsApp
+                  </a>
+
+                  <button
+                    onClick={() => {
+                      if (selectedCustomer.email) {
+                        setDrawerMode('email');
+                        setSingleEmailSubject('');
+                        setSingleEmailBody(`Hi ${selectedCustomer.name || 'Valued Customer'},\n\n`);
+                      } else {
+                        showToast('Info', 'Customer has no email address registered.', 'info');
+                      }
+                    }}
+                    style={{
+                      background: 'var(--red)',
+                      border: '1px solid var(--red)',
+                      borderRadius: 8,
+                      padding: '8px 16px',
+                      cursor: 'pointer',
+                      fontSize: '0.8rem',
+                      fontWeight: 750,
+                      color: '#fff',
+                      marginLeft: 'auto',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(192,32,31,0.9)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'var(--red)'; }}
+                  >
+                    Send Email
+                  </button>
+                </>
               )}
-              
-              <button
-                onClick={() => {
-                  setTab('campaigns');
-                  setForm(f => ({
-                    ...f,
-                    name: `Direct Campaign for ${selectedCustomer.name}`,
-                    subject: `Special Update for ${selectedCustomer.name}`,
-                    body: `Hi ${selectedCustomer.name},\n\nWe wanted to reach out to you...`
-                  }));
-                  setSelectedCustomer(null);
-                }}
-                style={{
-                  background: 'var(--red)',
-                  border: '1px solid var(--red)',
-                  borderRadius: 8,
-                  padding: '8px 16px',
-                  cursor: 'pointer',
-                  fontSize: '0.8rem',
-                  fontWeight: 750,
-                  color: '#fff',
-                  marginLeft: 'auto',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(192,32,31,0.9)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'var(--red)'; }}
-              >
-                Compose Campaign
-              </button>
             </div>
           </>
         )}
