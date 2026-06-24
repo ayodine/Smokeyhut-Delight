@@ -55,3 +55,31 @@ export function mapResendEventToStatus(type: string): string | null {
     default: return null;
   }
 }
+
+// Verify a Svix-signed webhook (Resend). `headers` is a plain object with lowercased
+// svix-id / svix-timestamp / svix-signature. Uses Web Crypto (available in Deno and Node).
+export async function verifyResendSignature(
+  secret: string,
+  headers: Record<string, string | null>,
+  body: string,
+): Promise<boolean> {
+  const id = headers['svix-id'];
+  const ts = headers['svix-timestamp'];
+  const sigHeader = headers['svix-signature'];
+  if (!id || !ts || !sigHeader) return false;
+
+  const secretB64 = secret.startsWith('whsec_') ? secret.slice(6) : secret;
+  const keyBytes = Uint8Array.from(atob(secretB64), (c) => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey(
+    'raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+  );
+  const signed = new TextEncoder().encode(`${id}.${ts}.${body}`);
+  const sigBuf = await crypto.subtle.sign('HMAC', key, signed);
+  const expected = btoa(String.fromCharCode(...new Uint8Array(sigBuf)));
+
+  // Header is space-separated "v1,<sig>" entries; accept if any matches.
+  return sigHeader.split(' ').some((entry) => {
+    const [, sig] = entry.split(',');
+    return sig === expected;
+  });
+}

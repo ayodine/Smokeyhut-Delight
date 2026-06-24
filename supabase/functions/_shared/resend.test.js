@@ -18,6 +18,8 @@ describe('personalizeForResend', () => {
 import { buildBroadcastHtml } from './resend.ts';
 import { computeAudienceDiff } from './resend.ts';
 import { mapResendEventToStatus } from './resend.ts';
+import { verifyResendSignature } from './resend.ts';
+import { createHmac } from 'node:crypto';
 
 describe('buildBroadcastHtml', () => {
   it('includes the subject, the body, and the unsubscribe merge tag', () => {
@@ -64,5 +66,34 @@ describe('mapResendEventToStatus', () => {
   it('returns null for events we do not track', () => {
     expect(mapResendEventToStatus('email.opened')).toBeNull();
     expect(mapResendEventToStatus('contact.created')).toBeNull();
+  });
+});
+
+function sign(secretB64, id, ts, body) {
+  const signed = `${id}.${ts}.${body}`;
+  return createHmac('sha256', Buffer.from(secretB64, 'base64')).update(signed).digest('base64');
+}
+
+describe('verifyResendSignature', () => {
+  const secretB64 = Buffer.from('super-secret-key').toString('base64');
+  const secret = `whsec_${secretB64}`;
+  const id = 'msg_123';
+  const ts = '1700000000';
+  const body = '{"type":"email.delivered"}';
+
+  it('accepts a valid signature', async () => {
+    const sig = sign(secretB64, id, ts, body);
+    const headers = { 'svix-id': id, 'svix-timestamp': ts, 'svix-signature': `v1,${sig}` };
+    expect(await verifyResendSignature(secret, headers, body)).toBe(true);
+  });
+  it('accepts when one of several signatures matches', async () => {
+    const sig = sign(secretB64, id, ts, body);
+    const headers = { 'svix-id': id, 'svix-timestamp': ts, 'svix-signature': `v1,bogus v1,${sig}` };
+    expect(await verifyResendSignature(secret, headers, body)).toBe(true);
+  });
+  it('rejects a tampered body', async () => {
+    const sig = sign(secretB64, id, ts, body);
+    const headers = { 'svix-id': id, 'svix-timestamp': ts, 'svix-signature': `v1,${sig}` };
+    expect(await verifyResendSignature(secret, headers, '{"tampered":true}')).toBe(false);
   });
 });
