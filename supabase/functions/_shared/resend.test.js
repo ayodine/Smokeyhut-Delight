@@ -14,3 +14,14 @@ describe('personalizeForResend', () => {
     expect(personalizeForResend('line1\nline2')).toBe('line1<br>line2');
   });
 });
+
+import { buildBroadcastHtml } from './resend.ts';
+
+describe('buildBroadcastHtml', () => {
+  it('includes the subject, the body, and the unsubscribe merge tag', () => {
+    const html = buildBroadcastHtml('June Offer', 'Hi {{{FIRST_NAME}}}');
+    expect(html).toContain('June Offer');
+    expect(html).toContain('Hi {{{FIRST_NAME}}}');
+    expect(html).toContain('{{{RESEND_UNSUBSCRIBE_URL}}}');
+  });
+});
