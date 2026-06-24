@@ -32,8 +32,11 @@ proper deliverability (verified domain, SPF/DKIM, managed unsubscribe).
    (327 is well under Gmail's ~500/day).
 2. **Split ordering:** regular recipients sorted **most-recent-order first**; first 1,000
    → Resend, the rest → Gmail. Most engaged regulars get Resend's deliverability.
-3. **Sender domain:** user has a Resend account and owns a domain to verify. Regular
-   broadcast sends from a domain address (e.g. `hello@<domain>`), not the Gmail address.
+3. **Sender domain:** Resend is **already set up**. The `notify` edge function already
+   sends order emails via Resend (`RESEND_API_KEY` secret exists) from
+   `Smokeyhut Delight <orders@smokeyhutdelight.com>`, so `smokeyhutdelight.com` is
+   **already a verified sending domain** — no DNS work needed. The regular broadcast
+   sends from a domain address (reuse `orders@` or add `hello@smokeyhutdelight.com`).
 4. **Tracking:** build a Resend **webhook** that updates `campaign_logs` per recipient
    (delivered/bounced/complained) so dashboard stats match Gmail-path fidelity.
 
@@ -115,12 +118,16 @@ regular blast. (The Gmail path remains without unsubscribe — see Out of Scope.
 
 ## Manual prerequisites (user, one-time)
 
-1. Verify the sending domain in Resend (add DNS SPF/DKIM records).
-2. Create a Resend API key.
-3. Create (or let us create) the Audience; record its id.
-4. Set Supabase secrets: `RESEND_API_KEY`, `RESEND_AUDIENCE_ID`, `RESEND_FROM`,
-   `RESEND_WEBHOOK_SECRET`.
-5. Register the `resend-webhook` function URL in Resend webhook settings.
+Already done (reused from the existing `notify` integration):
+- ~~Verify the sending domain~~ — `smokeyhutdelight.com` is verified.
+- ~~Create a Resend API key~~ — `RESEND_API_KEY` secret already exists in Supabase.
+
+Still required:
+1. Create (or let us create) the Audience; record its id.
+2. Set Supabase secrets: `RESEND_AUDIENCE_ID`, `RESEND_FROM` (e.g.
+   `Smokeyhut Delight <orders@smokeyhutdelight.com>`), `RESEND_WEBHOOK_SECRET`.
+   (`RESEND_API_KEY` is already set.)
+3. Register the `resend-webhook` function URL in Resend webhook settings.
 
 ## Out of scope (v1)
 
