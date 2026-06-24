@@ -29,3 +29,19 @@ export function buildBroadcastHtml(subject: string, personalizedBody: string): s
 </body>
 </html>`;
 }
+
+interface ExistingContact { id: string; email: string; }
+interface DesiredContact { email: string; name: string; }
+
+export function computeAudienceDiff(
+  existing: ExistingContact[],
+  desired: DesiredContact[],
+): { toAdd: DesiredContact[]; toRemove: ExistingContact[] } {
+  const key = (e: string) => e.trim().toLowerCase();
+  const existingByEmail = new Map(existing.map((c) => [key(c.email), c]));
+  const desiredEmails = new Set(desired.map((c) => key(c.email)));
+
+  const toAdd = desired.filter((c) => !existingByEmail.has(key(c.email)));
+  const toRemove = existing.filter((c) => !desiredEmails.has(key(c.email)));
+  return { toAdd, toRemove };
+}
