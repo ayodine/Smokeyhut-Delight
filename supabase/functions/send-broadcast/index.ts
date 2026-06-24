@@ -12,7 +12,9 @@ const corsHeaders = {
 };
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
-const RESEND_AUDIENCE_ID = Deno.env.get('RESEND_AUDIENCE_ID') ?? '';
+// Resend deprecated Audiences in favor of Segments. Broadcasts target a segment_id,
+// and contacts join a segment via the global Contacts API. This holds the segment id.
+const RESEND_SEGMENT_ID = Deno.env.get('RESEND_SEGMENT_ID') ?? '';
 const RESEND_FROM = Deno.env.get('RESEND_FROM') ?? 'Smokeyhut Delight <orders@smokeyhutdelight.com>';
 const API = 'https://api.resend.com';
 
@@ -29,6 +31,22 @@ async function resend(path: string, init: RequestInit) {
   const json = text ? JSON.parse(text) : {};
   if (!res.ok) throw new Error(`Resend ${path} ${res.status}: ${text}`);
   return json;
+}
+
+// List every contact currently in the segment, following cursor pagination
+// (page size capped at 100 by the API).
+async function listSegmentContacts(segmentId: string): Promise<{ id: string; email: string }[]> {
+  const all: { id: string; email: string }[] = [];
+  let after: string | undefined;
+  do {
+    const qs = new URLSearchParams({ segment_id: segmentId, limit: '100' });
+    if (after) qs.set('after', after);
+    const page = await resend(`/contacts?${qs.toString()}`, { method: 'GET' });
+    const rows = page.data ?? [];
+    for (const r of rows) all.push({ id: r.id, email: r.email });
+    after = page.has_more && rows.length ? rows[rows.length - 1].id : undefined;
+  } while (after);
+  return all;
 }
 
 serve(async (req) => {
@@ -48,8 +66,8 @@ serve(async (req) => {
       });
     }
 
-    if (!RESEND_API_KEY || !RESEND_AUDIENCE_ID) {
-      return new Response(JSON.stringify({ error: 'Resend not configured (RESEND_API_KEY / RESEND_AUDIENCE_ID)' }), {
+    if (!RESEND_API_KEY || !RESEND_SEGMENT_ID) {
+      return new Response(JSON.stringify({ error: 'Resend not configured (RESEND_API_KEY / RESEND_SEGMENT_ID)' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -70,31 +88,44 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    // 1. Diff-sync contacts into the audience.
-    const existing = (await resend(`/audiences/${RESEND_AUDIENCE_ID}/contacts`, { method: 'GET' })).data ?? [];
+    // 1. Diff-sync segment membership against the desired batch.
+    const existing = await listSegmentContacts(RESEND_SEGMENT_ID);
     const { toAdd, toRemove } = computeAudienceDiff(existing, recipients);
 
+    // Remove contacts that fell out of the batch. Deleting keeps the global contact
+    // pool under the free-tier 1000 cap; Resend still injects an unsubscribe link on
+    // every broadcast for compliance.
     for (const c of toRemove) {
-      await resend(`/audiences/${RESEND_AUDIENCE_ID}/contacts/${c.id}`, { method: 'DELETE' });
+      await resend(`/contacts/${c.id}`, { method: 'DELETE' });
     }
+    // Add new contacts directly into the segment via the global Contacts API.
     for (const c of toAdd) {
-      await resend(`/audiences/${RESEND_AUDIENCE_ID}/contacts`, {
+      await resend('/contacts', {
         method: 'POST',
-        body: JSON.stringify({ email: c.email, first_name: c.name || 'Valued Customer', unsubscribed: false }),
+        body: JSON.stringify({
+          email: c.email,
+          first_name: c.name || 'Valued Customer',
+          unsubscribed: false,
+          segments: [{ id: RESEND_SEGMENT_ID }],
+        }),
       });
     }
 
-    // 2. Create the broadcast.
+    // 2. Create + send the broadcast targeting the segment.
     const html = buildBroadcastHtml(subject, personalizeForResend(body));
     const broadcast = await resend('/broadcasts', {
       method: 'POST',
-      body: JSON.stringify({ audience_id: RESEND_AUDIENCE_ID, from: RESEND_FROM, subject, html, name: subject }),
+      body: JSON.stringify({
+        segment_id: RESEND_SEGMENT_ID,
+        from: RESEND_FROM,
+        subject,
+        html,
+        name: subject,
+        send: true,
+      }),
     });
 
-    // 3. Send it.
-    await resend(`/broadcasts/${broadcast.id}/send`, { method: 'POST', body: JSON.stringify({}) });
-
-    // 4. Persist broadcast id + pre-populate logs as queued.
+    // 3. Persist broadcast id + pre-populate logs as queued.
     await serviceClient.from('email_campaigns').update({ resend_broadcast_id: broadcast.id }).eq('id', campaign_id);
 
     const logRows = recipients.map((r) => ({
