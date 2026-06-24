@@ -40,11 +40,17 @@ serve(async (req) => {
     .eq('campaign_id', campaign.id)
     .eq('email', to);
 
-  // Recompute aggregate counts from logs.
+  // Recompute aggregate counts from logs. Mirror the frontend classifiers
+  // (src/lib/campaignStatus.js): delivered counts as sent; bounced/complained count
+  // as failed; pre-populated 'Pending execution' rows and 'queued' are in-flight,
+  // not failures, so they are excluded from both counts.
   const { data: logs } = await serviceClient
-    .from('campaign_logs').select('status').eq('campaign_id', campaign.id);
+    .from('campaign_logs').select('status, error').eq('campaign_id', campaign.id);
   const sent = (logs ?? []).filter((l) => l.status === 'sent' || l.status === 'delivered').length;
-  const failed = (logs ?? []).filter((l) => l.status === 'failed' || l.status === 'bounced').length;
+  const failed = (logs ?? []).filter((l) =>
+    (l.status === 'failed' && l.error !== 'Pending execution') ||
+    l.status === 'bounced' || l.status === 'complained'
+  ).length;
   await serviceClient.from('email_campaigns').update({ sent_count: sent, failed_count: failed }).eq('id', campaign.id);
 
   return new Response('ok', { status: 200 });
