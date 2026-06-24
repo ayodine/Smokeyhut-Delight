@@ -1,3 +1,4 @@
+/* global Buffer */
 import { describe, it, expect } from 'vitest';
 import { personalizeForResend } from './resend.ts';
 
