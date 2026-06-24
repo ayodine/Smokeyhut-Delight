@@ -71,6 +71,8 @@ export default function DashboardLayout() {
     localStorage.setItem('dash_sidebar_collapsed', sidebarCollapsed);
   }, [sidebarCollapsed]);
 
+
+
   const role = userRole || 'Admin';
 
   const navItems = allNavItems.reduce((acc, item) => {
