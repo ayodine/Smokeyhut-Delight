@@ -401,11 +401,6 @@ export default function Orders() {
     fetchData();
   }, [selectedStore, period, dateFilter, page, filter, sourceFilter, sortKey, sortDir, debouncedSearch]);
 
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search), 250);
-    return () => clearTimeout(t);
-  }, [search]);
-
   async function fetchData() {
     setLoading(true);
     const storeFilter = selectedStore && selectedStore !== 'all' ? selectedStore : null;
@@ -448,12 +443,7 @@ export default function Orders() {
 
     if (debouncedSearch.trim()) {
       const searchVal = debouncedSearch.trim();
-      const searchInt = parseInt(searchVal, 10);
-      if (!isNaN(searchInt) && String(searchInt) === searchVal) {
-        q = q.or(`id.eq.${searchInt},customer_name.ilike.%${searchVal}%,customer_phone.ilike.%${searchVal}%`);
-      } else {
-        q = q.or(`customer_name.ilike.%${searchVal}%,customer_phone.ilike.%${searchVal}%`);
-      }
+      q = q.or(`id.ilike.%${searchVal}%,customer_name.ilike.%${searchVal}%,customer_phone.ilike.%${searchVal}%`);
     }
 
     q = q.order(sortKey === 'items' ? 'created_at' : sortKey, { ascending: sortDir === 'asc' });
@@ -928,9 +918,51 @@ export default function Orders() {
             ))}
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ position: 'relative' }}>
-              <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 12, top: 12 }} />
-              <input className="dash-search" placeholder="Search orders..." value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 40 }} />
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <div style={{ position: 'relative' }}>
+                <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 12, top: 12 }} />
+                <input
+                  className="dash-search"
+                  placeholder="Search orders..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      setDebouncedSearch(search);
+                    }
+                  }}
+                  style={{ paddingLeft: 40, paddingRight: search ? 30 : 12 }}
+                />
+                {search && (
+                  <button
+                    onClick={() => {
+                      setSearch('');
+                      setDebouncedSearch('');
+                    }}
+                    style={{
+                      position: 'absolute',
+                      right: 10,
+                      top: 10,
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      cursor: 'pointer',
+                      padding: 2,
+                      fontSize: '0.85rem'
+                    }}
+                    title="Clear search"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              <button
+                className="btn-primary"
+                onClick={() => setDebouncedSearch(search)}
+                style={{ padding: '8px 16px', fontSize: '0.82rem', height: 38, display: 'flex', alignItems: 'center' }}
+              >
+                Search
+              </button>
             </div>
             <DashCalendar
               range={true}

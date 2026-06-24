@@ -77,8 +77,17 @@ serve(async (req) => {
     let sent = 0
     let failed = 0
 
+    // Throttle: Gmail SMTP drops the connection ("peer closed connection without
+    // sending TLS close_notify") when it sees a burst of messages. Pause between
+    // each send so Gmail doesn't flag the run as bulk spam. ~1.5s/email keeps us
+    // under Gmail's burst threshold while staying within the edge-function timeout
+    // for the small chunks the frontend sends.
+    const SEND_DELAY_MS = 1500
+    const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms))
+
     // Send individual personalized emails sequentially and log each attempt
-    for (const r of recipients) {
+    for (let idx = 0; idx < recipients.length; idx++) {
+      const r = recipients[idx]
       let success = false
       let errorMsg: string | undefined
 
@@ -154,6 +163,12 @@ serve(async (req) => {
           // Never let logging failure break the send loop
           console.error('Failed to write campaign log (exception):', logErr)
         }
+      }
+
+      // Space out sends to avoid Gmail's burst throttle. Skip the wait after the
+      // final recipient so we don't add idle time before returning.
+      if (idx < recipients.length - 1) {
+        await sleep(SEND_DELAY_MS)
       }
     }
 

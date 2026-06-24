@@ -13,6 +13,26 @@ import ConfirmModal from '../../components/ConfirmModal';
 
 const fmt = (n) => '₦' + n.toLocaleString();
 
+// Supabase caps a single response at 1000 rows. Larger segments (e.g. the
+// "regular" tier, 1300+ customers) would silently truncate, so a campaign would
+// miss everyone past row 1000. Page through in 1000-row windows until a short
+// page signals the end, accumulating the full audience.
+const fetchFullAudience = async (audience, start, end) => {
+  const PAGE_SIZE = 1000;
+  const allRows = [];
+  let from = 0;
+  while (true) {
+    const { data: page, error } = await supabase
+      .rpc('get_campaign_audience', { p_audience: audience, p_start: start, p_end: end })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) return { data: null, error };
+    if (page && page.length) allRows.push(...page);
+    if (!page || page.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return { data: allRows, error: null };
+};
+
 const DEFAULT_CAMPAIGN_BODY = `Hi {customer_name},
 
 We have an exciting offer just for you! This weekend only, enjoy 20% off all orders.
@@ -156,6 +176,49 @@ export default function Customers() {
   const [campaignLogs, setCampaignLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const { showToast } = useToast();
+
+  const [editingEmailId, setEditingEmailId] = useState(null);
+  const [editedEmailValue, setEditedEmailValue] = useState('');
+
+  const saveEditedEmail = async (customerId, oldEmail) => {
+    const newEmail = editedEmailValue.trim();
+    if (!newEmail) return showToast('Error', 'Email address cannot be empty.', 'error');
+    if (!newEmail.includes('@') || newEmail.endsWith('.')) {
+      return showToast('Error', 'Please enter a valid email address (cannot end with a dot).', 'error');
+    }
+    
+    // 1. Update local React state (campaignAudience) so it updates in the UI list instantly
+    setCampaignAudience(prev => prev.map(c => c.id === customerId ? { ...c, email: newEmail } : c));
+    setEditingEmailId(null);
+
+    // 2. Persist the change to the database orders table
+    try {
+      console.log(`Updating customer email from "${oldEmail}" to "${newEmail}" in orders...`);
+      const { error: orderErr } = await supabase
+        .from('orders')
+        .update({ customer_email: newEmail })
+        .eq('customer_email', oldEmail);
+
+      if (orderErr) {
+        console.error('Database update error for orders:', orderErr);
+        showToast('Warning', 'Email updated locally but failed to save to database orders.', 'warning');
+      } else {
+        // 3. Persist the change to campaign_logs table (in case there are existing logs)
+        const { error: logErr } = await supabase
+          .from('campaign_logs')
+          .update({ email: newEmail })
+          .eq('email', oldEmail);
+        
+        if (logErr) {
+          console.error('Database update error for campaign_logs:', logErr);
+        }
+        
+        showToast('Success', 'Email address updated successfully!', 'success');
+      }
+    } catch (err) {
+      console.error('Exception updating email:', err);
+    }
+  };
 
   useEffect(() => {
     // Only run if range selection is complete or cleared
@@ -317,21 +380,30 @@ export default function Customers() {
     
     const fetchCampaignAudience = async () => {
       setAudienceLoading(true);
-      const { data, error } = await supabase.rpc('get_campaign_audience', {
-        p_audience: form.audience,
-        p_start: form.dateFilter?.start ? form.dateFilter.start + 'T00:00:00' : null,
-        p_end: form.dateFilter?.end ? form.dateFilter.end + 'T23:59:59' : null,
-      });
+      const { data, error } = await fetchFullAudience(
+        form.audience,
+        form.dateFilter?.start ? form.dateFilter.start + 'T00:00:00' : null,
+        form.dateFilter?.end ? form.dateFilter.end + 'T23:59:59' : null,
+      );
       if (!error && data) {
-        const mapped = data.map(item => ({
-          id: item.agg_id,
-          name: item.agg_name,
-          email: item.agg_email,
-          phone: item.agg_phone,
-          orders: Number(item.agg_orders),
-          totalSpent: Number(item.agg_total_spent),
-          lastOrder: item.agg_last_order
-        }));
+        const seen = new Set();
+        const mapped = [];
+        data.forEach(item => {
+          if (!item.agg_email) return;
+          const emailKey = item.agg_email.trim().toLowerCase();
+          if (!seen.has(emailKey)) {
+            seen.add(emailKey);
+            mapped.push({
+              id: item.agg_id,
+              name: item.agg_name,
+              email: item.agg_email,
+              phone: item.agg_phone,
+              orders: Number(item.agg_orders),
+              totalSpent: Number(item.agg_total_spent),
+              lastOrder: item.agg_last_order
+            });
+          }
+        });
         setCampaignAudience(mapped);
       } else {
         setCampaignAudience([]);
@@ -582,8 +654,84 @@ export default function Customers() {
         .eq('campaign_id', campaign.id)
         .eq('status', 'failed');
 
-      if (error) throw error;
-      const toRetry = failedLogs || [];
+      if (error) {
+        console.error('Error fetching failed campaign logs:', error);
+        throw new Error(`Failed to query campaign logs: ${error.message}`);
+      }
+      let toRetry = failedLogs || [];
+      console.log(`Found ${toRetry.length} failed logs initially.`);
+
+      if (toRetry.length === 0) {
+        // If there are no failed logs, check if any logs exist at all for this campaign
+        const { count, error: countErr } = await supabase
+          .from('campaign_logs')
+          .select('*', { count: 'exact', head: true })
+          .eq('campaign_id', campaign.id);
+
+        if (countErr) {
+          console.error('Error checking campaign logs count:', countErr);
+          showToast('Error', `Failed to count campaign logs: ${countErr.message}`, 'error');
+        } else {
+          console.log(`Campaign logs count in DB: ${count}`);
+          if (!count || count === 0) {
+            // Self-healing: Pre-population failed previously. Let's initialize logs now!
+            console.log(`Attempting self-healing for campaign ${campaign.id} (audience: ${campaign.audience})...`);
+            const { data: audData, error: audErr } = await fetchFullAudience(campaign.audience, null, null);
+
+            if (audErr) {
+              console.error('Error fetching campaign audience during retry:', audErr);
+              showToast('Error', `Failed to fetch audience: ${audErr.message}`, 'error');
+            } else if (audData) {
+              console.log(`Fetched ${audData.length} recipients for self-healing.`);
+              const seen = new Set();
+              const uniqueRecipients = [];
+              audData.forEach(item => {
+                if (!item.agg_email) return;
+                const emailKey = item.agg_email.trim().toLowerCase();
+                if (!seen.has(emailKey)) {
+                  seen.add(emailKey);
+                  uniqueRecipients.push({ email: item.agg_email.trim(), name: item.agg_name || '' });
+                }
+              });
+
+              console.log(`Deduplicated to ${uniqueRecipients.length} unique recipients.`);
+
+              if (uniqueRecipients.length > 0) {
+                // Pre-populate campaign_logs in batches
+                const batchSize = 100;
+                for (let i = 0; i < uniqueRecipients.length; i += batchSize) {
+                  const batch = uniqueRecipients.slice(i, i + batchSize).map(r => ({
+                    campaign_id: campaign.id,
+                    email: r.email,
+                    name: r.name || null,
+                    status: 'failed',
+                    error: 'Pending execution'
+                  }));
+                  console.log(`Inserting batch of ${batch.length} logs...`);
+                  const { error: logErr } = await supabase.from('campaign_logs').insert(batch);
+                  if (logErr) {
+                    console.error('Error inserting campaign logs batch:', logErr);
+                    throw new Error(`Failed to write logs to DB: ${logErr.message}`);
+                  }
+                }
+
+                // Instead of re-fetching from database (which might fail/return empty due to RLS/session checks),
+                // we map uniqueRecipients directly to the format expected by the retry execution block.
+                toRetry = uniqueRecipients.map(r => ({
+                  campaign_id: campaign.id,
+                  email: r.email,
+                  name: r.name || null,
+                  status: 'failed',
+                  error: 'Pending execution'
+                }));
+                console.log(`Successfully mapped ${toRetry.length} self-healed logs for retry.`);
+              } else {
+                showToast('Info', 'No recipients with valid emails found in the audience segment.', 'info');
+              }
+            }
+          }
+        }
+      }
 
       if (toRetry.length === 0) {
         showToast('Info', 'No undelivered recipients found for this campaign.', 'info');
@@ -630,7 +778,10 @@ export default function Customers() {
               console.error('Failed to reset logs status for retry:', resetErr);
             }
 
-            const CHUNK_SIZE = 25;
+            // Keep chunks small: the edge function now waits ~1.5s between each
+            // email to dodge Gmail's burst throttle, so a chunk of 15 stays well
+            // under the edge-function timeout (~15 x 1.5s + send time).
+            const CHUNK_SIZE = 15;
             let retriedSent = 0;
             let retriedFailed = 0;
             setCampaignProgress({ title: 'Retrying failed emails...', sent: 0, failed: 0, total: recipients.length });
@@ -770,7 +921,16 @@ export default function Customers() {
         let campaignId = null;
 
         try {
-          const recipients = audienceList.map(c => ({ email: c.email, name: c.name || '', lastOrder: c.lastOrder }));
+          const seen = new Set();
+          const recipients = [];
+          audienceList.forEach(c => {
+            if (!c.email) return;
+            const emailKey = c.email.trim().toLowerCase();
+            if (!seen.has(emailKey)) {
+              seen.add(emailKey);
+              recipients.push({ email: c.email.trim(), name: c.name || '', lastOrder: c.lastOrder });
+            }
+          });
 
           // 1. Insert campaign record first to get the ID for per-email logging
           const { data: campaignRow, error: insertErr } = await supabase
@@ -834,8 +994,11 @@ export default function Customers() {
             }
           }
 
-          // 2. Invoke edge function in batches
-          const CHUNK_SIZE = 25;
+          // 2. Invoke edge function in batches.
+          // Keep chunks small: the edge function now waits ~1.5s between each
+          // email to dodge Gmail's burst throttle, so a chunk of 15 stays well
+          // under the edge-function timeout (~15 x 1.5s + send time).
+          const CHUNK_SIZE = 15;
           let accumulatedSent = 0;
           let accumulatedFailed = 0;
           setCampaignProgress({ title: 'Sending Campaign...', sent: 0, failed: 0, total: recipients.length });
@@ -1980,9 +2143,89 @@ export default function Customers() {
                                           <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                             {c.name || 'Anonymous Customer'}
                                           </div>
-                                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
-                                            {c.email}
-                                          </div>
+                                          {editingEmailId === c.id ? (
+                                            <div 
+                                              style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}
+                                              onClick={e => e.stopPropagation()}
+                                            >
+                                              <input
+                                                type="text"
+                                                value={editedEmailValue}
+                                                onChange={e => setEditedEmailValue(e.target.value)}
+                                                style={{
+                                                  background: 'var(--black1)',
+                                                  border: '1px solid var(--border-subtle)',
+                                                  borderRadius: 6,
+                                                  padding: '2px 8px',
+                                                  fontSize: '0.75rem',
+                                                  color: 'var(--text)',
+                                                  width: '100%',
+                                                  maxWidth: 240,
+                                                  fontFamily: 'inherit'
+                                                }}
+                                                autoFocus
+                                              />
+                                              <button
+                                                onClick={() => saveEditedEmail(c.id, c.email)}
+                                                style={{ 
+                                                  background: '#16a34a', 
+                                                  color: '#fff', 
+                                                  border: 'none', 
+                                                  borderRadius: 4, 
+                                                  padding: '4px 8px', 
+                                                  fontSize: '0.7rem', 
+                                                  fontWeight: 700, 
+                                                  cursor: 'pointer' 
+                                                }}
+                                              >
+                                                Save
+                                              </button>
+                                              <button
+                                                onClick={() => setEditingEmailId(null)}
+                                                style={{ 
+                                                  background: 'var(--black3)', 
+                                                  color: 'var(--text-muted)', 
+                                                  border: '1px solid var(--border-subtle)', 
+                                                  borderRadius: 4, 
+                                                  padding: '4px 8px', 
+                                                  fontSize: '0.7rem', 
+                                                  fontWeight: 500,
+                                                  cursor: 'pointer' 
+                                                }}
+                                              >
+                                                Cancel
+                                              </button>
+                                            </div>
+                                          ) : (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {c.email}
+                                              </span>
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  e.preventDefault();
+                                                  setEditingEmailId(c.id);
+                                                  setEditedEmailValue(c.email);
+                                                }}
+                                                style={{
+                                                  background: 'rgba(192,32,31,0.08)',
+                                                  border: 'none',
+                                                  borderRadius: 4,
+                                                  cursor: 'pointer',
+                                                  padding: '2px 6px',
+                                                  fontSize: '0.68rem',
+                                                  color: 'var(--red)',
+                                                  fontWeight: 800,
+                                                  transition: 'all 0.15s'
+                                                }}
+                                                onMouseEnter={el => el.currentTarget.style.background = 'var(--red)'}
+                                                onMouseLeave={el => { el.currentTarget.style.background = 'rgba(192,32,31,0.08)'; el.currentTarget.style.color = 'var(--red)'; }}
+                                              >
+                                                Edit Email
+                                              </button>
+                                            </div>
+                                          )}
                                           <div style={{ fontSize: '0.72rem', color: 'var(--red)', fontWeight: 600, marginTop: 4 }}>
                                             {form.audience === 'top_20_monthly' ? (
                                               form.dateFilter && (form.dateFilter.start || form.dateFilter.end)
