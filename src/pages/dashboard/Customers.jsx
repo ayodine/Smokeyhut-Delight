@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import { SkelDashHeader, SkelKpiGrid, SkelTable } from '../../components/Skeleton';
 import Pagination from '../../components/Pagination';
 import { supabase } from '../../lib/supabase';
+import { splitRegularBatch, RESEND_AUDIENCE_CAP } from '../../lib/campaignAudience';
 import { useAuth } from '../../context/AuthContext';
 import CustomSelect from '../../components/CustomSelect';
 import DashCalendar from '../../components/DashCalendar';
@@ -769,7 +770,7 @@ export default function Customers() {
         let campaignId = null;
 
         try {
-          const recipients = audienceList.map(c => ({ email: c.email, name: c.name || '' }));
+          const recipients = audienceList.map(c => ({ email: c.email, name: c.name || '', lastOrder: c.lastOrder }));
 
           // 1. Insert campaign record first to get the ID for per-email logging
           const { data: campaignRow, error: insertErr } = await supabase
@@ -807,14 +808,40 @@ export default function Customers() {
             }
           }
 
+          // Regular tier: send the most-recent 1000 via Resend broadcast; the rest
+          // fall through to the Gmail loop below. Other tiers send entirely via Gmail.
+          let gmailRecipients = recipients;
+          let resendQueued = 0;
+          if (form.audience === 'regular') {
+            const { resend: resendBatch, gmail: overflow } = splitRegularBatch(recipients, RESEND_AUDIENCE_CAP);
+            gmailRecipients = overflow;
+            if (resendBatch.length > 0) {
+              setCampaignProgress({ title: `Queuing ${resendBatch.length} to Resend…`, sent: 0, failed: 0, total: recipients.length });
+              const { data: bRes, error: bErr } = await supabase.functions.invoke('send-broadcast', {
+                body: {
+                  subject: form.subject,
+                  body: form.body,
+                  recipients: resendBatch.map(r => ({ email: r.email, name: r.name })),
+                  campaign_id: campaignId,
+                },
+              });
+              if (bErr) {
+                console.error('send-broadcast failed:', bErr);
+                showToast('Resend error', bErr.message || 'Broadcast failed; remaining sent via Gmail.', 'error');
+              } else {
+                resendQueued = bRes?.queued || resendBatch.length;
+              }
+            }
+          }
+
           // 2. Invoke edge function in batches
           const CHUNK_SIZE = 25;
           let accumulatedSent = 0;
           let accumulatedFailed = 0;
           setCampaignProgress({ title: 'Sending Campaign...', sent: 0, failed: 0, total: recipients.length });
 
-          for (let i = 0; i < recipients.length; i += CHUNK_SIZE) {
-            const chunk = recipients.slice(i, i + CHUNK_SIZE);
+          for (let i = 0; i < gmailRecipients.length; i += CHUNK_SIZE) {
+            const chunk = gmailRecipients.slice(i, i + CHUNK_SIZE);
             
             const { data: chunkRes, error: invokeErr } = await supabase.functions.invoke('send-campaign', {
               body: {
@@ -844,14 +871,14 @@ export default function Customers() {
 
             // Update progress state
             setCampaignProgress({
-              title: `Sending batch ${Math.floor(i / CHUNK_SIZE) + 1} of ${Math.ceil(recipients.length / CHUNK_SIZE)}...`,
+              title: `Sending batch ${Math.floor(i / CHUNK_SIZE) + 1} of ${Math.ceil(gmailRecipients.length / CHUNK_SIZE)}...`,
               sent: accumulatedSent,
               failed: accumulatedFailed,
               total: recipients.length
             });
 
             // Update the email_campaigns status/counts in real-time in the database
-            const isFinished = (i + CHUNK_SIZE) >= recipients.length;
+            const isFinished = (i + CHUNK_SIZE) >= gmailRecipients.length;
             let currentStatus = 'sending';
             if (isFinished) {
               currentStatus = accumulatedFailed > 0 ? (accumulatedSent > 0 ? 'partial' : 'failed') : 'sent';
@@ -873,9 +900,18 @@ export default function Customers() {
             }
           }
 
-          setSendResult({ sent: accumulatedSent, failed: accumulatedFailed });
+          if (gmailRecipients.length === 0 && resendQueued > 0) {
+            await supabase.from('email_campaigns')
+              .update({ status: 'sending', sent_count: 0, failed_count: 0 })
+              .eq('id', campaignId);
+            // Webhook will move counts/status as delivery events arrive.
+          }
+
+          setSendResult({ sent: accumulatedSent + resendQueued, failed: accumulatedFailed, resendQueued });
           setForm({ name: '', subject: '', body: DEFAULT_CAMPAIGN_BODY, audience: 'all', dateFilter: { start: null, end: null } });
-          showToast('Success', `Campaign completed: ${accumulatedSent} sent, ${accumulatedFailed} failed`, 'success');
+          showToast('Success', resendQueued > 0
+            ? `Campaign sent: ${resendQueued} queued to Resend + ${accumulatedSent} via Gmail (${accumulatedFailed} failed)`
+            : `Campaign completed: ${accumulatedSent} sent, ${accumulatedFailed} failed`, 'success');
           fetchCampaigns();
         } catch (err) {
           // Mark campaign as failed/partial based on actual logs
