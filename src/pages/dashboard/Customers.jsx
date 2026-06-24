@@ -5,6 +5,7 @@ import { SkelDashHeader, SkelKpiGrid, SkelTable } from '../../components/Skeleto
 import Pagination from '../../components/Pagination';
 import { supabase } from '../../lib/supabase';
 import { splitRegularBatch, RESEND_AUDIENCE_CAP } from '../../lib/campaignAudience';
+import { isSent, isFailed, isPending } from '../../lib/campaignStatus';
 import { useAuth } from '../../context/AuthContext';
 import CustomSelect from '../../components/CustomSelect';
 import DashCalendar from '../../components/DashCalendar';
@@ -431,9 +432,9 @@ export default function Customers() {
       if (data) {
         setCampaignLogs(data);
         
-        const actualSent = data.filter(log => log.status === 'sent').length;
-        const actualFailed = data.filter(log => log.status === 'failed' && log.error !== 'Pending execution').length;
-        const pendingCount = data.filter(log => log.status === 'failed' && log.error === 'Pending execution').length;
+        const actualSent = data.filter(log => isSent(log.status)).length;
+        const actualFailed = data.filter(log => isFailed(log.status, log.error)).length;
+        const pendingCount = data.filter(log => isPending(log.status, log.error)).length;
         
         let newStatus = 'sending';
         if (pendingCount === 0) {
@@ -609,9 +610,9 @@ export default function Customers() {
     setLogsLoading(false);
 
     if (logs.length > 0) {
-      const actualSent = logs.filter(log => log.status === 'sent').length;
-      const actualFailed = logs.filter(log => log.status === 'failed' && log.error !== 'Pending execution').length;
-      const pendingCount = logs.filter(log => log.status === 'failed' && log.error === 'Pending execution').length;
+      const actualSent = logs.filter(log => isSent(log.status)).length;
+      const actualFailed = logs.filter(log => isFailed(log.status, log.error)).length;
+      const pendingCount = logs.filter(log => isPending(log.status, log.error)).length;
       
       const expectedStatus = campaign.status === 'sending' && pendingCount > 0
         ? 'sending' 
@@ -830,9 +831,9 @@ export default function Customers() {
                 .select('*')
                 .eq('campaign_id', campaign.id);
               
-              const actualSent = logs ? logs.filter(l => l.status === 'sent').length : 0;
-              const actualFailed = logs ? logs.filter(l => l.status === 'failed' && l.error !== 'Pending execution').length : 0;
-              const pendingCount = logs ? logs.filter(l => l.status === 'failed' && l.error === 'Pending execution').length : 0;
+              const actualSent = logs ? logs.filter(l => isSent(l.status)).length : 0;
+              const actualFailed = logs ? logs.filter(l => isFailed(l.status, l.error)).length : 0;
+              const pendingCount = logs ? logs.filter(l => isPending(l.status, l.error)).length : 0;
 
               const isFinished = (i + CHUNK_SIZE) >= recipients.length;
               let currentStatus = 'sending';
@@ -865,9 +866,9 @@ export default function Customers() {
               .select('*')
               .eq('campaign_id', campaign.id);
 
-            const actualSent = logs ? logs.filter(l => l.status === 'sent').length : 0;
-            const actualFailed = logs ? logs.filter(l => l.status === 'failed' && l.error !== 'Pending execution').length : 0;
-            const pendingCount = logs ? logs.filter(l => l.status === 'failed' && l.error === 'Pending execution').length : 0;
+            const actualSent = logs ? logs.filter(l => isSent(l.status)).length : 0;
+            const actualFailed = logs ? logs.filter(l => isFailed(l.status, l.error)).length : 0;
+            const pendingCount = logs ? logs.filter(l => isPending(l.status, l.error)).length : 0;
 
             let finalStatus = 'failed';
             if (actualSent > 0 || pendingCount > 0) {
@@ -1084,9 +1085,9 @@ export default function Customers() {
               .select('status, error')
               .eq('campaign_id', campaignId);
 
-            const actualSent = logs ? logs.filter(l => l.status === 'sent').length : 0;
-            const actualFailed = logs ? logs.filter(l => l.status === 'failed' && l.error !== 'Pending execution').length : 0;
-            const pendingCount = logs ? logs.filter(l => l.status === 'failed' && l.error === 'Pending execution').length : 0;
+            const actualSent = logs ? logs.filter(l => isSent(l.status)).length : 0;
+            const actualFailed = logs ? logs.filter(l => isFailed(l.status, l.error)).length : 0;
+            const pendingCount = logs ? logs.filter(l => isPending(l.status, l.error)).length : 0;
             
             let finalStatus = 'failed';
             if (actualSent > 0 || pendingCount > 0) {
@@ -3192,7 +3193,7 @@ export default function Customers() {
                   <tbody>
                     {(() => {
                       const allLogsToShow = campaignLogs.map(log => {
-                        if (log.status === 'failed' && log.error === 'Pending execution') {
+                        if (isPending(log.status, log.error)) {
                           return {
                             ...log,
                             status: 'pending',
@@ -3210,7 +3211,7 @@ export default function Customers() {
                             <span style={{
                               padding: '3px 10px', borderRadius: 20, fontSize: '0.7rem', fontWeight: 800,
                               textTransform: 'uppercase', letterSpacing: '0.04em', display: 'inline-block',
-                              ...(log.status === 'sent'
+                              ...(isSent(log.status)
                                 ? { background: 'rgba(22,163,74,0.08)', color: '#16a34a', border: '1px solid rgba(22,163,74,0.2)' }
                                 : log.status === 'pending'
                                 ? { background: 'rgba(107,114,128,0.08)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }
