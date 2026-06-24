@@ -45,3 +45,13 @@ export function computeAudienceDiff(
   const toRemove = existing.filter((c) => !desiredEmails.has(key(c.email)));
   return { toAdd, toRemove };
 }
+
+export function mapResendEventToStatus(type: string): string | null {
+  switch (type) {
+    case 'email.sent': return 'sent';
+    case 'email.delivered': return 'delivered';
+    case 'email.bounced': return 'bounced';
+    case 'email.complained': return 'complained';
+    default: return null;
+  }
+}

@@ -17,6 +17,7 @@ describe('personalizeForResend', () => {
 
 import { buildBroadcastHtml } from './resend.ts';
 import { computeAudienceDiff } from './resend.ts';
+import { mapResendEventToStatus } from './resend.ts';
 
 describe('buildBroadcastHtml', () => {
   it('includes the subject, the body, and the unsubscribe merge tag', () => {
@@ -50,5 +51,18 @@ describe('computeAudienceDiff', () => {
     const { toAdd, toRemove } = computeAudienceDiff(ex, same);
     expect(toAdd).toHaveLength(0);
     expect(toRemove).toHaveLength(0);
+  });
+});
+
+describe('mapResendEventToStatus', () => {
+  it('maps delivery lifecycle events', () => {
+    expect(mapResendEventToStatus('email.delivered')).toBe('delivered');
+    expect(mapResendEventToStatus('email.bounced')).toBe('bounced');
+    expect(mapResendEventToStatus('email.complained')).toBe('complained');
+    expect(mapResendEventToStatus('email.sent')).toBe('sent');
+  });
+  it('returns null for events we do not track', () => {
+    expect(mapResendEventToStatus('email.opened')).toBeNull();
+    expect(mapResendEventToStatus('contact.created')).toBeNull();
   });
 });
