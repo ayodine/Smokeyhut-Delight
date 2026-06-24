@@ -51,7 +51,16 @@ serve(async (req) => {
     (l.status === 'failed' && l.error !== 'Pending execution') ||
     l.status === 'bounced' || l.status === 'complained'
   ).length;
-  await serviceClient.from('email_campaigns').update({ sent_count: sent, failed_count: failed }).eq('id', campaign.id);
+  // Advance campaign status as events resolve. While any row is still in-flight
+  // ('queued' or pre-populated 'Pending execution'), the campaign is still sending.
+  const pending = (logs ?? []).filter((l) =>
+    l.status === 'queued' || (l.status === 'failed' && l.error === 'Pending execution')
+  ).length;
+  const campaignStatus = pending > 0
+    ? 'sending'
+    : (failed > 0 ? (sent > 0 ? 'partial' : 'failed') : 'sent');
+  await serviceClient.from('email_campaigns')
+    .update({ sent_count: sent, failed_count: failed, status: campaignStatus }).eq('id', campaign.id);
 
   return new Response('ok', { status: 200 });
 });
