@@ -21,7 +21,12 @@ const RESEND_SEGMENT_ID = Deno.env.get('RESEND_SEGMENT_ID') ?? '';
 const RESEND_FROM = Deno.env.get('RESEND_FROM') ?? 'Smokeyhut Delight <orders@smokeyhutdelight.com>';
 const API = 'https://api.resend.com';
 
-async function resend(path: string, init: RequestInit) {
+// Contact creation/deletion is the slow part of a large send. Run it concurrently
+// to stay within the edge-function time budget, but capped so we don't trip Resend's
+// rate limit (the resend() helper backs off on 429 as a safety net).
+const SYNC_CONCURRENCY = 6;
+
+async function resend(path: string, init: RequestInit, attempt = 0): Promise<any> {
   const res = await fetch(`${API}${path}`, {
     ...init,
     headers: {
@@ -30,10 +35,28 @@ async function resend(path: string, init: RequestInit) {
       ...(init.headers ?? {}),
     },
   });
+  // Back off and retry on rate limit.
+  if (res.status === 429 && attempt < 5) {
+    const retryAfter = Number(res.headers.get('retry-after')) || 1;
+    await new Promise((r) => setTimeout(r, retryAfter * 1000 + 250));
+    return resend(path, init, attempt + 1);
+  }
   const text = await res.text();
   const json = text ? JSON.parse(text) : {};
   if (!res.ok) throw new Error(`Resend ${path} ${res.status}: ${text}`);
   return json;
+}
+
+// Run an async worker over items with a fixed concurrency.
+async function mapPool<T>(items: T[], concurrency: number, worker: (item: T) => Promise<unknown>): Promise<void> {
+  let cursor = 0;
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (cursor < items.length) {
+      const item = items[cursor++];
+      await worker(item);
+    }
+  });
+  await Promise.all(runners);
 }
 
 // List every contact currently in the segment, following cursor pagination
@@ -91,19 +114,18 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    // 1. Diff-sync segment membership against the desired batch.
+    // 1. Diff-sync segment membership against the desired batch, concurrently.
     const existing = await listSegmentContacts(RESEND_SEGMENT_ID);
     const { toAdd, toRemove } = computeAudienceDiff(existing, recipients);
 
     // Remove contacts that fell out of the batch. Deleting keeps the global contact
     // pool under the free-tier 1000 cap; Resend still injects an unsubscribe link on
     // every broadcast for compliance.
-    for (const c of toRemove) {
-      await resend(`/contacts/${c.id}`, { method: 'DELETE' });
-    }
+    await mapPool(toRemove, SYNC_CONCURRENCY, (c) =>
+      resend(`/contacts/${c.id}`, { method: 'DELETE' }));
     // Add new contacts directly into the segment via the global Contacts API.
-    for (const c of toAdd) {
-      await resend('/contacts', {
+    await mapPool(toAdd, SYNC_CONCURRENCY, (c) =>
+      resend('/contacts', {
         method: 'POST',
         body: JSON.stringify({
           email: c.email,
@@ -111,10 +133,11 @@ serve(async (req) => {
           unsubscribed: false,
           segments: [{ id: RESEND_SEGMENT_ID }],
         }),
-      });
-    }
+      }));
 
-    // 2. Create + send the broadcast targeting the segment.
+    // 2. Create + send the broadcast targeting the segment. The contact sync above
+    // now runs concurrently, so the function reaches this step well within its time
+    // budget (the old one-by-one sync timed out before the broadcast was ever made).
     const html = buildBroadcastHtml(subject, personalizeForResend(body));
     const broadcast = await resend('/broadcasts', {
       method: 'POST',
@@ -128,7 +151,8 @@ serve(async (req) => {
       }),
     });
 
-    // 3. Persist broadcast id + pre-populate logs as queued.
+    // 3. Persist broadcast id FIRST (so delivery webhooks can correlate to this
+    // campaign), then pre-populate the per-recipient logs as queued.
     await serviceClient.from('email_campaigns').update({ resend_broadcast_id: broadcast.id }).eq('id', campaign_id);
 
     const logRows = recipients.map((r) => ({
