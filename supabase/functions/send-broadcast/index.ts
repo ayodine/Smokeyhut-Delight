@@ -11,7 +11,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
+// Managing contacts/segments/broadcasts needs a Full Access key. The shared
+// RESEND_API_KEY is send-only (used by the notify function), so prefer a dedicated
+// full-access key and only fall back to the shared one if it isn't set.
+const RESEND_API_KEY = Deno.env.get('RESEND_BROADCAST_API_KEY') ?? Deno.env.get('RESEND_API_KEY') ?? '';
 // Resend deprecated Audiences in favor of Segments. Broadcasts target a segment_id,
 // and contacts join a segment via the global Contacts API. This holds the segment id.
 const RESEND_SEGMENT_ID = Deno.env.get('RESEND_SEGMENT_ID') ?? '';
