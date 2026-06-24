@@ -123,11 +123,18 @@ Already done (reused from the existing `notify` integration):
 - ~~Create a Resend API key~~ — `RESEND_API_KEY` secret already exists in Supabase.
 
 Still required:
-1. Create (or let us create) the Audience; record its id.
-2. Set Supabase secrets: `RESEND_AUDIENCE_ID`, `RESEND_FROM` (e.g.
+1. Create a **Segment** (Resend deprecated Audiences in favor of Segments; Create
+   Broadcast now requires `segment_id`). Record its id.
+2. Set Supabase secrets: `RESEND_SEGMENT_ID`, `RESEND_FROM` (e.g.
    `Smokeyhut Delight <orders@smokeyhutdelight.com>`), `RESEND_WEBHOOK_SECRET`.
    (`RESEND_API_KEY` is already set.)
 3. Register the `resend-webhook` function URL in Resend webhook settings.
+
+**API model note (2026-06):** Resend uses global Contacts + Segments. `send-broadcast`
+adds contacts via `POST /contacts` with a `segments: [{ id }]` array, lists/diffs via
+`GET /contacts?segment_id=`, and creates the broadcast with `segment_id` + `send: true`.
+Churned contacts are deleted to stay under the free-tier 1000-contact cap; Resend still
+injects an unsubscribe link per broadcast.
 
 ## Out of scope (v1)
 
