@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { DollarSign, ShoppingBag, TrendingUp, TrendingDown, Users, ChevronRight, ArrowLeft, Search, X } from 'lucide-react';
+import { DollarSign, ShoppingBag, TrendingUp, TrendingDown, Users, ChevronRight, ArrowLeft, Search, X, Drumstick } from 'lucide-react';
 import { SkelKpiGrid, SkelTopListCard, SkelFilterPills, SkelTable } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import DashCalendar from '../../components/DashCalendar';
@@ -412,12 +412,13 @@ export default function Stats() {
       const { start: startParam, end: endParam } = getPeriodParams(period, customDate);
       const prevParams = getPreviousPeriodParams(period, customDate);
 
-      const [kpisRes, listsRes, prevKpisRes] = await Promise.all([
+      const [kpisRes, listsRes, prevKpisRes, gfRes] = await Promise.all([
         supabase.rpc('get_product_stats_kpis',  { p_store_id: storeParam, p_start: startParam, p_end: endParam }),
         supabase.rpc('get_product_stats_lists', { p_store_id: storeParam, p_start: startParam, p_end: endParam }),
-        period === 'all' 
-          ? Promise.resolve({ data: null }) 
+        period === 'all'
+          ? Promise.resolve({ data: null })
           : supabase.rpc('get_product_stats_kpis',  { p_store_id: storeParam, p_start: prevParams.start, p_end: prevParams.end }),
+        supabase.rpc('get_guineafowl_breakdown', { p_store_id: storeParam, p_start: startParam, p_end: endParam }),
       ]);
       if (cancelled) return;
       
@@ -458,6 +459,7 @@ export default function Stats() {
         }
         setKpis({
           ...currData,
+          guineafowl: gfRes && !gfRes.error ? gfRes.data : null,
           growth,
           unitsGrowth,
           aovGrowth,
@@ -595,6 +597,16 @@ export default function Stats() {
               <div className="kpi-value">{kpiErr ? '—' : fmtNum(kpis?.units_sold ?? 0)}</div>
               <div className="kpi-label">Total Units Sold</div>
               {renderKPIBadge(kpis?.unitsGrowth)}
+            </div>
+            <div className="kpi-card green">
+              <div className="kpi-icon"><Drumstick size={24} /></div>
+              <div className="kpi-value">{kpiErr || !kpis?.guineafowl ? '—' : fmtNum(kpis.guineafowl.total)}</div>
+              <div className="kpi-label">Guinea Fowl (incl. packs)</div>
+              {kpis?.guineafowl && (
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                  {fmtNum(kpis.guineafowl.direct)} direct + {fmtNum(kpis.guineafowl.in_packs)} in packs
+                </div>
+              )}
             </div>
             <div className="kpi-card yellow">
               <div className="kpi-icon"><TrendingUp size={24} /></div>
