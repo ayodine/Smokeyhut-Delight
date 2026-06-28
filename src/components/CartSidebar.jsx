@@ -2,6 +2,7 @@ import React from 'react';
 import { useCart } from '../context/CartContext';
 import { useNavigate } from 'react-router-dom';
 import { ShoppingCart, Trash2 } from 'lucide-react';
+import { anyItemPastCutoff } from '../lib/deliveryCutoff';
 
 export default function CartSidebar({ isOpen, onClose }) {
   const { items, updateQty, removeItem, total, itemCount } = useCart();
@@ -52,6 +53,11 @@ export default function CartSidebar({ isOpen, onClose }) {
               <span>Subtotal</span>
               <span>{fmt(total)}</span>
             </div>
+            {anyItemPastCutoff(items) && (
+              <div style={{ fontSize: '0.78rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 10px', marginBottom: 8, fontWeight: 600 }}>
+                ⏰ Some items have passed today's cutoff and will be delivered tomorrow.
+              </div>
+            )}
             <div className="cart-note">Delivery fee calculated at checkout. Order before 10am for same-day delivery.</div>
             <button className="checkout-btn" onClick={() => { onClose(); navigate('/cart'); }}>
               View Cart Details →
