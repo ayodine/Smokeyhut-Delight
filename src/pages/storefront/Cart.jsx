@@ -5,6 +5,7 @@ import { useToast } from '../../context/ToastContext';
 import { getProducts } from '../../lib/productsCache';
 import ProductCard from '../../components/ProductCard';
 import { ShoppingCart, Trash2, Plus, Minus, ArrowRight, Utensils } from 'lucide-react';
+import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
 
 const fmt = (n) => '₦' + Number(n).toLocaleString();
 
@@ -65,6 +66,11 @@ export default function Cart() {
 
         {/* Cart Items Card */}
         <div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 14 }}>
+          {anyItemPastCutoff(items) && (
+            <div style={{ fontSize: '0.82rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', margin: '0 16px 12px', fontWeight: 600 }}>
+              ⏰ Some items have passed today's cutoff and will be delivered tomorrow.
+            </div>
+          )}
           {items.map((item, idx) => {
             const hasImage = item.image && item.image.startsWith('http');
             return (

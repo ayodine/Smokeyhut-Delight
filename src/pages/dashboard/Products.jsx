@@ -35,7 +35,7 @@ export default function Products() {
   const [imagePreview, setImagePreview] = useState('');
 
   // Frontend forms continue using standard naming
-  const [form, setForm] = useState({ name: '', desc: '', price: '', compare_price: '', category: '', image: '', badge: '', stock: '', free_shipping: false });
+  const [form, setForm] = useState({ name: '', desc: '', price: '', compare_price: '', category: '', image: '', badge: '', stock: '', free_shipping: false, cutoff: '' });
 
   useEffect(() => {
     fetchData();
@@ -45,7 +45,7 @@ export default function Products() {
     setLoading(true);
     try {
       const [pRes, cRes, oiRes] = await Promise.all([
-        supabase.from('products').select('id,name,description,short_desc,price,compare_price,stock,category_id,badge,image,is_active,free_shipping,created_at').is('deleted_at', null).order('created_at', { ascending: false }),
+        supabase.from('products').select('id,name,description,short_desc,price,compare_price,stock,category_id,badge,image,is_active,free_shipping,created_at,same_day_cutoff').is('deleted_at', null).order('created_at', { ascending: false }),
         supabase.from('categories').select('*').order('created_at', { ascending: true }),
         supabase.from('order_items').select('product_id, name, qty, orders!inner(status)').neq('orders.status', 'cancelled'),
       ]);
@@ -76,7 +76,7 @@ export default function Products() {
   const stockLevel = (s) => s <= 5 ? 'low' : s <= 15 ? 'medium' : 'high';
 
   const openAdd = () => {
-    setForm({ name: '', desc: '', price: '', compare_price: '', category: catList[0]?.id || '', image: '', badge: '', stock: '', free_shipping: false });
+    setForm({ name: '', desc: '', price: '', compare_price: '', category: catList[0]?.id || '', image: '', badge: '', stock: '', free_shipping: false, cutoff: '' });
     setPendingImageFile(null);
     setImagePreview('');
     setEditing(null);
@@ -94,6 +94,7 @@ export default function Products() {
       badge: p.badge || '',
       stock: String(p.stock),
       free_shipping: p.free_shipping || false,
+      cutoff: p.same_day_cutoff ? p.same_day_cutoff.slice(0, 5) : '',
     });
     setPendingImageFile(null);
     setImagePreview('');
@@ -133,6 +134,7 @@ export default function Products() {
       image: imageUrl,
       is_active: true,
       free_shipping: form.free_shipping,
+      same_day_cutoff: form.cutoff || null,
     };
 
     try {
@@ -527,13 +529,17 @@ export default function Products() {
                 <CustomSelect
                   value={form.category}
                   onChange={set('category')}
-                  options={catList.length === 0 
+                  options={catList.length === 0
                     ? [{ value: '', label: 'No categories available' }]
                     : catList.map(c => ({ value: c.id, label: c.label }))
                   }
                 />
               </div>
               <div className="form-group"><label>Badge (optional)</label><input value={form.badge} onChange={set('badge')} placeholder="bestseller, new, hot, value" /></div>
+              <div className="form-group">
+                <label>Same-day cutoff <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.73rem' }}>optional</span></label>
+                <input type="time" value={form.cutoff} onChange={set('cutoff')} />
+              </div>
             </div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '12px 0', marginBottom: 16, borderTop: '1px solid var(--border-subtle)' }}>
               <input

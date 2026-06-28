@@ -5,6 +5,7 @@ import { useToast } from '../../context/ToastContext';
 import { useSettings } from '../../context/SettingsContext';
 import { publicSupabase } from '../../lib/supabase';
 import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher';
+import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
 import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Search, MapPin, Tag, X, Copy, Banknote, Send } from 'lucide-react';
 
 const SUPABASE_URL        = import.meta.env.VITE_SUPABASE_URL;
@@ -51,6 +52,8 @@ export default function Checkout() {
   // Disclaimer state
   const [disclaimerAgreed, setDisclaimerAgreed] = useState(false);
   const [showDisclaimerModal, setShowDisclaimerModal] = useState(false);
+  const [cutoffAck, setCutoffAck] = useState(false);
+  const [showCutoffModal, setShowCutoffModal] = useState(false);
 
   const [stores, setStores] = useState([]);
   const [selectedStoreId, setSelectedStoreId] = useState(null);
@@ -66,6 +69,9 @@ export default function Checkout() {
       setShowDisclaimerModal(true);
     }
   }, [deliveryType, disclaimerAgreed]);
+
+  // Re-require acknowledgment whenever the cart contents change.
+  useEffect(() => { setCutoffAck(false); }, [items]);
 
   // Fetch zones and active stores on mount
   useEffect(() => {
@@ -224,7 +230,11 @@ export default function Checkout() {
       .map(i => ({ ...i, available: stockMap[String(i.id)].stock }));
   };
 
-  const handleBankTransfer = async () => {
+  const handleBankTransfer = async (skipCutoffGate = false) => {
+    if (skipCutoffGate !== true && anyItemPastCutoff(items) && !cutoffAck) {
+      setShowCutoffModal(true);
+      return;
+    }
     if (!validateForm()) return;
 
     const itemsSnapshot = [...items];
@@ -584,7 +594,7 @@ export default function Checkout() {
 
         {/* Complete Order button */}
         <button
-          onClick={handleBankTransfer}
+          onClick={() => handleBankTransfer()}
           disabled={processing || !transferConfirmed || !transferName.trim()}
           style={{ width: '100%', padding: '16px', borderRadius: 14, background: processing || !transferConfirmed || !transferName.trim() ? 'rgba(192,32,31,0.45)' : '#c0201f', color: '#fff', border: 'none', fontWeight: 900, fontSize: '1rem', cursor: processing || !transferConfirmed || !transferName.trim() ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, letterSpacing: '-0.01em', transition: 'background 0.2s' }}>
           {processing ? <><Loader2 size={18} className="spin" /> Processing…</> : <><Send size={18} /> Complete Order · Pay {fmt(amountToPayNow)}</>}
@@ -593,6 +603,12 @@ export default function Checkout() {
       </div>
 
       <DisclaimerModal isOpen={showDisclaimerModal} onAgree={() => { setDisclaimerAgreed(true); setShowDisclaimerModal(false); }} />
+      <CutoffModal
+        isOpen={showCutoffModal}
+        isPickup={deliveryType === 'pickup'}
+        onAgree={() => { setCutoffAck(true); setShowCutoffModal(false); handleBankTransfer(true); }}
+        onClose={() => setShowCutoffModal(false)}
+      />
     </div>
 
       {/* Success overlay */}
@@ -691,6 +707,34 @@ function DisclaimerModal({ isOpen, onAgree }) {
         >
           I Agree
         </button>
+      </div>
+    </div>
+  );
+}
+
+function CutoffModal({ isOpen, isPickup, onAgree, onClose }) {
+  if (!isOpen) return null;
+  const when = isPickup ? 'ready for pickup tomorrow' : 'delivered tomorrow';
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ background: '#fff', borderRadius: 20, padding: 24, maxWidth: 400, width: '100%', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+          <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#fffbeb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <span style={{ fontSize: '1.5rem' }}>⏰</span>
+          </div>
+          <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#92400e' }}>{isPickup ? 'Next-Day Pickup Notice' : 'Next-Day Delivery Notice'}</h3>
+        </div>
+        <p style={{ fontSize: '0.9rem', color: '#555', lineHeight: 1.6, marginBottom: 24 }}>
+          Your order includes an item that has passed today's order cutoff. It will be <strong>{when}</strong>, not today. Do you want to continue?
+        </p>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 14, borderRadius: 12, background: '#f3f4f6', color: '#111', border: 'none', fontWeight: 700, fontSize: '0.95rem', cursor: 'pointer' }}>
+            Go Back
+          </button>
+          <button onClick={onAgree} style={{ flex: 1, padding: 14, borderRadius: 12, background: '#c0201f', color: '#fff', border: 'none', fontWeight: 800, fontSize: '0.95rem', cursor: 'pointer' }}>
+            I Understand
+          </button>
+        </div>
       </div>
     </div>
   );
