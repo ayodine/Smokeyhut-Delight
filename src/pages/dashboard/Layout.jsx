@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { NavLink, Outlet, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -5,7 +6,7 @@ import { supabase } from '../../lib/supabase';
 import {
   BarChart2, Package, Truck, CreditCard, Store, ShoppingBag, Users,
   Settings, LogOut, Globe, Menu, UserCog, MapPin, Tag,
-  DollarSign, TrendingUp, Receipt, Archive, ChevronDown,
+  DollarSign, TrendingUp, Receipt, Archive, ChevronDown, Boxes,
   ChevronLeft, ChevronRight, Shield, Briefcase, Bike, User
 } from 'lucide-react';
 import AdminChatBubble from '../../components/AdminChatBubble';
@@ -27,6 +28,7 @@ const allNavItems = [
   { to: '/admin/products',  icon: ShoppingBag, label: 'Products',             roles: ['Admin', 'Manager', 'Staff'] },
   { to: '/admin/customers', icon: Users,       label: 'Customers',            roles: ['Admin', 'Manager', 'Staff'] },
   { to: '/admin/stats',     icon: TrendingUp,  label: 'Stats',                roles: ['Admin', 'Manager', 'Staff'] },
+  { to: '/admin/products-sold', icon: Boxes,   label: 'Units Sold',           roles: ['Admin', 'Manager', 'Staff'] },
   { to: '/admin/zones',     icon: MapPin,      label: 'Zones',                roles: ['Admin', 'Manager', 'Staff'] },
   { to: '/admin/coupons',   icon: Tag,         label: 'Coupons',              roles: ['Admin', 'Manager', 'Staff'] },
   {
