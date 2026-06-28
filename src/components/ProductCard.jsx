@@ -2,6 +2,7 @@ import React from 'react';
 import { useCart } from '../context/CartContext';
 import { useToast } from '../context/ToastContext';
 import { Drumstick, Plus, ShoppingBag } from 'lucide-react';
+import { getCutoffState } from '../lib/deliveryCutoff';
 
 const fmt = (n) => '₦' + Number(n).toLocaleString();
 
@@ -33,6 +34,7 @@ function ProductCard({ product, variant }) {
     ? Math.round((1 - Number(product.price) / Number(product.compare_price)) * 100)
     : 0;
   const isOutOfStock = Number(product.stock) === 0;
+  const cutoff = getCutoffState(product);
 
   /* ── Shopify-style white card (matches reference UI) ── */
   if (variant === 'shopify') {
@@ -78,6 +80,11 @@ function ProductCard({ product, variant }) {
               <span style={{ textDecoration: 'line-through', color: '#aaa', fontSize: '0.82rem' }}>{fmt(product.compare_price)}</span>
             )}
           </div>
+          {cutoff.hasCutoff && (
+            <div style={{ fontSize: '0.72rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '4px 8px', marginBottom: 10, fontWeight: 600, lineHeight: 1.3 }}>
+              ⏰ Order by {cutoff.cutoffLabel} for same-day delivery
+            </div>
+          )}
           {/* Full-width Add to Cart button */}
           <button
             onClick={isOutOfStock ? undefined : handleAdd}
@@ -126,6 +133,11 @@ function ProductCard({ product, variant }) {
         <div className="product-info">
           <div className="product-name">{product.name}</div>
           <div className="product-desc-text">{product.shortDesc || product.desc}</div>
+          {cutoff.hasCutoff && (
+            <div style={{ fontSize: '0.7rem', color: '#92400e', fontWeight: 600, marginTop: 4 }}>
+              ⏰ Order by {cutoff.cutoffLabel} for same-day
+            </div>
+          )}
           <div className="product-footer">
             <div>
               {hasDiscount ? (
@@ -166,6 +178,11 @@ function ProductCard({ product, variant }) {
       <div className="product-info">
         <div className="product-name">{product.name}</div>
         <div className="product-desc-text">{product.shortDesc || product.desc}</div>
+        {cutoff.hasCutoff && (
+          <div style={{ fontSize: '0.7rem', color: '#92400e', fontWeight: 600, marginTop: 4 }}>
+            ⏰ Order by {cutoff.cutoffLabel} for same-day
+          </div>
+        )}
         <div className="product-footer">
           <div>
             {hasDiscount ? (
