@@ -230,8 +230,8 @@ export default function Checkout() {
       .map(i => ({ ...i, available: stockMap[String(i.id)].stock }));
   };
 
-  const handleBankTransfer = async () => {
-    if (anyItemPastCutoff(items) && !cutoffAck) {
+  const handleBankTransfer = async (skipCutoffGate = false) => {
+    if (skipCutoffGate !== true && anyItemPastCutoff(items) && !cutoffAck) {
       setShowCutoffModal(true);
       return;
     }
@@ -594,7 +594,7 @@ export default function Checkout() {
 
         {/* Complete Order button */}
         <button
-          onClick={handleBankTransfer}
+          onClick={() => handleBankTransfer()}
           disabled={processing || !transferConfirmed || !transferName.trim()}
           style={{ width: '100%', padding: '16px', borderRadius: 14, background: processing || !transferConfirmed || !transferName.trim() ? 'rgba(192,32,31,0.45)' : '#c0201f', color: '#fff', border: 'none', fontWeight: 900, fontSize: '1rem', cursor: processing || !transferConfirmed || !transferName.trim() ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, letterSpacing: '-0.01em', transition: 'background 0.2s' }}>
           {processing ? <><Loader2 size={18} className="spin" /> Processing…</> : <><Send size={18} /> Complete Order · Pay {fmt(amountToPayNow)}</>}
@@ -606,7 +606,7 @@ export default function Checkout() {
       <CutoffModal
         isOpen={showCutoffModal}
         isPickup={deliveryType === 'pickup'}
-        onAgree={() => { setCutoffAck(true); setShowCutoffModal(false); handleBankTransfer(); }}
+        onAgree={() => { setCutoffAck(true); setShowCutoffModal(false); handleBankTransfer(true); }}
         onClose={() => setShowCutoffModal(false)}
       />
     </div>
@@ -722,7 +722,7 @@ function CutoffModal({ isOpen, isPickup, onAgree, onClose }) {
           <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#fffbeb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <span style={{ fontSize: '1.5rem' }}>⏰</span>
           </div>
-          <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#92400e' }}>Next-Day Delivery Notice</h3>
+          <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#92400e' }}>{isPickup ? 'Next-Day Pickup Notice' : 'Next-Day Delivery Notice'}</h3>
         </div>
         <p style={{ fontSize: '0.9rem', color: '#555', lineHeight: 1.6, marginBottom: 24 }}>
           Your order includes an item that has passed today's order cutoff. It will be <strong>{when}</strong>, not today. Do you want to continue?
