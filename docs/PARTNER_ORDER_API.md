@@ -10,10 +10,8 @@ This is **read-only**. You cannot create or modify orders through this API.
 ## Endpoint
 
 ```
-GET https://<PROJECT-REF>.functions.supabase.co/export-orders
+GET https://itpnfalqjjicesqcjzix.functions.supabase.co/export-orders
 ```
-
-Replace `<PROJECT-REF>` with the value we give you.
 
 ## Authentication
 
@@ -93,6 +91,6 @@ Notes:
 ## Example (curl)
 
 ```bash
-curl "https://<PROJECT-REF>.functions.supabase.co/export-orders?since=2026-07-01T00:00:00Z&limit=200" \
+curl "https://itpnfalqjjicesqcjzix.functions.supabase.co/export-orders?since=2026-07-01T00:00:00Z&limit=200" \
   -H "x-api-key: <YOUR_API_KEY>"
 ```
