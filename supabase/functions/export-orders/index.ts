@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { ORDER_COLUMNS, shapeOrders } from "../_shared/order-shape.ts";
 
 // Partner order-export API (read / pull).
 // A trusted third party polls this endpoint to sync orders OUT of our database
@@ -64,7 +65,7 @@ serve(async (req) => {
     // 3. Page of orders changed after `since` (cancelled included; soft-deleted excluded).
     let q = db
       .from('orders')
-      .select('id,status,channel,created_at,updated_at,total,delivery_fee,payment_method,customer_name,customer_phone,customer_email,delivery_address,delivery_zone,notes')
+      .select(ORDER_COLUMNS)
       .is('deleted_at', null)
       .order('updated_at', { ascending: true })
       .limit(limit);
@@ -73,42 +74,8 @@ serve(async (req) => {
     const { data: orders, error: ordersErr } = await q;
     if (ordersErr) throw ordersErr;
 
-    // 4. Fetch line items for this page in one query, then group by order.
-    const ids = (orders ?? []).map((o) => o.id);
-    const itemsByOrder: Record<string, { product_id: number | null; name: string; price: number; qty: number }[]> = {};
-    if (ids.length) {
-      const { data: items, error: itemsErr } = await db
-        .from('order_items')
-        .select('order_id,product_id,name,price,qty')
-        .in('order_id', ids);
-      if (itemsErr) throw itemsErr;
-      for (const it of items ?? []) {
-        (itemsByOrder[it.order_id] ??= []).push({
-          product_id: it.product_id, name: it.name, price: it.price, qty: it.qty,
-        });
-      }
-    }
-
-    // 5. Shape the response.
-    const shaped = (orders ?? []).map((o) => ({
-      id: o.id,
-      status: o.status,
-      channel: o.channel,
-      created_at: o.created_at,
-      updated_at: o.updated_at,
-      total: o.total,
-      delivery_fee: o.delivery_fee,
-      payment_method: o.payment_method,
-      notes: o.notes,
-      customer: {
-        name: o.customer_name,
-        phone: o.customer_phone,
-        email: o.customer_email,
-        address: o.delivery_address,
-        zone: o.delivery_zone,
-      },
-      items: itemsByOrder[o.id] ?? [],
-    }));
+    // 4. Shape the page (fetches line items). Identical shape to the push API.
+    const shaped = await shapeOrders(db, orders ?? []);
 
     // next_since: the last row's updated_at (feed it back on the next call). If the
     // page was empty, echo the caller's `since` so they can safely poll again.
