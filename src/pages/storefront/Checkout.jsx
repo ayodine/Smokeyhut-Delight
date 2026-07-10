@@ -5,6 +5,7 @@ import { useToast } from '../../context/ToastContext';
 import { useSettings } from '../../context/SettingsContext';
 import { publicSupabase } from '../../lib/supabase';
 import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher';
+import { fetchDeliveryPromo, getPromoDeliveryFee } from '../../lib/deliveryPromo';
 import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
 import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Search, MapPin, Tag, X, Copy, Banknote, Send } from 'lucide-react';
 
@@ -34,6 +35,7 @@ export default function Checkout() {
   // Delivery state
   const [deliveryType, setDeliveryType] = useState('delivery'); // 'delivery' | 'pickup'
   const [zones, setZones] = useState([]);
+  const [deliveryPromo, setDeliveryPromo] = useState(null);
   const [locationQuery, setLocationQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [selectedMatch, setSelectedMatch] = useState(null); // { zone, area, matchedOn }
@@ -76,6 +78,7 @@ export default function Checkout() {
   // Fetch zones and active stores on mount
   useEffect(() => {
     fetchDeliveryZones(publicSupabase).then(setZones);
+    fetchDeliveryPromo(publicSupabase).then(setDeliveryPromo);
     publicSupabase
       .from('stores')
       .select('id, name, address')
@@ -103,7 +106,11 @@ export default function Checkout() {
   const VAT = 200;
   const isPickup = deliveryType === 'pickup';
   const allFreeShipping = items.length > 0 && items.every(i => i.free_shipping === true);
-  const deliveryFee = isPickup ? 0 : (allFreeShipping ? 0 : (selectedMatch?.zone.price ?? 0));
+  const promoFee = !isPickup && selectedMatch
+    ? getPromoDeliveryFee(deliveryPromo, items, selectedMatch.area?.name || '', selectedMatch.zone.price)
+    : null;
+  const promoApplied = promoFee !== null && !allFreeShipping;
+  const deliveryFee = isPickup ? 0 : (allFreeShipping ? 0 : (promoApplied ? promoFee : (selectedMatch?.zone.price ?? 0)));
   const couponDiscount = appliedCoupon?.discount ?? 0;
   const grandTotal = Math.max(0, total + deliveryFee - couponDiscount) + VAT;
   const amountToPayNow = Math.max(0, total - couponDiscount) + VAT;
@@ -183,7 +190,7 @@ export default function Checkout() {
       coupon_code: appliedCoupon?.code || null,
       coupon_discount: appliedCoupon?.discount || 0,
       status: 'pending',
-      notes: form.notes ? '[via Website]\n' + form.notes : '[via Website]',
+      notes: (promoApplied ? '[via Website] [Delivery Promo]' : '[via Website]') + (form.notes ? '\n' + form.notes : ''),
     };
   };
 
@@ -399,7 +406,16 @@ export default function Checkout() {
                         <div key={i} onMouseDown={() => handleSelectSuggestion(m)}
                           style={{ padding: '11px 14px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid #f5f5f5', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div><div style={{ fontWeight: 700, color: '#111' }}>{m.area ? m.area.name : m.zone.name}</div><div style={{ fontSize: '0.75rem', color: '#888' }}>{m.zone.name}</div></div>
-                          <span style={{ color: '#c0201f', fontWeight: 800, fontSize: '0.82rem' }}>{fmt(m.zone.price)}</span>
+                          {(() => {
+                            const pf = getPromoDeliveryFee(deliveryPromo, items, m.area?.name || '', m.zone.price);
+                            if (pf === null || allFreeShipping) return <span style={{ color: '#c0201f', fontWeight: 800, fontSize: '0.82rem' }}>{fmt(m.zone.price)}</span>;
+                            return (
+                              <span style={{ fontWeight: 800, fontSize: '0.82rem' }}>
+                                <s style={{ color: '#aaa', fontWeight: 600, marginRight: 6 }}>{fmt(m.zone.price)}</s>
+                                <span style={{ color: '#16a34a' }}>{pf === 0 ? 'Free' : fmt(pf)}</span>
+                              </span>
+                            );
+                          })()}
                         </div>
                       ))}
                     </div>
@@ -413,7 +429,13 @@ export default function Checkout() {
                         <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#111' }}>{selectedMatch.area ? selectedMatch.area.name : selectedMatch.zone?.name}</span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontWeight: 800, fontSize: '0.85rem', color: '#c0201f' }}>{deliveryFee === 0 ? 'Free' : fmt(deliveryFee)}</span>
+                        {promoApplied && (
+                          <>
+                            <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#16a34a', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 6, padding: '2px 6px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Promo</span>
+                            <s style={{ color: '#aaa', fontWeight: 600, fontSize: '0.8rem' }}>{fmt(selectedMatch.zone.price)}</s>
+                          </>
+                        )}
+                        <span style={{ fontWeight: 800, fontSize: '0.85rem', color: promoApplied ? '#16a34a' : '#c0201f' }}>{deliveryFee === 0 ? 'Free' : fmt(deliveryFee)}</span>
                         <button onClick={() => { setSelectedMatch(null); setLocationQuery(''); inputRef.current?.focus(); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888', fontSize: '0.78rem', fontWeight: 700 }}>Change</button>
                       </div>
                     </div>
@@ -511,7 +533,7 @@ export default function Checkout() {
             {[
               ['Subtotal (food)', fmt(total)],
               couponDiscount > 0 ? [`Discount (${appliedCoupon?.code})`, `−${fmt(couponDiscount)}`] : null,
-              !isPickup && deliveryFee > 0 ? ['Delivery (pay rider)', fmt(deliveryFee)] : null,
+              !isPickup && promoApplied ? ['Delivery (pay rider) 🎉 Promo', deliveryFee === 0 ? 'Free' : fmt(deliveryFee)] : (!isPickup && deliveryFee > 0 ? ['Delivery (pay rider)', fmt(deliveryFee)] : null),
               ['VAT', fmt(VAT)],
             ].filter(Boolean).map(([label, value]) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: '0.85rem' }}>

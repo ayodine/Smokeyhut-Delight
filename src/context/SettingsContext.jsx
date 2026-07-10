@@ -29,7 +29,19 @@ const defaultSettings = {
   bankName: '',
   accountName: '',
   accountNumber: '',
+  deliveryPromo: { enabled: false, product_ids: [], area_fees: {} },
 };
+
+// Map an app_settings (key, value) row to the partial context-settings shape.
+// Shared by the initial fetch and the realtime handler so they stay in sync.
+function applyRow(key, value) {
+  if (key === 'delivery_options') return Array.isArray(value) && value.length > 0 ? { deliveryOptions: value } : {};
+  if (key === 'ticker_items')     return Array.isArray(value) && value.length > 0 ? { tickerItems: value } : {};
+  if (key === 'bank_details')     return value ? { ...value } : {};
+  if (key === 'general_settings') return value ? { ...value } : {};
+  if (key === 'delivery_promo')   return value ? { deliveryPromo: value } : {};
+  return {};
+}
 
 export function SettingsProvider({ children }) {
   const [settings, setSettingsState] = useState(() => {
@@ -46,43 +58,60 @@ export function SettingsProvider({ children }) {
 
   const bcRef = useRef(null);
 
-  // Fetch settings from Supabase on mount, but skip if cached data is < 5 minutes old
   useEffect(() => {
-    const SETTINGS_TTL_MS = 5 * 60 * 1000; // 5 minutes
+    // 1. Initial fetch — gated by a 5-min TTL so we don't refetch on every mount.
+    //    (Realtime below keeps already-open pages fresh in between.)
+    const SETTINGS_TTL_MS = 5 * 60 * 1000;
     const lastFetched = Number(localStorage.getItem('smokey_settings_fetched_at') || 0);
     const isStale = Date.now() - lastFetched > SETTINGS_TTL_MS;
 
-    if (!isStale) return; // Use cached localStorage data, skip the Supabase request
+    if (isStale) {
+      Promise.all([
+        publicSupabase.from('app_settings').select('key,value').eq('key', 'delivery_options').single(),
+        publicSupabase.from('app_settings').select('key,value').eq('key', 'ticker_items').single(),
+        publicSupabase.from('app_settings').select('key,value').eq('key', 'bank_details').single(),
+        publicSupabase.from('app_settings').select('key,value').eq('key', 'general_settings').single(),
+        publicSupabase.from('app_settings').select('key,value').eq('key', 'delivery_promo').single(),
+      ]).then((results) => {
+        localStorage.setItem('smokey_settings_fetched_at', String(Date.now()));
+        setSettingsState(prev => {
+          let next = { ...prev };
+          for (const res of results) {
+            if (res.data) next = { ...next, ...applyRow(res.data.key, res.data.value) };
+          }
+          return next;
+        });
+      });
+    }
 
-    Promise.all([
-      publicSupabase.from('app_settings').select('value').eq('key', 'delivery_options').single(),
-      publicSupabase.from('app_settings').select('value').eq('key', 'ticker_items').single(),
-      publicSupabase.from('app_settings').select('value').eq('key', 'bank_details').single(),
-      publicSupabase.from('app_settings').select('value').eq('key', 'general_settings').single(),
-    ]).then(([deliveryRes, tickerRes, bankRes, generalRes]) => {
-      localStorage.setItem('smokey_settings_fetched_at', String(Date.now()));
-      setSettingsState(prev => ({
-        ...prev,
-        ...(Array.isArray(deliveryRes.data?.value) && deliveryRes.data.value.length > 0
-          ? { deliveryOptions: deliveryRes.data.value } : {}),
-        ...(Array.isArray(tickerRes.data?.value) && tickerRes.data.value.length > 0
-          ? { tickerItems: tickerRes.data.value } : {}),
-        ...(bankRes.data?.value ? bankRes.data.value : {}),
-        ...(generalRes.data?.value ? generalRes.data.value : {}),
-      }));
-    });
-
-    // Cross-tab sync via BroadcastChannel — only fires in other tabs, never loops back
+    // 2. Cross-tab sync (same browser) — ALWAYS set up, even on a warm cache, so a
+    //    save in the dashboard tab instantly updates an open storefront tab. (This
+    //    was previously skipped whenever the cache was fresh, silently breaking it.)
+    let bc;
     if (typeof BroadcastChannel !== 'undefined') {
-      const bc = new BroadcastChannel('smokey_settings_bc');
+      bc = new BroadcastChannel('smokey_settings_bc');
       bc.onmessage = (e) => {
         if (e.data?.type === 'settings_updated') {
           setSettingsState(prev => ({ ...prev, ...e.data.settings }));
         }
       };
       bcRef.current = bc;
-      return () => bc.close();
     }
+
+    // 3. Realtime — pushes setting changes live to every open store/dashboard,
+    //    across devices, without waiting out the cache or reloading.
+    const channel = publicSupabase
+      .channel('app_settings_live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, (payload) => {
+        const row = payload.new;
+        if (row?.key) setSettingsState(prev => ({ ...prev, ...applyRow(row.key, row.value) }));
+      })
+      .subscribe();
+
+    return () => {
+      bc?.close();
+      publicSupabase.removeChannel(channel);
+    };
   }, []);
 
   useEffect(() => {
@@ -101,6 +130,9 @@ export function SettingsProvider({ children }) {
     }
     if (newSettings.tickerItems) {
       upserts.push(supabase.from('app_settings').upsert({ key: 'ticker_items', value: newSettings.tickerItems, updated_at: new Date().toISOString() }));
+    }
+    if (newSettings.deliveryPromo) {
+      upserts.push(supabase.from('app_settings').upsert({ key: 'delivery_promo', value: newSettings.deliveryPromo, updated_at: new Date().toISOString() }));
     }
     if (newSettings.bankName !== undefined || newSettings.accountName !== undefined || newSettings.accountNumber !== undefined) {
       const bankDetails = { bankName: newSettings.bankName, accountName: newSettings.accountName, accountNumber: newSettings.accountNumber };
