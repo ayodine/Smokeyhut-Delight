@@ -5,7 +5,7 @@
  *   { enabled: boolean, product_ids: [], area_fees: { "<area name, lowercased>": fee } }
  *
  * The promo never touches delivery_zones/delivery_areas — checkout swaps in the
- * promo fee only when the promo is enabled, every cart item is a promo product,
+ * promo fee only when the promo is enabled, the cart contains a promo product,
  * and the matched area has an override. Fee 0 means free delivery.
  */
 
@@ -21,7 +21,7 @@ export async function fetchDeliveryPromo(supabaseClient) {
 
 /**
  * Returns the promo delivery fee (number, 0 = free) or null when no override applies.
- * Strict qualification: every item in the cart must be one of the promo products.
+ * Qualification: the cart contains at least one promo product (other items are fine).
  * Never returns more than normalPrice, so the promo can only lower a fee.
  */
 export function getPromoDeliveryFee(promo, cartItems, areaName, normalPrice) {
@@ -29,7 +29,7 @@ export function getPromoDeliveryFee(promo, cartItems, areaName, normalPrice) {
   const productIds = (promo.product_ids || []).map(String);
   if (productIds.length === 0) return null;
   if (!Array.isArray(cartItems) || cartItems.length === 0) return null;
-  if (!cartItems.every(i => productIds.includes(String(i.id)))) return null;
+  if (!cartItems.some(i => productIds.includes(String(i.id)))) return null;
 
   const key = (areaName || '').toLowerCase().trim();
   const fee = promo.area_fees?.[key];

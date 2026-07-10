@@ -236,7 +236,7 @@ export default function Settings() {
             <Truck size={18} /> Delivery Promo
           </h3>
           <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 16 }}>
-            Discounted delivery fees for orders containing <strong>only</strong> the selected product(s). Normal zone fees are untouched — switching this off restores regular pricing instantly.
+            Discounted delivery fees for orders containing the selected product(s) — other items in the cart don't affect it. Normal zone fees are untouched — switching this off restores regular pricing instantly.
           </p>
 
           <label style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--border-subtle)', cursor: canManage ? 'pointer' : 'not-allowed', opacity: canManage ? 1 : 0.7, marginBottom: 14 }}>
