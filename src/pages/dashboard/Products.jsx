@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Package, Trash2, Edit2, Image as ImageIcon, X, FolderKanban, Loader2, AlertTriangle, TrendingUp, DollarSign, Layers, BarChart2 } from 'lucide-react';
+import { Package, Trash2, Edit2, Image as ImageIcon, X, FolderKanban, Loader2, AlertTriangle, TrendingUp, DollarSign, Layers, BarChart2, Eye, EyeOff } from 'lucide-react';
 import { SkelDashHeader, SkelKpiGrid, SkelTable } from '../../components/Skeleton';
 import Pagination from '../../components/Pagination';
 import { supabase } from '../../lib/supabase';
@@ -132,10 +132,11 @@ export default function Products() {
       category_id: form.category,
       badge: form.badge || null,
       image: imageUrl,
-      is_active: true,
       free_shipping: form.free_shipping,
       same_day_cutoff: form.cutoff || null,
     };
+    // Only default new products to active — editing must not silently un-hide a hidden product.
+    if (!editing) data.is_active = true;
 
     try {
       if (editing) {
@@ -156,6 +157,14 @@ export default function Products() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const toggleActive = async (p) => {
+    const { error } = await supabase.from('products').update({ is_active: !p.is_active }).eq('id', p.id);
+    if (error) { showToast('Error', error.message, 'error'); return; }
+    setProductList(prev => prev.map(x => x.id === p.id ? { ...x, is_active: !p.is_active } : x));
+    invalidateProducts();
+    showToast(p.is_active ? 'Product hidden' : 'Product visible', p.is_active ? `${p.name} is now hidden from the storefront` : `${p.name} is now visible on the storefront`);
   };
 
   const handleDelete = (id) => {
@@ -388,6 +397,7 @@ export default function Products() {
                   finalStyle.background = 'rgba(192, 32, 31, 0.06)';
                   finalStyle.borderLeft = '3px solid var(--red)';
                 }
+                if (p.is_active === false) finalStyle.opacity = 0.55;
 
                 return (
                   <tr key={p.id} style={finalStyle}>
@@ -426,14 +436,21 @@ export default function Products() {
                     <td><div className={`stock-indicator ${stockLevel(p.stock)}`}><span className="stock-dot" />{p.stock} units</div></td>
                     <td>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {p.is_active === false && <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '2px 7px', borderRadius: 20, width: 'fit-content' }}>Hidden</span>}
                         {p.badge ? <span className={`status-badge ${p.badge}`}>{p.badge}</span> : null}
                         {p.free_shipping && <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#166534', background: '#dcfce7', padding: '2px 7px', borderRadius: 20 }}>Free Ship</span>}
-                        {!p.badge && !p.free_shipping && '—'}
+                        {!p.badge && !p.free_shipping && p.is_active !== false && '—'}
                       </div>
                     </td>
                     {(canManage || canDelete) && (
                       <td>
                         <div style={{ display: 'flex', gap: 6 }}>
+                          {canManage && (
+                            <button onClick={() => toggleActive(p)} title={p.is_active === false ? 'Unhide (show on storefront)' : 'Hide from storefront'}
+                              style={{ background: 'none', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: p.is_active === false ? 'var(--text-muted)' : '#16a34a', display: 'flex', alignItems: 'center' }}>
+                              {p.is_active === false ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </button>
+                          )}
                           {canManage && (
                             <button onClick={() => openEdit(p)} className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.78rem', gap: 4 }}>
                               <Edit2 size={12} /> Edit
