@@ -82,7 +82,7 @@ function ProductCard({ product, variant }) {
           </div>
           {cutoff.hasCutoff && (
             <div style={{ fontSize: '0.72rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '4px 8px', marginBottom: 10, fontWeight: 600, lineHeight: 1.3 }}>
-              ⏰ Order by {cutoff.cutoffLabel} for same-day delivery
+              ⏰ Orders for this product stop by {cutoff.cutoffLabel} for same day delivery
             </div>
           )}
           {/* Full-width Add to Cart button */}
@@ -135,7 +135,7 @@ function ProductCard({ product, variant }) {
           <div className="product-desc-text">{product.shortDesc || product.desc}</div>
           {cutoff.hasCutoff && (
             <div style={{ fontSize: '0.7rem', color: '#92400e', fontWeight: 600, marginTop: 4 }}>
-              ⏰ Order by {cutoff.cutoffLabel} for same-day
+              ⏰ Orders for this product stop by {cutoff.cutoffLabel} for same day delivery
             </div>
           )}
           <div className="product-footer">
@@ -180,7 +180,7 @@ function ProductCard({ product, variant }) {
         <div className="product-desc-text">{product.shortDesc || product.desc}</div>
         {cutoff.hasCutoff && (
           <div style={{ fontSize: '0.7rem', color: '#92400e', fontWeight: 600, marginTop: 4 }}>
-            ⏰ Order by {cutoff.cutoffLabel} for same-day
+            ⏰ Orders for this product stop by {cutoff.cutoffLabel} for same day delivery
           </div>
         )}
         <div className="product-footer">
