@@ -4,6 +4,7 @@ import { Package, Search, X } from 'lucide-react';
 import { SkelKpiGrid, SkelFilterPills, SkelTable } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import DashCalendar from '../../components/DashCalendar';
+import { STATUS_FILTERS, DEFAULT_STATUS, toStatusParam, statusLabelFor } from '../../lib/orderStatusFilter';
 
 const fmt    = (n) => '₦' + Number(n).toLocaleString();
 const fmtNum = (n) => Number(n).toLocaleString();
@@ -67,9 +68,9 @@ function mergeByUnits(rows) {
 }
 
 // ─── Per-product order breakdown modal ───────────────────────────────────────
-function BreakdownModal({ product, onClose }) {
+function BreakdownModal({ product, statusLabel, onClose }) {
   const { name, units, revenue, rows, loading } = product;
-  const deliveredUnits = (rows || []).reduce((s, r) => s + (r.status === 'delivered' ? Number(r.qty) : 0), 0);
+  const countedUnits = (rows || []).reduce((s, r) => s + Number(r.qty), 0);
 
   return (
     <div className="product-form-modal" onClick={onClose}>
@@ -79,7 +80,7 @@ function BreakdownModal({ product, onClose }) {
           <button onClick={onClose} className="dash-drawer-close"><X size={16} /></button>
         </h3>
         <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 18 }}>
-          {fmtNum(units)} units sold (delivered) · {fmt(revenue)} revenue
+          {fmtNum(units)} units — {statusLabel} · {fmt(revenue)} revenue
         </div>
 
         {loading ? (
@@ -122,7 +123,7 @@ function BreakdownModal({ product, onClose }) {
             </table>
             <div style={{ padding: '12px 16px', fontSize: '0.8rem', color: 'var(--text-muted)', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
               <span>{rows.length} order line{rows.length !== 1 ? 's' : ''}</span>
-              <span>{fmtNum(deliveredUnits)} delivered units counted</span>
+              <span>{fmtNum(countedUnits)} units counted — {statusLabel}</span>
             </div>
           </div>
         )}
@@ -134,6 +135,7 @@ function BreakdownModal({ product, onClose }) {
 export default function ProductsSold() {
   const { selectedStore } = useOutletContext() || {};
   const [period, setPeriod]         = useState('month');
+  const [status, setStatus]         = useState(DEFAULT_STATUS);
   const [customDate, setCustomDate] = useState({ start: null, end: null });
   const [rows, setRows]             = useState([]);
   const [err, setErr]               = useState(false);
@@ -148,6 +150,7 @@ export default function ProductsSold() {
     const { start, end } = getPeriodParams(period, customDate);
     const { data } = await supabase.rpc('get_product_order_breakdown', {
       p_name: product.name, p_store_id: storeParam, p_start: start, p_end: end,
+      p_status: toStatusParam(status),
     });
     setDetail(d => (d && d.name === product.name ? { ...d, rows: data || [], loading: false } : d));
   };
@@ -163,6 +166,7 @@ export default function ProductsSold() {
       const { start, end } = getPeriodParams(period, customDate);
       const { data, error } = await supabase.rpc('get_stats_all_products', {
         p_store_id: storeParam, p_start: start, p_end: end,
+        p_status: toStatusParam(status),
       });
       if (cancelled) return;
       if (error) { setErr(true); setRows([]); }
@@ -171,7 +175,7 @@ export default function ProductsSold() {
     };
     run();
     return () => { cancelled = true; };
-  }, [selectedStore, period, customDate]);
+  }, [selectedStore, period, customDate, status]);
 
   const q = search.trim().toLowerCase();
   const filtered = useMemo(
@@ -189,6 +193,17 @@ export default function ProductsSold() {
           Units Sold by Product
         </h2>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div className="dash-segmented-control">
+            {STATUS_FILTERS.map(s => (
+              <button
+                key={s.key}
+                className={`dash-filter-btn${status === s.key ? ' active' : ''}`}
+                onClick={() => setStatus(s.key)}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
           <div className="dash-segmented-control">
             {PERIODS.map(p => (
               <button
@@ -276,7 +291,7 @@ export default function ProductsSold() {
         </div>
       )}
 
-      {detail && <BreakdownModal product={detail} onClose={() => setDetail(null)} />}
+      {detail && <BreakdownModal product={detail} statusLabel={statusLabelFor(status)} onClose={() => setDetail(null)} />}
     </div>
   );
 }
