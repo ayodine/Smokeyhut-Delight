@@ -4,6 +4,7 @@ import { DollarSign, ShoppingBag, TrendingUp, TrendingDown, Users, ChevronRight,
 import { SkelKpiGrid, SkelTopListCard, SkelFilterPills, SkelTable } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import DashCalendar from '../../components/DashCalendar';
+import { STATUS_FILTERS, DEFAULT_STATUS, toStatusParam } from '../../lib/orderStatusFilter';
 
 const fmt    = (n) => '₦' + Number(n).toLocaleString();
 const fmtNum = (n) => Number(n).toLocaleString();
@@ -379,6 +380,7 @@ function CustomerModal({ customer, onClose }) {
 export default function Stats() {
   const { selectedStore } = useOutletContext() || {};
   const [period, setPeriod]     = useState('month');
+  const [status, setStatus]     = useState(DEFAULT_STATUS);
   const [customDate, setCustomDate] = useState({ start: null, end: null });
   const [kpis,   setKpis]       = useState(null);
   const [lists,  setLists]      = useState(null);
@@ -411,14 +413,15 @@ export default function Stats() {
 
       const { start: startParam, end: endParam } = getPeriodParams(period, customDate);
       const prevParams = getPreviousPeriodParams(period, customDate);
+      const statusParam = toStatusParam(status);
 
       const [kpisRes, listsRes, prevKpisRes, gfRes] = await Promise.all([
-        supabase.rpc('get_product_stats_kpis',  { p_store_id: storeParam, p_start: startParam, p_end: endParam }),
-        supabase.rpc('get_product_stats_lists', { p_store_id: storeParam, p_start: startParam, p_end: endParam }),
+        supabase.rpc('get_product_stats_kpis',  { p_store_id: storeParam, p_start: startParam, p_end: endParam, p_status: statusParam }),
+        supabase.rpc('get_product_stats_lists', { p_store_id: storeParam, p_start: startParam, p_end: endParam, p_status: statusParam }),
         period === 'all'
           ? Promise.resolve({ data: null })
-          : supabase.rpc('get_product_stats_kpis',  { p_store_id: storeParam, p_start: prevParams.start, p_end: prevParams.end }),
-        supabase.rpc('get_guineafowl_breakdown', { p_store_id: storeParam, p_start: startParam, p_end: endParam }),
+          : supabase.rpc('get_product_stats_kpis',  { p_store_id: storeParam, p_start: prevParams.start, p_end: prevParams.end, p_status: statusParam }),
+        supabase.rpc('get_guineafowl_breakdown', { p_store_id: storeParam, p_start: startParam, p_end: endParam, p_status: statusParam }),
       ]);
       if (cancelled) return;
       
@@ -483,7 +486,7 @@ export default function Stats() {
     };
     run();
     return () => { cancelled = true; };
-  }, [selectedStore, period, customDate]);
+  }, [selectedStore, period, customDate, status]);
 
   const avgOrder = kpis && kpis.order_count > 0 ? kpis.revenue / kpis.order_count : 0;
 
@@ -494,7 +497,7 @@ export default function Stats() {
     const { start: startParam, end: endParam } = getPeriodParams(period, customDate);
 
     if (type === 'products' || type === 'products_units') {
-      const { data } = await supabase.rpc('get_stats_all_products', { p_store_id: storeParam, p_start: startParam, p_end: endParam });
+      const { data } = await supabase.rpc('get_stats_all_products', { p_store_id: storeParam, p_start: startParam, p_end: endParam, p_status: toStatusParam(status) });
       const mergedRows = mergeDrillDownProductRows(data || [], type);
       setDrillDown(d => d ? { ...d, rows: mergedRows, loading: false } : d);
     } else if (type === 'customers') {
@@ -554,6 +557,17 @@ export default function Stats() {
           Stats
         </h2>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div className="dash-segmented-control">
+            {STATUS_FILTERS.map(s => (
+              <button
+                key={s.key}
+                className={`dash-filter-btn${status === s.key ? ' active' : ''}`}
+                onClick={() => setStatus(s.key)}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
           <div className="dash-segmented-control">
             {PERIODS.map(p => (
               <button
