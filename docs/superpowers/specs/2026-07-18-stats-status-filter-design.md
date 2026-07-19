@@ -101,6 +101,7 @@ No new error paths: RPC errors already set `err` / `kpiErr` / `listErr` flags on
 ## Out of scope
 
 - A `processing` status pill (status unused in data).
+- Customers drill-down (`get_stats_all_customers`) and the all-time customer history modal (`get_customer_order_history`) — remain status-unscoped; the top-5 customers list IS scoped (via `get_product_stats_lists`), so the drill can differ from the list under a non-All pill.
 - Multi-select status combinations.
 - Refactoring the duplicated period/normalization helpers between the two pages.
 - Overview page (`Overview.jsx`) and finance pages — untouched.
