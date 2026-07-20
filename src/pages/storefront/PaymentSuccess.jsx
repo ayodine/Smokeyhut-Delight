@@ -10,7 +10,7 @@ export default function PaymentSuccess() {
   const reference = searchParams.get('reference');
   const [verifying, setVerifying] = useState(true);
   const [status, setStatus] = useState('verifying'); // 'verifying', 'success', 'error'
-  const { clearCart } = useCart();
+  const { clearCart, items, total } = useCart();
   const { showToast } = useToast();
   const navigate = useNavigate();
 
@@ -28,6 +28,14 @@ export default function PaymentSuccess() {
         });
 
         if (!funcError && data?.success) {
+          if (typeof window !== 'undefined' && window.fbq) {
+            window.fbq('track', 'Purchase', {
+              content_type: 'product',
+              value: Number(data.amount || total),
+              currency: 'NGN',
+              num_items: items.reduce((acc, i) => acc + i.qty, 0)
+            });
+          }
           setStatus('success');
           clearCart();
           showToast('Payment Successful!', 'Your order has been confirmed.', 'success');
@@ -44,7 +52,7 @@ export default function PaymentSuccess() {
     };
 
     verifyPaymentFn();
-  }, [reference, clearCart, showToast]);
+  }, [reference, clearCart, showToast, items, total]);
 
   return (
     <div className="container" style={{ minHeight: '70vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>

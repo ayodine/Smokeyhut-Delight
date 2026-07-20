@@ -75,6 +75,18 @@ export default function Checkout() {
   // Re-require acknowledgment whenever the cart contents change.
   useEffect(() => { setCutoffAck(false); }, [items]);
 
+  // Track InitiateCheckout on page mount
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.fbq) {
+      window.fbq('track', 'InitiateCheckout', {
+        content_type: 'product',
+        num_items: items.reduce((acc, i) => acc + i.qty, 0),
+        value: total,
+        currency: 'NGN'
+      });
+    }
+  }, []);
+
   // Fetch zones and active stores on mount
   useEffect(() => {
     fetchDeliveryZones(publicSupabase).then(setZones);
@@ -278,6 +290,16 @@ export default function Checkout() {
     const deliveryLine = isPickup
       ? `Store Pickup — ${stores.find(s => s.id === selectedStoreId)?.name || 'Store'}`
       : `${form.address}, ${selectedMatch?.area?.name || selectedMatch?.zone?.name || form.city}`;
+
+    if (typeof window !== 'undefined' && window.fbq) {
+      window.fbq('track', 'Purchase', {
+        content_type: 'product',
+        value: Number(amountSnapshot),
+        currency: 'NGN',
+        num_items: itemsSnapshot.reduce((acc, i) => acc + i.qty, 0)
+      });
+    }
+
     clearCart();
     await incrementCouponUse();
     setTransferName('');

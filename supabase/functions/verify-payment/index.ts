@@ -75,7 +75,12 @@ serve(async (req) => {
 
     console.log(`Success! Order ${orderId} → processing. Paid ${paidAmountKobo / 100} ${currency} via ${verifyData.data.channel}`)
     return new Response(
-      JSON.stringify({ success: true, orderId: order.id, channel: verifyData.data.channel }),
+      JSON.stringify({
+        success: true,
+        orderId: order.id,
+        channel: verifyData.data.channel,
+        amount: paidAmountKobo / 100
+      }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (error) {

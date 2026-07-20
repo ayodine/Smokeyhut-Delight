@@ -132,6 +132,12 @@ export default function MenuPage() {
       setProducts(p);
       setCategories([{ id: 'all', label: 'All Items' }, ...c]);
       setLoadingProducts(false);
+      if (typeof window !== 'undefined' && window.fbq) {
+        window.fbq('track', 'ViewContent', {
+          content_type: 'product_group',
+          content_name: 'Menu Catalog'
+        });
+      }
     });
   }, []);
 
@@ -278,6 +284,14 @@ export default function MenuPage() {
       delivery_address: deliveryLine,
       total: amountSnapshot,
     });
+    if (typeof window !== 'undefined' && window.fbq) {
+      window.fbq('track', 'Purchase', {
+        content_type: 'product',
+        value: Number(amountSnapshot),
+        currency: 'NGN',
+        num_items: itemsSnapshot.reduce((acc, i) => acc + i.qty, 0)
+      });
+    }
     setCheckoutOpen(false);
     setSuccessData({ 
       orderId, 
@@ -288,6 +302,18 @@ export default function MenuPage() {
       deliveryLine 
     });
     setProcessing(false);
+  };
+
+  const handleOpenCheckout = () => {
+    setCheckoutOpen(true);
+    if (typeof window !== 'undefined' && window.fbq) {
+      window.fbq('track', 'InitiateCheckout', {
+        content_type: 'product',
+        num_items: itemCount,
+        value: total,
+        currency: 'NGN'
+      });
+    }
   };
 
   const filtered = useMemo(() => {
@@ -422,7 +448,7 @@ export default function MenuPage() {
         {/* Cart */}
         <button
           className="premium-nav-btn"
-          onClick={() => setCheckoutOpen(true)}
+          onClick={handleOpenCheckout}
           style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', color: itemCount > 0 ? 'var(--red)' : 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 700, position: 'relative' }}
         >
           <span style={{ position: 'relative', display: 'inline-flex' }}>
