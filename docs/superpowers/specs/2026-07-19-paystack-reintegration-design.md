@@ -110,13 +110,9 @@
 - **Guards:** SQL checks that a `pending_payment` row is absent from stats RPC output, export-orders output, and triggers no partner push; present after promotion.
 - **Regression:** manual-transfer flow unchanged (place a test transfer order); status-filter pills unaffected.
 
-## Planned follow-on (do not block on, do not preclude)
-
-Customer accounts (Google sign-in, "my orders" payment/delivery tracking, offers) is a separate Phase-2 spec. Integration points this spec must not paint over: `get_payment_status` stays minimal but its promotion data (`paid_at`, `status`) is what the future "My Orders" view will read via customer-scoped RLS; order rows keep `customer_phone`/email intact for future identity linking.
-
 ## Out of scope
 
-- Customer accounts / authentication (Phase-2 spec: `2026-07-19-customer-accounts-design.md`).
+- Customer accounts / authentication (sign-in, sign-up, order-history views) — explicitly dropped by owner 2026-07-23; guest checkout is the only flow.
 - Delivery-fee prepayment via Paystack (rider-cash policy unchanged).
 - Refunds/disputes handling.
 - Paystack links for admin manual orders.
