@@ -1,111 +1,111 @@
-import React, { useEffect, useState } from 'react';
-import { useSearchParams, useNavigate, Link } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { CheckCircle, Loader2, Clock } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
-import { useToast } from '../../context/ToastContext';
-import { CheckCircle, XCircle, Loader2, Home, ShoppingBag } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { publicSupabase } from '../../lib/supabase';
+
+const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+// Landing page after Paystack's hosted payment page. READ-ONLY UX: the
+// webhook is the source of payment truth — this page just polls until the
+// order leaves pending_payment. One backup verify-payment call covers a slow
+// webhook. It never claims failure: the webhook/sweeper may still land it.
+const POLL_MS = 2000;
+const FIRST_PHASE_MS = 30000;   // then fire the one-shot verify backup
+const SECOND_PHASE_MS = 10000;  // keep polling a little after the backup
 
 export default function PaymentSuccess() {
-  const [searchParams] = useSearchParams();
-  const reference = searchParams.get('reference');
-  const [verifying, setVerifying] = useState(true);
-  const [status, setStatus] = useState('verifying'); // 'verifying', 'success', 'error'
-  const { clearCart, items, total } = useCart();
-  const { showToast } = useToast();
-  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const reference = params.get('reference') || params.get('trxref') || '';
+  const { clearCart } = useCart();
+  // Derive the no-reference state at init so the effect never setStates synchronously.
+  const [state, setState] = useState(reference ? 'checking' : 'noref'); // 'checking' | 'paid' | 'processing' | 'noref'
+  const [orderId, setOrderId] = useState(null);
+  const clearedRef = useRef(false);
 
   useEffect(() => {
-    if (!reference) {
-      setStatus('error');
-      setVerifying(false);
-      return;
-    }
+    if (!reference) return;
+    let stopped = false;
+    let verifyFired = false;
+    const startedAt = Date.now();
 
-    const verifyPaymentFn = async () => {
-      try {
-        const { data, error: funcError } = await supabase.functions.invoke('verify-payment', {
-          body: { reference }
-        });
-
-        if (!funcError && data?.success) {
-          if (typeof window !== 'undefined' && window.fbq) {
-            window.fbq('track', 'Purchase', {
-              content_type: 'product',
-              value: Number(data.amount || total),
-              currency: 'NGN',
-              num_items: items.reduce((acc, i) => acc + i.qty, 0)
-            });
-          }
-          setStatus('success');
-          clearCart();
-          showToast('Payment Successful!', 'Your order has been confirmed.', 'success');
-        } else {
-          setStatus('error');
-          showToast('Verification Failed', funcError?.message || data?.error || 'Payment could not be verified.', 'error');
+    const confirmPaid = (id) => {
+      if (stopped) return;
+      setOrderId(id);
+      setState('paid');
+      if (!clearedRef.current) {
+        clearedRef.current = true;
+        clearCart();
+        if (typeof window !== 'undefined' && window.fbq) {
+          window.fbq('track', 'Purchase', { content_type: 'product', currency: 'NGN' });
         }
-      } catch (error) {
-        setStatus('error');
-        showToast('Error', error.message || 'An error occurred during verification.', 'error');
-      } finally {
-        setVerifying(false);
       }
     };
 
-    verifyPaymentFn();
-  }, [reference, clearCart, showToast, items, total]);
+    const tick = async () => {
+      if (stopped) return;
+      const { data } = await publicSupabase.rpc('get_payment_status', { p_ref: reference });
+      if (stopped) return;
+      if (data?.paid) { confirmPaid(data.order_id); return; }
+      const elapsed = Date.now() - startedAt;
+      if (elapsed > FIRST_PHASE_MS && !verifyFired) {
+        verifyFired = true;
+        try {
+          await fetch(`${SUPABASE_URL}/functions/v1/verify-payment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_ANON_KEY}`, apikey: SUPABASE_ANON_KEY },
+            body: JSON.stringify({ reference }),
+          });
+        } catch { /* silent — polling continues */ }
+      }
+      if (elapsed > FIRST_PHASE_MS + SECOND_PHASE_MS) { setState('processing'); return; }
+      setTimeout(tick, POLL_MS);
+    };
+    tick();
+    return () => { stopped = true; };
+  }, [reference]); // clearCart intentionally omitted — guarded by clearedRef
 
+  const box = { minHeight: '70vh', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 20 };
+
+  if (state === 'noref') {
+    return (
+      <div style={box}><div>
+        <h2 style={{ fontWeight: 900 }}>Missing payment reference</h2>
+        <p style={{ color: '#888', margin: '10px 0 20px' }}>If you completed a payment, you'll receive a confirmation email shortly.</p>
+        <Link to="/shop" className="btn-primary">Back to Menu</Link>
+      </div></div>
+    );
+  }
+  if (state === 'paid') {
+    return (
+      <div style={box}><div>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}><CheckCircle size={64} color="#16a34a" /></div>
+        <h2 style={{ fontWeight: 900 }}>Payment confirmed! 🎉</h2>
+        <p style={{ color: '#555', margin: '10px 0 4px' }}>Your order <strong style={{ color: '#c0201f' }}>{orderId}</strong> is being prepared.</p>
+        <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>A confirmation email is on its way. Pay the delivery fee to the rider in cash on arrival.</p>
+        <Link to="/shop" className="btn-primary">Back to Menu</Link>
+      </div></div>
+    );
+  }
+  if (state === 'processing') {
+    return (
+      <div style={box}><div>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}><Clock size={64} color="#f59e0b" /></div>
+        <h2 style={{ fontWeight: 900 }}>Payment is processing…</h2>
+        <p style={{ color: '#555', margin: '10px 0 20px', maxWidth: 420 }}>
+          We're confirming your payment with the bank. You'll get a confirmation email as soon as it lands —
+          no need to pay again. Keep your payment reference: <strong>{reference}</strong>
+        </p>
+        <Link to="/shop" className="btn-primary">Back to Menu</Link>
+      </div></div>
+    );
+  }
   return (
-    <div className="container" style={{ minHeight: '70vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
-      <div className="card" style={{ maxWidth: 500, width: '100%', textAlign: 'center', padding: '40px 30px', borderRadius: 24, background: 'var(--card-bg)', border: '1px solid var(--border-subtle)', boxShadow: 'var(--shadow-lg)' }}>
-        
-        {status === 'verifying' && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
-            <Loader2 size={64} className="spin" color="var(--red)" />
-            <h2 style={{ fontSize: '2rem', fontWeight: 800 }}>Verifying <span>Payment</span></h2>
-            <p style={{ color: 'var(--text-muted)' }}>Please wait while we confirm your order...</p>
-          </div>
-        )}
-
-        {status === 'success' && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24 }}>
-            <div style={{ background: 'rgba(192,32,31,0.1)', padding: 20, borderRadius: '50%' }}>
-              <CheckCircle size={80} color="var(--red)" />
-            </div>
-            <h2 style={{ fontSize: '2.5rem', fontWeight: 900 }}>Order <span>Confirmed!</span></h2>
-            <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem', lineHeight: 1.6 }}>
-              Thank you for choosing <strong>Smokeyhut Delight</strong>! Your payment was successful and your order is being processed.
-            </p>
-            <div style={{ width: '100%', padding: '16px', background: 'var(--black2)', borderRadius: 12, fontSize: '0.9rem' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Reference:</span> <code style={{ color: 'var(--text)', fontWeight: 700 }}>{reference}</code>
-            </div>
-            <div style={{ display: 'flex', gap: 16, marginTop: 12 }}>
-              <Link to="/" className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Home size={18} /> Back Home
-              </Link>
-              <Link to="/shop" className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <ShoppingBag size={18} /> Order More
-              </Link>
-            </div>
-          </div>
-        )}
-
-        {status === 'error' && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24 }}>
-            <div style={{ background: 'rgba(239,68,68,0.1)', padding: 20, borderRadius: '50%' }}>
-              <XCircle size={80} color="#ef4444" />
-            </div>
-            <h2 style={{ fontSize: '2.2rem', fontWeight: 800 }}>Payment <span>Failed</span></h2>
-            <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem' }}>
-              We couldn't verify your payment. If you think this is a mistake, please contact our support.
-            </p>
-            <div style={{ display: 'flex', gap: 16, marginTop: 12 }}>
-              <Link to="/checkout" className="btn-primary">Try Again</Link>
-              <Link to="/" className="btn-secondary">Go Home</Link>
-            </div>
-          </div>
-        )}
-
-      </div>
-    </div>
+    <div style={box}><div>
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}><Loader2 size={48} className="spin" color="#c0201f" /></div>
+      <h2 style={{ fontWeight: 900 }}>Confirming your payment…</h2>
+      <p style={{ color: '#888', marginTop: 8 }}>This usually takes a few seconds.</p>
+    </div></div>
   );
 }

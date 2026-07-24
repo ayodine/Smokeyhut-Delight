@@ -23,6 +23,7 @@ import Home from './pages/storefront/Home';
 import Shop from './pages/storefront/Shop';
 import CartPage from './pages/storefront/Cart';
 import Checkout from './pages/storefront/Checkout';
+import PaymentSuccess from './pages/storefront/PaymentSuccess';
 import About from './pages/storefront/About';
 import FAQ from './pages/storefront/FAQ';
 import Contact from './pages/storefront/Contact';
@@ -86,6 +87,7 @@ function StorefrontLayout() {
         <Route path="shop" element={<Shop />} />
         <Route path="cart" element={<CartPage />} />
         <Route path="checkout" element={<Checkout />} />
+        <Route path="payment/success" element={<PaymentSuccess />} />
         <Route path="about" element={<About />} />
         <Route path="faq" element={<FAQ />} />
         <Route path="contact" element={<Contact />} />

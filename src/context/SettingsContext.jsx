@@ -40,6 +40,7 @@ function applyRow(key, value) {
   if (key === 'bank_details')     return value ? { ...value } : {};
   if (key === 'general_settings') return value ? { ...value } : {};
   if (key === 'delivery_promo')   return value ? { deliveryPromo: value } : {};
+  if (key === 'paystack')         return value ? { paystack: value } : {};
   return {};
 }
 
@@ -72,6 +73,7 @@ export function SettingsProvider({ children }) {
         publicSupabase.from('app_settings').select('key,value').eq('key', 'bank_details').single(),
         publicSupabase.from('app_settings').select('key,value').eq('key', 'general_settings').single(),
         publicSupabase.from('app_settings').select('key,value').eq('key', 'delivery_promo').single(),
+        publicSupabase.from('app_settings').select('key,value').eq('key', 'paystack').single(),
       ]).then((results) => {
         localStorage.setItem('smokey_settings_fetched_at', String(Date.now()));
         setSettingsState(prev => {
