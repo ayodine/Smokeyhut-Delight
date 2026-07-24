@@ -4,7 +4,7 @@ import { useSettings } from '../../context/SettingsContext';
 import { supabase } from '../../lib/supabase';
 import { fetchFlatAreas } from '../../lib/deliveryMatcher';
 import { DEFAULT_PROMO_AREA_FEES } from '../../lib/deliveryPromoSeed';
-import { Settings as SettingsIcon, Store, Bell, Save, Radio, Trash2, Plus, Pencil, Check, X, Landmark, Loader2, Truck, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { Settings as SettingsIcon, Store, Bell, Save, Radio, Trash2, Plus, Pencil, Check, X, Landmark, Loader2, Truck, ChevronDown, ChevronUp, Search, CreditCard } from 'lucide-react';
 
 import { useAuth } from '../../context/AuthContext';
 
@@ -53,9 +53,16 @@ export default function Settings() {
   const [paystackEnabled, setPaystackEnabled] = useState(false);
   const [paystackLoading, setPaystackLoading] = useState(true);
   const [paystackSaving, setPaystackSaving]   = useState(false);
+  const [paystackLoadError, setPaystackLoadError] = useState(false);
   useEffect(() => {
+    // On a load error, do NOT render the toggle — a silent "OFF" fallback could
+    // be Saved and accidentally disable a live Paystack (this is a kill switch).
     supabase.from('app_settings').select('value').eq('key', 'paystack').single()
-      .then(({ data }) => { setPaystackEnabled(!!data?.value?.enabled); setPaystackLoading(false); });
+      .then(({ data, error }) => {
+        if (error) setPaystackLoadError(true);
+        else setPaystackEnabled(!!data?.value?.enabled);
+        setPaystackLoading(false);
+      });
   }, []);
   const savePaystack = async () => {
     setPaystackSaving(true);
@@ -251,12 +258,16 @@ export default function Settings() {
 
         <div className="dash-card">
           <h3 style={{ fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif", fontSize: '1.1rem', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Landmark size={18} /> Paystack Payments
+            <CreditCard size={18} /> Paystack Payments
           </h3>
           <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 16 }}>
             Kill switch for the card / USSD payment option on both storefront checkouts. Turn OFF to instantly fall back to manual bank transfer only — no deploy needed.
           </p>
-          {!paystackLoading && (
+          {paystackLoading ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 8 }}><Loader2 size={14} className="spin" /> Loading…</div>
+          ) : paystackLoadError ? (
+            <div style={{ color: '#ef4444', fontSize: '0.85rem' }}>Couldn't load the current setting — refresh before changing it (not saving to avoid overwriting the live value).</div>
+          ) : (
             <>
               <label style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--border-subtle)', cursor: canManage ? 'pointer' : 'not-allowed', opacity: canManage ? 1 : 0.7, marginBottom: 14 }}>
                 <input type="checkbox" checked={paystackEnabled} onChange={e => setPaystackEnabled(e.target.checked)} style={{ width: 18, height: 18, accentColor: 'var(--red)' }} disabled={!canManage} />

@@ -410,7 +410,8 @@ export default function Orders() {
     const p_store_id = storeFilter ? Number(storeFilter) : null;
 
     const getBaseCountQuery = () => {
-      let q = supabase.from('orders').select('id', { count: 'exact', head: true }).is('deleted_at', null);
+      let q = supabase.from('orders').select('id', { count: 'exact', head: true }).is('deleted_at', null)
+        .neq('status', 'pending_payment'); // keep source pills consistent with the default (unpaid-excluded) list
       if (storeFilter) q = q.or(`store_id.eq.${storeFilter},store_id.is.null`);
       if (p_start) q = q.gte('created_at', p_start);
       if (p_end) q = q.lte('created_at', p_end);
