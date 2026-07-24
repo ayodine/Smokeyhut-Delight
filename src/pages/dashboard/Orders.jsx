@@ -13,7 +13,7 @@ import DashCalendar from '../../components/DashCalendar';
 import ConfirmModal from '../../components/ConfirmModal';
 
 const fmt = (n) => '₦' + Number(n).toLocaleString();
-const statuses = ['all', 'pending', 'processing', 'shipped', 'delivered', 'cancelled'];
+const statuses = ['all', 'pending_payment', 'pending', 'processing', 'shipped', 'delivered', 'cancelled'];
 
 const PERIODS = [
   { label: 'Today',      value: 'today' },
@@ -439,6 +439,7 @@ export default function Orders() {
     if (p_start) q = q.gte('created_at', p_start);
     if (p_end) q = q.lte('created_at', p_end);
     if (filter !== 'all') q = q.eq('status', filter);
+    else q = q.neq('status', 'pending_payment'); // hide unpaid Paystack orders from the default view
     if (sourceFilter !== 'all') q = q.eq('channel', sourceFilter);
 
     if (debouncedSearch.trim()) {
@@ -1040,7 +1041,9 @@ export default function Orders() {
       <div className="dash-filters">
         {statuses.map(s => (
           <button key={s} className={`dash-filter-btn${filter === s ? ' active' : ''}`} onClick={() => setFilter(s)}>
-            {s === 'all' ? `All (${statusCounts.all || 0})` : `${s.charAt(0).toUpperCase() + s.slice(1)} (${statusCounts[s] || 0})`}
+            {s === 'all' ? `All (${statusCounts.all || 0})`
+              : s === 'pending_payment' ? `Awaiting Payment (${statusCounts.pending_payment || 0})`
+              : `${s.charAt(0).toUpperCase() + s.slice(1)} (${statusCounts[s] || 0})`}
           </button>
         ))}
       </div>
@@ -1290,7 +1293,7 @@ export default function Orders() {
                         updateStatus(sel.id, e.target.value);
                       }
                     }}
-                    options={statuses.filter(s => s !== 'all' && (canCancelOrder || s !== 'cancelled')).map(s => ({ value: s, label: s }))}
+                    options={statuses.filter(s => s !== 'all' && s !== 'pending_payment' && (canCancelOrder || s !== 'cancelled')).map(s => ({ value: s, label: s }))}
                     disabled={!canManageOrder}
                   />
                 </div>

@@ -48,6 +48,24 @@ export default function Settings() {
     }
   };
 
+  // ── Paystack kill switch ── self-contained: own load/save straight to
+  // app_settings; the storefront picks it up via the realtime subscription.
+  const [paystackEnabled, setPaystackEnabled] = useState(false);
+  const [paystackLoading, setPaystackLoading] = useState(true);
+  const [paystackSaving, setPaystackSaving]   = useState(false);
+  useEffect(() => {
+    supabase.from('app_settings').select('value').eq('key', 'paystack').single()
+      .then(({ data }) => { setPaystackEnabled(!!data?.value?.enabled); setPaystackLoading(false); });
+  }, []);
+  const savePaystack = async () => {
+    setPaystackSaving(true);
+    const { error } = await supabase.from('app_settings')
+      .upsert({ key: 'paystack', value: { enabled: paystackEnabled } }, { onConflict: 'key' });
+    setPaystackSaving(false);
+    if (error) showToast('Save failed', error.message, 'error');
+    else showToast('Saved', `Paystack is now ${paystackEnabled ? 'ON' : 'OFF'} at checkout`, 'success');
+  };
+
   const tickerItems = localSettings.tickerItems || [];
 
   const addTicker = () => {
@@ -229,6 +247,28 @@ export default function Settings() {
           <div className="form-group"><label>Bank Name</label><input value={localSettings.bankName || ''} onChange={set('bankName')} placeholder="e.g. GTBank" disabled={!canManage} /></div>
           <div className="form-group"><label>Account Name</label><input value={localSettings.accountName || ''} onChange={set('accountName')} placeholder="e.g. Smokeyhut Delight" disabled={!canManage} /></div>
           <div className="form-group"><label>Account Number</label><input value={localSettings.accountNumber || ''} onChange={set('accountNumber')} placeholder="e.g. 0123456789" disabled={!canManage} /></div>
+        </div>
+
+        <div className="dash-card">
+          <h3 style={{ fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif", fontSize: '1.1rem', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Landmark size={18} /> Paystack Payments
+          </h3>
+          <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 16 }}>
+            Kill switch for the card / USSD payment option on both storefront checkouts. Turn OFF to instantly fall back to manual bank transfer only — no deploy needed.
+          </p>
+          {!paystackLoading && (
+            <>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--border-subtle)', cursor: canManage ? 'pointer' : 'not-allowed', opacity: canManage ? 1 : 0.7, marginBottom: 14 }}>
+                <input type="checkbox" checked={paystackEnabled} onChange={e => setPaystackEnabled(e.target.checked)} style={{ width: 18, height: 18, accentColor: 'var(--red)' }} disabled={!canManage} />
+                <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>Paystack is {paystackEnabled ? 'ON' : 'OFF'} at checkout</span>
+              </label>
+              {canManage && (
+                <button className="btn-primary" onClick={savePaystack} disabled={paystackSaving} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  {paystackSaving ? <><Loader2 size={16} className="spin" /> Saving…</> : <><Save size={16} /> Save</>}
+                </button>
+              )}
+            </>
+          )}
         </div>
 
         <div className="dash-card">
