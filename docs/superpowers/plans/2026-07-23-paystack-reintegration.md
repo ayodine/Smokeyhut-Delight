@@ -155,12 +155,14 @@ export async function verifyTransaction(secretKey: string, reference: string): P
 
 // The single promotion write. Guarded so a concurrent/duplicate call can't
 // double-promote: only rows still matching the promotable states update.
+// Returns true ONLY if THIS call performed the transition — callers gate the
+// confirmation email on it so a webhook/verify/sweeper race can't double-send.
 export async function promoteOrder(
   db: any,
   orderId: string,
   tx: { reference: string; channel?: string },
-): Promise<void> {
-  const { error } = await db
+): Promise<boolean> {
+  const { data, error } = await db
     .from('orders')
     .update({
       status: 'pending',
@@ -171,8 +173,10 @@ export async function promoteOrder(
     })
     .eq('id', orderId)
     .in('status', ['pending_payment', 'cancelled'])
-    .is('paid_at', null);
+    .is('paid_at', null)
+    .select('id');
   if (error) throw new Error(`promoteOrder(${orderId}): ${error.message}`);
+  return (data?.length ?? 0) > 0;
 }
 
 // Fire-and-forget confirmation email via the existing notify function.
@@ -780,9 +784,10 @@ serve(async (req) => {
     return new Response(JSON.stringify({ ok: true, skipped: 'already_processed' }), { status: 200 });
   }
 
-  await promoteOrder(db, order.id, { reference, channel: event.data?.channel });
-  await sendOrderConfirmedEmail(order);
-  console.log(`paystack-webhook: promoted ${order.id} (ref ${reference})`);
+  // Gate the email on the actual transition — verify-payment / sweeper may race us.
+  const didPromote = await promoteOrder(db, order.id, { reference, channel: event.data?.channel });
+  if (didPromote) await sendOrderConfirmedEmail(order);
+  console.log(`paystack-webhook: ${didPromote ? 'promoted' : 'already-promoted'} ${order.id} (ref ${reference})`);
   return new Response(JSON.stringify({ ok: true, promoted: order.id }), { status: 200 });
 });
 ```
@@ -841,9 +846,10 @@ serve(async (req) => {
     return json(409, { success: false, error: 'amount_mismatch' });
   }
   if (decision === 'promote') {
-    await promoteOrder(db, order.id, { reference, channel: tx.channel });
-    await sendOrderConfirmedEmail(order);
-    console.log(`verify-payment: promoted ${order.id}`);
+    // Gate the email on the actual transition — the webhook may be racing us.
+    const didPromote = await promoteOrder(db, order.id, { reference, channel: tx.channel });
+    if (didPromote) await sendOrderConfirmedEmail(order);
+    console.log(`verify-payment: ${didPromote ? 'promoted' : 'already-promoted'} ${order.id}`);
   }
   return json(200, { success: true, order_id: order.id, status: decision === 'promote' ? 'pending' : order.status });
 });
@@ -948,9 +954,9 @@ serve(async (req) => {
 
     const tx = order.paystack_ref ? await verifyTransaction(PAYSTACK_SECRET, order.paystack_ref) : null;
     if (tx && decidePromotion(order, Number(tx.amount ?? -1)) === 'promote') {
-      await promoteOrder(db, order.id, { reference: order.paystack_ref!, channel: tx.channel });
-      await sendOrderConfirmedEmail(order);
-      promoted++;
+      // Gate the email on the actual transition — the webhook may be racing us.
+      const didPromote = await promoteOrder(db, order.id, { reference: order.paystack_ref!, channel: tx.channel });
+      if (didPromote) { await sendOrderConfirmedEmail(order); promoted++; }
       continue;
     }
     if (expired) {
