@@ -952,19 +952,27 @@ serve(async (req) => {
     const ageMs = now - Date.parse(order.created_at);
     const expired = ageMs > EXPIRE_HOURS * 3_600_000;
 
-    const tx = order.paystack_ref ? await verifyTransaction(PAYSTACK_SECRET, order.paystack_ref) : null;
-    if (tx && decidePromotion(order, Number(tx.amount ?? -1)) === 'promote') {
-      // Gate the email on the actual transition — the webhook may be racing us.
-      const didPromote = await promoteOrder(db, order.id, { reference: order.paystack_ref!, channel: tx.channel });
-      if (didPromote) { await sendOrderConfirmedEmail(order); promoted++; }
-      continue;
+    if (order.paystack_ref) {
+      // Three-way classify: a failed verify (Paystack outage) reads as 'unknown'
+      // and must NEVER cancel — only a definitive 'unpaid' verdict may.
+      const { outcome, data } = await classifyTransaction(PAYSTACK_SECRET, order.paystack_ref);
+      if (outcome === 'paid') {
+        if (decidePromotion(order, Number(data?.amount ?? -1)) === 'promote') {
+          const didPromote = await promoteOrder(db, order.id, { reference: order.paystack_ref, channel: data?.channel });
+          if (didPromote) { await sendOrderConfirmedEmail(order); promoted++; }
+        }
+        continue; // paid → never cancel
+      }
+      if (outcome === 'unknown') { left++; continue; } // couldn't verify → retry next run
+      // outcome === 'unpaid' → fall through to expiry cancel
     }
     if (expired) {
-      // Re-verified unpaid (or never got a reference — never charged). Safe to expire.
-      await db.from('orders')
+      // Re-verified unpaid, or never got a reference (never charged). Safe to expire.
+      const { error: cancelErr } = await db.from('orders')
         .update({ status: 'cancelled', cancel_reason: 'Payment expired (Paystack)' })
         .eq('id', order.id).eq('status', 'pending_payment');
-      cancelled++;
+      if (cancelErr) { console.error(`reconcile-payments: cancel failed for ${order.id}: ${cancelErr.message}`); left++; }
+      else cancelled++;
       continue;
     }
     left++;
