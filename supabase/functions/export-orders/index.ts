@@ -67,6 +67,9 @@ serve(async (req) => {
       .from('orders')
       .select(ORDER_COLUMNS)
       .is('deleted_at', null)
+      // Unpaid Paystack orders don't exist as far as the partner is concerned
+      // (spec unified rule). The is.null branch keeps legacy null-method rows.
+      .or('payment_method.is.null,payment_method.neq.paystack,paid_at.not.is.null')
       .order('updated_at', { ascending: true })
       .limit(limit);
     if (since) q = q.gt('updated_at', since);
