@@ -47,9 +47,10 @@ serve(async (req) => {
     return json(409, { success: false, error: 'amount_mismatch' });
   }
   if (decision === 'promote') {
-    await promoteOrder(db, order.id, { reference, channel: tx.channel });
-    await sendOrderConfirmedEmail(order);
-    console.log(`verify-payment: promoted ${order.id}`);
+    // Gate the email on the actual transition — the webhook may be racing us.
+    const didPromote = await promoteOrder(db, order.id, { reference, channel: tx.channel });
+    if (didPromote) await sendOrderConfirmedEmail(order);
+    console.log(`verify-payment: ${didPromote ? 'promoted' : 'already-promoted'} ${order.id}`);
   }
   return json(200, { success: true, order_id: order.id, status: decision === 'promote' ? 'pending' : order.status });
 });

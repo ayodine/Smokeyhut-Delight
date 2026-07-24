@@ -73,8 +73,9 @@ serve(async (req) => {
     return new Response(JSON.stringify({ ok: true, skipped: 'already_processed' }), { status: 200 });
   }
 
-  await promoteOrder(db, order.id, { reference, channel: event.data?.channel });
-  await sendOrderConfirmedEmail(order);
-  console.log(`paystack-webhook: promoted ${order.id} (ref ${reference})`);
+  // Gate the email on the actual transition — verify-payment / sweeper may race us.
+  const didPromote = await promoteOrder(db, order.id, { reference, channel: event.data?.channel });
+  if (didPromote) await sendOrderConfirmedEmail(order);
+  console.log(`paystack-webhook: ${didPromote ? 'promoted' : 'already-promoted'} ${order.id} (ref ${reference})`);
   return new Response(JSON.stringify({ ok: true, promoted: order.id }), { status: 200 });
 });

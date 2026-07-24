@@ -46,12 +46,14 @@ export async function verifyTransaction(secretKey: string, reference: string): P
 
 // The single promotion write. Guarded so a concurrent/duplicate call can't
 // double-promote: only rows still matching the promotable states update.
+// Returns whether THIS call actually performed the transition — callers gate
+// the confirmation email on that so a racing entry point can't double-send.
 export async function promoteOrder(
   db: any,
   orderId: string,
   tx: { reference: string; channel?: string },
-): Promise<void> {
-  const { error } = await db
+): Promise<boolean> {
+  const { data, error } = await db
     .from('orders')
     .update({
       status: 'pending',
@@ -62,8 +64,10 @@ export async function promoteOrder(
     })
     .eq('id', orderId)
     .in('status', ['pending_payment', 'cancelled'])
-    .is('paid_at', null);
+    .is('paid_at', null)
+    .select('id');
   if (error) throw new Error(`promoteOrder(${orderId}): ${error.message}`);
+  return (data?.length ?? 0) > 0;
 }
 
 // Fire-and-forget confirmation email via the existing notify function.
