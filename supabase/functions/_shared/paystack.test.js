@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveCallbackOrigin, decidePromotion } from './paystack.ts';
+import { resolveCallbackOrigin, decidePromotion, classifyPaystackStatus } from './paystack.ts';
 
 describe('resolveCallbackOrigin', () => {
   it('accepts allowlisted production origins', () => {
@@ -42,5 +42,28 @@ describe('decidePromotion', () => {
   });
   it('handles decimal totals without float drift', () => {
     expect(decidePromotion(order('pending_payment', null, 5200.5), 520050)).toBe('promote');
+  });
+  it('exercises Math.round on a non-representable decimal (19.99 * 100)', () => {
+    expect(decidePromotion(order('pending_payment', null, 19.99), 1999)).toBe('promote');
+  });
+});
+
+describe('classifyPaystackStatus', () => {
+  const resp = (status) => ({ status: true, data: { status } });
+  it('paid only on success', () => {
+    expect(classifyPaystackStatus(true, resp('success')).outcome).toBe('paid');
+  });
+  it('unpaid on definitive failure states', () => {
+    for (const s of ['failed', 'abandoned', 'reversed'])
+      expect(classifyPaystackStatus(true, resp(s)).outcome).toBe('unpaid');
+  });
+  it('unknown on not-yet-terminal states (never unpaid)', () => {
+    for (const s of ['pending', 'ongoing', 'processing', 'queued'])
+      expect(classifyPaystackStatus(true, resp(s)).outcome).toBe('unknown');
+  });
+  it('unknown on transport/envelope failure — a Paystack outage must never read as unpaid', () => {
+    expect(classifyPaystackStatus(false, resp('success')).outcome).toBe('unknown'); // non-2xx
+    expect(classifyPaystackStatus(true, { status: false }).outcome).toBe('unknown'); // envelope failure
+    expect(classifyPaystackStatus(true, null).outcome).toBe('unknown');
   });
 });

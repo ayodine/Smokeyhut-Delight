@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { decidePromotion, promoteOrder, verifyTransaction, sendOrderConfirmedEmail } from "../_shared/paystack.ts";
+import { decidePromotion, promoteOrder, classifyTransaction, sendOrderConfirmedEmail } from "../_shared/paystack.ts";
 
 // Reconciliation sweeper — invoked by pg_cron every 15 minutes. For every
 // order stuck in pending_payment: if Paystack says paid, promote it (missed
@@ -58,22 +58,30 @@ serve(async (req) => {
     const ageMs = now - Date.parse(order.created_at);
     const expired = ageMs > EXPIRE_HOURS * 3_600_000;
 
-    const tx = order.paystack_ref ? await verifyTransaction(PAYSTACK_SECRET, order.paystack_ref) : null;
-    if (tx && decidePromotion(order, Number(tx.amount ?? -1)) === 'promote') {
-      // Gate the email on the actual transition — the webhook may be racing us.
-      const didPromote = await promoteOrder(db, order.id, { reference: order.paystack_ref!, channel: tx.channel });
-      if (didPromote) { await sendOrderConfirmedEmail(order); promoted++; }
-      continue;
+    if (order.paystack_ref) {
+      const { outcome, data } = await classifyTransaction(PAYSTACK_SECRET, order.paystack_ref);
+      if (outcome === 'paid') {
+        // Paid — NEVER cancel, whatever else. Promote if not already promoted.
+        if (decidePromotion(order, Number(data?.amount ?? -1)) === 'promote') {
+          const didPromote = await promoteOrder(db, order.id, { reference: order.paystack_ref, channel: data?.channel });
+          if (didPromote) { await sendOrderConfirmedEmail(order); promoted++; }
+        }
+        continue;
+      }
+      if (outcome === 'unknown') { left++; continue; }  // couldn't verify → never cancel, retry next run
+      // outcome === 'unpaid' → definitive failure; fall through to the expiry cancel below
     }
+
     if (expired) {
-      // Re-verified unpaid (or never got a reference — never charged). Safe to expire.
-      await db.from('orders')
+      // Re-verified unpaid, or never got a reference (never charged). Safe to expire.
+      const { error: cancelErr } = await db.from('orders')
         .update({ status: 'cancelled', cancel_reason: 'Payment expired (Paystack)' })
         .eq('id', order.id).eq('status', 'pending_payment');
-      cancelled++;
-      continue;
+      if (cancelErr) { console.error(`reconcile-payments: cancel failed for ${order.id}: ${cancelErr.message}`); left++; }
+      else cancelled++;
+    } else {
+      left++;
     }
-    left++;
   }
 
   const summary = { ok: true, scanned: rows?.length ?? 0, promoted, cancelled, awaiting: left };

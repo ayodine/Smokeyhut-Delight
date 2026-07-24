@@ -44,6 +44,41 @@ export async function verifyTransaction(secretKey: string, reference: string): P
   }
 }
 
+// Classify a Paystack verify RESPONSE into a three-way outcome. Pure so it can
+// be unit-tested without network. 'unknown' means "could not decide" (transport
+// failure, envelope error, or a not-yet-terminal state like pending/ongoing) —
+// the sweeper must NEVER cancel on 'unknown', only on a definitive 'unpaid'.
+export function classifyPaystackStatus(
+  httpOk: boolean,
+  body: any,
+): { outcome: 'paid' | 'unpaid' | 'unknown'; data?: any } {
+  if (!httpOk || !body?.status) return { outcome: 'unknown' };
+  const st = body?.data?.status;
+  if (st === 'success') return { outcome: 'paid', data: body.data };
+  if (st === 'failed' || st === 'abandoned' || st === 'reversed') return { outcome: 'unpaid', data: body.data };
+  return { outcome: 'unknown', data: body.data };
+}
+
+// Sweeper-only: re-verify a reference and classify it. Distinguishes a
+// CONFIRMED-unpaid verdict from a failed verification attempt so a Paystack
+// outage can never cancel a paid order. verify-payment keeps using
+// verifyTransaction (it only ever promotes, never cancels).
+export async function classifyTransaction(
+  secretKey: string,
+  reference: string,
+): Promise<{ outcome: 'paid' | 'unpaid' | 'unknown'; data?: any }> {
+  try {
+    const res = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
+      headers: { Authorization: `Bearer ${secretKey}` },
+    });
+    let body: any = null;
+    try { body = await res.json(); } catch { return { outcome: 'unknown' }; }
+    return classifyPaystackStatus(res.ok, body);
+  } catch {
+    return { outcome: 'unknown' };
+  }
+}
+
 // The single promotion write. Guarded so a concurrent/duplicate call can't
 // double-promote: only rows still matching the promotable states update.
 // Returns whether THIS call actually performed the transition — callers gate
