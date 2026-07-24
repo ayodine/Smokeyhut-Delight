@@ -50,6 +50,9 @@ export default function Checkout() {
   const [transferName, setTransferName]               = useState('');
   const [transferNameTouched, setTransferNameTouched] = useState(false);
   const [transferConfirmed, setTransferConfirmed]     = useState(false);
+  const paystackEnabled = !!settings?.paystack?.enabled;
+  const [payMethod, setPayMethod] = useState('paystack'); // 'paystack' | 'transfer'
+  const activeMethod = paystackEnabled ? payMethod : 'transfer';
 
   // Disclaimer state
   const [disclaimerAgreed, setDisclaimerAgreed] = useState(false);
@@ -317,6 +320,54 @@ export default function Checkout() {
     setProcessing(false);
   };
 
+  const handlePaystack = async (skipCutoffGate = false) => {
+    if (skipCutoffGate !== true && anyItemPastCutoff(items) && !cutoffAck) {
+      setShowCutoffModal(true);
+      return;
+    }
+    if (!validateForm()) return;
+
+    const itemsSnapshot = [...items];
+    setProcessing(true);
+
+    const stockFailures = await checkStock(itemsSnapshot);
+    if (stockFailures?.length) {
+      const msg = stockFailures
+        .map(i => i.available === 0 ? `${i.name} is out of stock` : `Only ${i.available} left of ${i.name}`)
+        .join(' · ');
+      showToast('Cannot place order', msg, 'error');
+      setProcessing(false);
+      return;
+    }
+
+    try {
+      // Hidden until paid: the webhook flips pending_payment -> pending.
+      // No notify() and no clearCart() here — email fires on payment,
+      // cart clears on the success page.
+      const payload = buildOrderPayload('paystack');
+      payload.status = 'pending_payment';
+      const { data: orderId, error } = await publicSupabase.rpc('create_storefront_order', { p: payload });
+      if (error) throw error;
+      await publicSupabase.from('order_items').insert(
+        itemsSnapshot.map(i => ({ order_id: orderId, product_id: i.id || null, name: i.name, price: i.price, qty: i.qty }))
+      );
+
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/initialize-payment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'apikey': SUPABASE_ANON_KEY },
+        body: JSON.stringify({ order_id: orderId, origin: window.location.origin }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.authorization_url) throw new Error(data.error || 'Could not start payment');
+
+      await incrementCouponUse();
+      window.location.assign(data.authorization_url);
+    } catch (err) {
+      showToast('Could not start card payment', `${err.message} — you can pay by bank transfer instead.`, 'error');
+      setProcessing(false);
+    }
+  };
+
 
 
 
@@ -571,18 +622,43 @@ export default function Checkout() {
                   <span style={{ fontWeight: 800, fontSize: '0.75rem', color: '#92400e' }}>How payment works</span>
                 </div>
                 <p style={{ fontSize: '0.76rem', color: '#78350f', lineHeight: 1.5, margin: 0 }}>
-                  Transfer <strong>{fmt(amountToPayNow)}</strong> for your food now. Pay the <strong>{fmt(deliveryFee)}</strong> delivery fee directly to the rider in cash on arrival.
+                  Pay <strong>{fmt(amountToPayNow)}</strong> for your food now. Pay the <strong>{fmt(deliveryFee)}</strong> delivery fee directly to the rider in cash on arrival.
                 </p>
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontWeight: 900, fontSize: '1rem', color: '#c0201f' }}>Pay now (transfer)</span>
+              <span style={{ fontWeight: 900, fontSize: '1rem', color: '#c0201f' }}>{activeMethod === 'paystack' ? 'Pay now (card)' : 'Pay now (transfer)'}</span>
               <span style={{ fontWeight: 900, fontSize: '1.1rem', color: '#c0201f' }}>{fmt(amountToPayNow)}</span>
             </div>
           </div>
         </div>
 
+        {/* Payment method selector (only when Paystack is enabled) */}
+        {paystackEnabled && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+            {[
+              ['paystack', 'Pay with Card / USSD', 'Instant confirmation via Paystack'],
+              ['transfer', 'Manual Bank Transfer', 'Transfer to our Moniepoint account'],
+            ].map(([key, title, sub]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setPayMethod(key)}
+                style={{
+                  textAlign: 'left', padding: '12px 14px', borderRadius: 12, cursor: 'pointer',
+                  border: `2px solid ${activeMethod === key ? '#c0201f' : '#e5e5e5'}`,
+                  background: activeMethod === key ? '#fef2f2' : '#fff',
+                }}
+              >
+                <div style={{ fontWeight: 800, fontSize: '0.85rem', color: '#111' }}>{title}</div>
+                <div style={{ fontSize: '0.72rem', color: '#888', marginTop: 2 }}>{sub}</div>
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Bank Transfer Payment */}
+        {activeMethod === 'transfer' && (
         <div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 14, border: '1.5px solid rgba(192,32,31,0.12)' }}>
           <div style={{ padding: '14px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 8 }}>
             <Banknote size={16} color="#c0201f" />
@@ -633,16 +709,26 @@ export default function Checkout() {
             </label>
           </div>
         </div>
+        )}
 
         {/* Disclaimer removed from inline flow */}
 
         {/* Complete Order button */}
+        {(() => {
+          const disabled = processing || (activeMethod === 'transfer' && (!transferConfirmed || !transferName.trim()));
+          return (
         <button
-          onClick={() => handleBankTransfer()}
-          disabled={processing || !transferConfirmed || !transferName.trim()}
-          style={{ width: '100%', padding: '16px', borderRadius: 14, background: processing || !transferConfirmed || !transferName.trim() ? 'rgba(192,32,31,0.45)' : '#c0201f', color: '#fff', border: 'none', fontWeight: 900, fontSize: '1rem', cursor: processing || !transferConfirmed || !transferName.trim() ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, letterSpacing: '-0.01em', transition: 'background 0.2s' }}>
-          {processing ? <><Loader2 size={18} className="spin" /> Processing…</> : <><Send size={18} /> Complete Order · Pay {fmt(amountToPayNow)}</>}
+          onClick={() => (activeMethod === 'paystack' ? handlePaystack() : handleBankTransfer())}
+          disabled={disabled}
+          style={{ width: '100%', padding: '16px', borderRadius: 14, background: disabled ? 'rgba(192,32,31,0.45)' : '#c0201f', color: '#fff', border: 'none', fontWeight: 900, fontSize: '1rem', cursor: disabled ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, letterSpacing: '-0.01em', transition: 'background 0.2s' }}>
+          {processing ? <><Loader2 size={18} className="spin" /> Processing…</> : (
+            activeMethod === 'paystack'
+              ? <><Send size={18} /> Pay {fmt(amountToPayNow)} Securely →</>
+              : <><Send size={18} /> Complete Order · Pay {fmt(amountToPayNow)}</>
+          )}
         </button>
+          );
+        })()}
 
       </div>
 
@@ -650,7 +736,7 @@ export default function Checkout() {
       <CutoffModal
         isOpen={showCutoffModal}
         isPickup={deliveryType === 'pickup'}
-        onAgree={() => { setCutoffAck(true); setShowCutoffModal(false); handleBankTransfer(true); }}
+        onAgree={() => { setCutoffAck(true); setShowCutoffModal(false); (activeMethod === 'paystack' ? handlePaystack : handleBankTransfer)(true); }}
         onClose={() => setShowCutoffModal(false)}
       />
     </div>
