@@ -1,93 +1,55 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1"
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { decidePromotion, promoteOrder, verifyTransaction, sendOrderConfirmedEmail } from "../_shared/paystack.ts";
 
-const PAYSTACK_SECRET_KEY = Deno.env.get('PAYSTACK_SECRET_KEY')
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+// Backup entry point to the same promotion path the webhook uses. Called once
+// by the success page when webhook delivery is slow. Server-side verification
+// against Paystack — never trusts the client beyond the reference string.
+
+const PAYSTACK_SECRET = (Deno.env.get('PAYSTACK_SECRET_KEY') ?? '').trim();
+const SUPABASE_URL    = (Deno.env.get('SUPABASE_URL') ?? '').trim();
+const SERVICE_KEY     = (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '').trim();
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+};
+const json = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (req.method !== 'POST') return json(405, { error: 'Method not allowed' });
+  if (!PAYSTACK_SECRET || !SUPABASE_URL || !SERVICE_KEY) return json(500, { error: 'configuration_error' });
+
+  let body: any;
+  try { body = await req.json(); } catch { return json(400, { error: 'Bad JSON' }); }
+  const reference = body?.reference;
+  if (!reference || typeof reference !== 'string') return json(400, { error: 'Missing reference' });
+
+  const tx = await verifyTransaction(PAYSTACK_SECRET, reference);
+  if (!tx) return json(400, { success: false, error: 'Payment not verified by Paystack' });
+
+  const db = createClient(SUPABASE_URL, SERVICE_KEY);
+  const orderId = tx.metadata?.order_id ?? null;
+  let q = db.from('orders')
+    .select('id, status, paid_at, total, customer_name, customer_email, customer_phone, delivery_address')
+    .is('deleted_at', null).limit(1);
+  q = orderId ? q.eq('id', orderId) : q.eq('paystack_ref', reference);
+  const { data: rows, error } = await q;
+  if (error) return json(500, { error: error.message });
+  const order = rows?.[0];
+  if (!order) return json(404, { success: false, error: 'Order not found' });
+
+  const decision = decidePromotion(order, Number(tx.amount ?? -1));
+  if (decision === 'amount_mismatch') {
+    console.error(`verify-payment: AMOUNT MISMATCH order=${order.id}`);
+    return json(409, { success: false, error: 'amount_mismatch' });
   }
-
-  try {
-    const { reference } = await req.json()
-    console.log('--- Verifying Payment ---')
-    console.log('Reference:', reference)
-
-    if (!PAYSTACK_SECRET_KEY) {
-      console.error('ERROR: PAYSTACK_SECRET_KEY is MISSING in Supabase.')
-      throw new Error('Server configuration error (missing key)')
-    }
-
-    // 1. Verify with Paystack API using secret key (server-side only)
-    const verifyResponse = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` },
-    })
-
-    const verifyData = await verifyResponse.json()
-    console.log('Paystack verification status:', verifyData.data?.status)
-
-    if (!verifyData.status || verifyData.data?.status !== 'success') {
-      console.error('Paystack verification failed:', verifyData.message)
-      return new Response(
-        JSON.stringify({ success: false, error: 'Payment not verified by Paystack' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    // 2. Confirm amount matches what we stored (prevent amount tampering)
-    const paidAmountKobo = verifyData.data.amount
-    const currency = verifyData.data.currency
-
-    // 3. Setup Supabase Admin Client (bypasses RLS)
-    const supabaseAdmin = createClient(SUPABASE_URL || '', SUPABASE_SERVICE_ROLE_KEY || '')
-
-    // 4. Extract order ID from metadata (preferred) or fall back to reference
-    const orderId = verifyData.data.metadata?.order_id || verifyData.data.reference
-    console.log('Updating order:', orderId)
-
-    // 5. Mark order as processing (payment confirmed, ready for fulfillment)
-    //    Also store paid_at so Payments page can track revenue correctly
-    const { data: order, error: orderError } = await supabaseAdmin
-      .from('orders')
-      .update({
-        status: 'processing',
-        paid_at: new Date().toISOString(),
-        payment_channel: verifyData.data.channel,       // e.g. 'card', 'bank', 'ussd'
-        paystack_ref: verifyData.data.reference,
-      })
-      .eq('id', orderId)
-      .neq('status', 'delivered')   // don't accidentally downgrade a delivered order
-      .select()
-      .single()
-
-    if (orderError) {
-      console.error('DATABASE ERROR:', orderError.message)
-      throw new Error(`Order update error: ${orderError.message}`)
-    }
-
-    console.log(`Success! Order ${orderId} → processing. Paid ${paidAmountKobo / 100} ${currency} via ${verifyData.data.channel}`)
-    return new Response(
-      JSON.stringify({
-        success: true,
-        orderId: order.id,
-        channel: verifyData.data.channel,
-        amount: paidAmountKobo / 100
-      }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
-  } catch (error) {
-    console.error('Edge Function Error:', error.message)
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+  if (decision === 'promote') {
+    await promoteOrder(db, order.id, { reference, channel: tx.channel });
+    await sendOrderConfirmedEmail(order);
+    console.log(`verify-payment: promoted ${order.id}`);
   }
-})
+  return json(200, { success: true, order_id: order.id, status: decision === 'promote' ? 'pending' : order.status });
+});
