@@ -80,7 +80,12 @@ export default function MenuPage() {
   const [transferName, setTransferName]     = useState('');
   const [transferNameTouched, setTransferNameTouched] = useState(false);
   const [transferConfirmed, setTransferConfirmed]     = useState(false);
-  const paystackEnabled = !!settings?.paystack?.enabled;
+  // Live control is settings.paystack.enabled. The DEV-only escape hatch lets
+  // you test the Paystack flow locally (localStorage.force_paystack='1') WITHOUT
+  // enabling it on the live site. import.meta.env.DEV is false in prod builds,
+  // so this whole branch compiles away — it can never affect production.
+  const paystackEnabled = !!settings?.paystack?.enabled
+    || (import.meta.env.DEV && typeof localStorage !== 'undefined' && localStorage.getItem('force_paystack') === '1');
   const [payMethod, setPayMethod] = useState('paystack'); // 'paystack' | 'transfer'
   const activeMethod = paystackEnabled ? payMethod : 'transfer';
 
