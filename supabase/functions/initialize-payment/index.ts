@@ -42,23 +42,32 @@ serve(async (req) => {
     .from('orders')
     .select('id, total, customer_email, status')
     .eq('id', orderId).is('deleted_at', null).maybeSingle();
-  if (error) return json(500, { error: error.message });
+  if (error) {
+    console.error(`initialize-payment: order lookup failed for ${orderId}: ${error.message}`);
+    return json(500, { error: 'Could not load order' });
+  }
   if (!order) return json(404, { error: 'Order not found' });
   if (order.status !== 'pending_payment') return json(409, { error: `Order is ${order.status}, not payable` });
   if (!order.customer_email) return json(400, { error: 'Order has no email' });
 
   const origin = resolveCallbackOrigin(body?.origin);
-  const res = await fetch('https://api.paystack.co/transaction/initialize', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      email: order.customer_email,
-      amount: Math.round(Number(order.total) * 100),
-      callback_url: `${origin}/payment/success`,
-      metadata: { order_id: order.id },
-    }),
-  });
-  const data = await res.json();
+  let data: any;
+  try {
+    const res = await fetch('https://api.paystack.co/transaction/initialize', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: order.customer_email,
+        amount: Math.round(Number(order.total) * 100),
+        callback_url: `${origin}/payment/success`,
+        metadata: { order_id: order.id },
+      }),
+    });
+    data = await res.json();
+  } catch (err) {
+    console.error(`initialize-payment: Paystack request failed for ${orderId}: ${err instanceof Error ? err.message : String(err)}`);
+    return json(502, { error: 'Payment provider unreachable' });
+  }
   if (!data?.status || !data?.data?.authorization_url) {
     console.error(`initialize-payment: Paystack init failed for ${orderId}: ${data?.message}`);
     return json(502, { error: data?.message || 'Paystack initialization failed' });
