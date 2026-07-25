@@ -30,6 +30,7 @@ import Contact from './pages/storefront/Contact';
 import StoreRules from './pages/storefront/StoreRules';
 import Privacy from './pages/storefront/Privacy';
 import Refund from './pages/storefront/Refund';
+import Account from './pages/storefront/Account';
 
 // Dashboard Pages (lazy — only loaded when admin navigates to /admin)
 const Login         = lazy(() => import('./pages/dashboard/Login'));
@@ -94,6 +95,7 @@ function StorefrontLayout() {
         <Route path="store-rules" element={<StoreRules />} />
         <Route path="privacy" element={<Privacy />} />
         <Route path="refund" element={<Refund />} />
+        <Route path="account" element={<Account />} />
       </Routes>
       <Footer />
       <a
