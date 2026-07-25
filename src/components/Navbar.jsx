@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useSettings } from '../context/SettingsContext';
 import { ShoppingCart, Menu, X, Store, ShoppingBag } from 'lucide-react';
+import AccountMenu from './AccountMenu';
 
 export default function Navbar({ onCartOpen }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -54,6 +55,7 @@ export default function Navbar({ onCartOpen }) {
               ))}
             </div>
             <div className="nav-right">
+              <AccountMenu />
               <button className="cart-btn desktop-cart" onClick={onCartOpen} aria-label="Open cart">
                 <ShoppingCart size={16} /> Cart <span className="cart-count">{itemCount}</span>
               </button>
