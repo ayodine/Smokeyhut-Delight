@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useCustomerAuth } from '../context/CustomerAuthContext';
 import { User, LogOut, Package } from 'lucide-react';
 
 export default function AccountMenu() {
-  const { user, signInWithGoogle, signOut } = useAuth();
+  const { user, signInWithGoogle, signOut } = useCustomerAuth();
   const [open, setOpen] = useState(false);
 
   if (!user) {

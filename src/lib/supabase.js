@@ -32,3 +32,19 @@ export const publicSupabase = createClient(supabaseUrl, supabaseAnonKey, {
     lock: createMemoryLock(),
   },
 });
+
+// Customer client — storefront Google sign-in ONLY. Completely separate session
+// from the staff `supabase` client (its own storageKey), so a customer login can
+// never satisfy the /admin gate and a customer is never treated as staff.
+// flowType 'pkce' → Google returns ?code= in the query, while staff recovery uses
+// the #hash (implicit) — so the two clients never consume each other's URL tokens.
+export const customerSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    flowType: 'pkce',
+    storageKey: 'sb-customer',
+    lock: createMemoryLock(),
+  },
+});

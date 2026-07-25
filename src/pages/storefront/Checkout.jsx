@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom';
 import { useCart } from '../../context/CartContext';
 import { useToast } from '../../context/ToastContext';
 import { useSettings } from '../../context/SettingsContext';
-import { publicSupabase, supabase } from '../../lib/supabase';
-import { useAuth } from '../../context/AuthContext';
+import { publicSupabase, customerSupabase } from '../../lib/supabase';
+import { useCustomerAuth } from '../../context/CustomerAuthContext';
 import { profileToPrefill } from '../../lib/customerProfile';
 import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher';
 import { fetchDeliveryPromo, getPromoDeliveryFee } from '../../lib/deliveryPromo';
@@ -50,8 +50,8 @@ export default function Checkout() {
 
   // Signed-in customers write orders through the auth client (JWT reaches the
   // RPC → user_id stamped); guests keep the anon client. Prefill from Google.
-  const { user } = useAuth();
-  const orderClient = user ? supabase : publicSupabase;
+  const { user } = useCustomerAuth();
+  const orderClient = user ? customerSupabase : publicSupabase;
   useEffect(() => {
     if (!user) return;
     const pre = profileToPrefill(user);

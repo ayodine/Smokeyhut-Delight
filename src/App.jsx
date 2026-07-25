@@ -8,6 +8,7 @@ prefetchProducts();
 
 // Context
 import { AuthProvider } from './context/AuthContext';
+import { CustomerAuthProvider } from './context/CustomerAuthContext';
 import { CartProvider } from './context/CartContext';
 import { ToastProvider } from './context/ToastContext';
 import { SettingsProvider } from './context/SettingsContext';
@@ -281,6 +282,7 @@ export default function App() {
     <BrowserRouter>
       <SettingsProvider>
         <AuthProvider>
+          <CustomerAuthProvider>
           <CartProvider>
             <ToastProvider>
               <ScrollToTop />
@@ -327,6 +329,7 @@ export default function App() {
               </Routes>
             </ToastProvider>
           </CartProvider>
+          </CustomerAuthProvider>
         </AuthProvider>
       </SettingsProvider>
     </BrowserRouter>

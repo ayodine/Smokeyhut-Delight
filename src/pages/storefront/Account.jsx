@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../lib/supabase';
+import { useCustomerAuth } from '../../context/CustomerAuthContext';
+import { customerSupabase } from '../../lib/supabase';
 
 const STATUS_COLORS = {
   pending: '#f59e0b', pending_payment: '#f59e0b', paid: '#16a34a',
@@ -9,7 +9,7 @@ const STATUS_COLORS = {
 const fmt = (n) => '₦' + Number(n || 0).toLocaleString();
 
 export default function Account() {
-  const { user, signInWithGoogle } = useAuth();
+  const { user, signInWithGoogle } = useCustomerAuth();
   const [orders, setOrders] = useState([]);
   const [items, setItems] = useState({});   // { order_id: [{name, qty}] }
   const [loading, setLoading] = useState(true);
@@ -19,7 +19,7 @@ export default function Account() {
     let alive = true;
     (async () => {
       setLoading(true);
-      const { data: ords } = await supabase
+      const { data: ords } = await customerSupabase
         .from('orders')
         .select('id, created_at, total, status, payment_method')
         .eq('user_id', user.id)
@@ -28,7 +28,7 @@ export default function Account() {
       const list = ords || [];
       setOrders(list);
       if (list.length) {
-        const { data: its } = await supabase
+        const { data: its } = await customerSupabase
           .from('order_items').select('order_id, name, qty')
           .in('order_id', list.map(o => o.id));
         if (!alive) return;
