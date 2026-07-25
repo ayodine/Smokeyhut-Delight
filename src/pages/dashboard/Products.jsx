@@ -4,7 +4,7 @@ import { SkelDashHeader, SkelKpiGrid, SkelTable } from '../../components/Skeleto
 import Pagination from '../../components/Pagination';
 import { supabase } from '../../lib/supabase';
 import { invalidateProducts } from '../../lib/productsCache';
-import { parseRestockAmount, selectLowOrOut } from '../../lib/restock';
+import { parseRestockAmount, selectLowOrOut, buildBatchPayload } from '../../lib/restock';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import CustomSelect from '../../components/CustomSelect';
@@ -59,6 +59,8 @@ export default function Products() {
   const [selectedIds, setSelectedIds] = useState([]);
 
   const [showForm, setShowForm] = useState(false);
+  const [showRestock, setShowRestock] = useState(false);
+  const [restockDrafts, setRestockDrafts] = useState({});
   const [showCatModal, setShowCatModal] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   const [editing, setEditing] = useState(null);
@@ -207,6 +209,41 @@ export default function Products() {
     return true;
   };
 
+  const applyBatchRestock = async () => {
+    const payload = buildBatchPayload(
+      selectLowOrOut(productList).map(p => ({ id: p.id, value: restockDrafts[p.id] }))
+    );
+    if (payload.length === 0) {
+      showToast('Nothing to restock', 'Enter a quantity for at least one item.', 'error');
+      return;
+    }
+    const results = await Promise.all(payload.map(async ({ id, add }) => {
+      const { data, error } = await supabase.rpc('restock_product', { p_id: id, p_add: add });
+      return { id, data, error };
+    }));
+    const okResults = results.filter(r => !r.error);
+    const failResults = results.filter(r => r.error);
+    if (okResults.length) {
+      setProductList(prev => prev.map(x => {
+        const hit = okResults.find(r => r.id === x.id);
+        return hit ? { ...x, stock: hit.data } : x;
+      }));
+      invalidateProducts();
+    }
+    if (failResults.length === 0) {
+      showToast('Restocked', `Updated ${okResults.length} product${okResults.length === 1 ? '' : 's'}.`, 'success');
+      setShowRestock(false);
+      setRestockDrafts({});
+    } else {
+      showToast('Partial restock', `${okResults.length} updated, ${failResults.length} failed.`, 'error');
+      setRestockDrafts(prev => {
+        const next = { ...prev };
+        okResults.forEach(r => { delete next[r.id]; });
+        return next;
+      });
+    }
+  };
+
   const toggleActive = async (p) => {
     const { error } = await supabase.from('products').update({ is_active: !p.is_active }).eq('id', p.id);
     if (error) { showToast('Error', error.message, 'error'); return; }
@@ -340,6 +377,9 @@ export default function Products() {
           <button className="btn-secondary" onClick={() => setShowCatModal(true)} style={{ padding: '10px 16px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6 }}>
             <FolderKanban size={16} /> Categories
           </button>
+          {canManage && <button className="btn-secondary" onClick={() => { setRestockDrafts({}); setShowRestock(true); }} style={{ padding: '10px 16px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Package size={16} /> Restock
+          </button>}
           {canManage && <button className="btn-primary" onClick={openAdd} style={{ padding: '10px 20px', fontSize: '0.85rem' }}>+ Add Product</button>}
         </div>
       </div>
@@ -540,6 +580,42 @@ export default function Products() {
         </div>
         <Pagination page={page} total={productList.length} perPage={PER_PAGE} onChange={setPage} />
       </div>
+
+      {showRestock && (
+        <div className="product-form-modal" onClick={() => setShowRestock(false)}>
+          <div className="product-form-card" onClick={e => e.stopPropagation()} style={{ position: 'relative' }}>
+            <h3 style={{ marginTop: 0, marginBottom: 20 }}>
+              Restock session
+              <button onClick={() => setShowRestock(false)} className="dash-drawer-close"><X size={16} /></button>
+            </h3>
+            {selectLowOrOut(productList).length === 0 ? (
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Nothing is low or out of stock. 🎉</p>
+            ) : (
+              <>
+                {selectLowOrOut(productList).map(p => (
+                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{p.name}</div>
+                      <div style={{ fontSize: '0.74rem', color: Number(p.stock) === 0 ? '#ef4444' : '#f59e0b' }}>
+                        {Number(p.stock) === 0 ? 'Out of stock' : `Low — ${p.stock} left`}
+                      </div>
+                    </div>
+                    <input
+                      type="number" min="1" placeholder="+ qty"
+                      value={restockDrafts[p.id] ?? ''}
+                      onChange={e => setRestockDrafts(prev => ({ ...prev, [p.id]: e.target.value }))}
+                      style={{ width: 80, padding: '6px 8px', fontSize: '0.82rem', border: '1px solid var(--border-subtle)', borderRadius: 8, background: 'var(--white)', color: 'var(--text)', fontFamily: 'inherit' }}
+                    />
+                  </div>
+                ))}
+                <button className="btn-primary" onClick={applyBatchRestock} style={{ width: '100%', justifyContent: 'center', padding: '14px', marginTop: 16 }}>
+                  Apply all
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <div className="product-form-modal" onClick={() => setShowForm(false)}>
