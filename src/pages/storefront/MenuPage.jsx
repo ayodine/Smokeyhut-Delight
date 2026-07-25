@@ -5,7 +5,9 @@ import { getProducts } from '../../lib/productsCache';
 import { useCart } from '../../context/CartContext';
 import { useToast } from '../../context/ToastContext';
 import { useSettings } from '../../context/SettingsContext';
-import { publicSupabase } from '../../lib/supabase';
+import { publicSupabase, supabase } from '../../lib/supabase';
+import { useAuth } from '../../context/AuthContext';
+import { profileToPrefill } from '../../lib/customerProfile';
 import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher';
 import { fetchDeliveryPromo, getPromoDeliveryFee } from '../../lib/deliveryPromo';
 import {
@@ -68,6 +70,21 @@ export default function MenuPage() {
   const [form, setForm] = useState({ firstName: '', lastName: '', phone: '', email: '', address: '', city: 'Lagos', notes: '' });
   const [touched, setTouched] = useState({ firstName: false, lastName: false, phone: false, email: false, address: false, city: false });
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  // Signed-in customers write orders through the auth client (JWT reaches the
+  // RPC → user_id stamped); guests keep the anon client. Prefill from Google.
+  const { user } = useAuth();
+  const orderClient = user ? supabase : publicSupabase;
+  useEffect(() => {
+    if (!user) return;
+    const pre = profileToPrefill(user);
+    setForm(f => ({
+      ...f,
+      firstName: f.firstName || pre.firstName,
+      lastName: f.lastName || pre.lastName,
+      email: f.email || pre.email,
+    }));
+  }, [user]);
 
   // Coupon
   const [couponCode, setCouponCode]       = useState('');
@@ -245,7 +262,7 @@ export default function MenuPage() {
     try {
       const payload = buildOrderPayload('bank_transfer');
       payload.notes = payload.notes + `\nTransfer Name: ${transferName.trim()}`;
-      const { data, error } = await publicSupabase.rpc('create_storefront_order', { p: payload });
+      const { data, error } = await orderClient.rpc('create_storefront_order', { p: payload });
       if (error) throw error;
       orderId = data;
       await publicSupabase.from('order_items').insert(
@@ -324,7 +341,7 @@ export default function MenuPage() {
       // cart clears on the success page.
       const payload = buildOrderPayload('paystack');
       payload.status = 'pending_payment';
-      const { data: orderId, error } = await publicSupabase.rpc('create_storefront_order', { p: payload });
+      const { data: orderId, error } = await orderClient.rpc('create_storefront_order', { p: payload });
       if (error) throw error;
       await publicSupabase.from('order_items').insert(
         itemsSnapshot.map(i => ({ order_id: orderId, product_id: i.id || null, name: i.name, price: i.price, qty: i.qty }))
