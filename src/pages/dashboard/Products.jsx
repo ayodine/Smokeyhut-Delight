@@ -4,6 +4,7 @@ import { SkelDashHeader, SkelKpiGrid, SkelTable } from '../../components/Skeleto
 import Pagination from '../../components/Pagination';
 import { supabase } from '../../lib/supabase';
 import { invalidateProducts } from '../../lib/productsCache';
+import { parseRestockAmount, selectLowOrOut } from '../../lib/restock';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import CustomSelect from '../../components/CustomSelect';
@@ -11,6 +12,36 @@ import ConfirmModal from '../../components/ConfirmModal';
 import BulkActionBar from '../../components/BulkActionBar';
 
 const fmt = (n) => '₦' + n.toLocaleString();
+
+// Compact "+qty [Add]" control. onAdd(rawValue) resolves true on success,
+// which clears the input.
+function RestockInline({ onAdd }) {
+  const [val, setVal] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if (!val || busy) return;
+    setBusy(true);
+    const ok = await onAdd(val);
+    setBusy(false);
+    if (ok) setVal('');
+  };
+  return (
+    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+      <input
+        type="number" min="1" value={val}
+        onChange={e => setVal(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') submit(); }}
+        placeholder="+ qty"
+        style={{ width: 62, padding: '4px 6px', fontSize: '0.75rem', border: '1px solid var(--border-subtle)', borderRadius: 6, background: 'var(--white)', color: 'var(--text)', fontFamily: 'inherit' }}
+      />
+      <button type="button" onClick={submit} disabled={busy || !val}
+        style={{ padding: '4px 10px', fontSize: '0.72rem', fontWeight: 700, borderRadius: 6, border: 'none', cursor: busy || !val ? 'default' : 'pointer', background: '#16a34a', color: '#fff', opacity: busy || !val ? 0.5 : 1 }}>
+        {busy ? '…' : 'Add'}
+      </button>
+    </div>
+  );
+}
+
 export default function Products() {
   const { userRole, userPermissions } = useAuth();
   const isAdmin = userRole === 'Admin';
@@ -157,6 +188,23 @@ export default function Products() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleRestock = async (product, rawValue) => {
+    const amount = parseRestockAmount(rawValue);
+    if (amount === null) {
+      showToast('Invalid amount', 'Enter a positive whole number.', 'error');
+      return false;
+    }
+    const { data, error } = await supabase.rpc('restock_product', { p_id: product.id, p_add: amount });
+    if (error) {
+      showToast('Restock failed', error.message, 'error');
+      return false;
+    }
+    setProductList(prev => prev.map(x => x.id === product.id ? { ...x, stock: data } : x));
+    invalidateProducts();
+    showToast('Restocked', `${product.name}: +${amount} → ${data} units`, 'success');
+    return true;
   };
 
   const toggleActive = async (p) => {
@@ -347,13 +395,25 @@ export default function Products() {
 
       {/* Low stock / out-of-stock alert strip */}
       {(outOfStock.length > 0 || lowStock.length > 0) && (
-        <div style={{ background: '#fef9c3', border: '1px solid #fcd34d', borderRadius: 10, padding: '12px 18px', marginBottom: 20, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-          <AlertTriangle size={18} color="#92400e" style={{ marginTop: 1, flexShrink: 0 }} />
-          <div style={{ fontSize: '0.84rem', color: '#78350f', lineHeight: 1.6 }}>
-            <strong>Stock alert:</strong>{' '}
-            {outOfStock.length > 0 && <span><strong>{outOfStock.map(p => p.name).join(', ')}</strong> {outOfStock.length === 1 ? 'is' : 'are'} out of stock. </span>}
-            {lowStock.length > 0 && <span><strong>{lowStock.map(p => p.name).join(', ')}</strong> {lowStock.length === 1 ? 'is' : 'are'} running low (≤ 5 units).</span>}
+        <div style={{ background: '#fef9c3', border: '1px solid #fcd34d', borderRadius: 10, padding: '12px 18px', marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+            <AlertTriangle size={18} color="#92400e" style={{ marginTop: 1, flexShrink: 0 }} />
+            <div style={{ fontSize: '0.84rem', color: '#78350f', lineHeight: 1.6 }}>
+              <strong>Stock alert:</strong>{' '}
+              {outOfStock.length > 0 && <span><strong>{outOfStock.map(p => p.name).join(', ')}</strong> {outOfStock.length === 1 ? 'is' : 'are'} out of stock. </span>}
+              {lowStock.length > 0 && <span><strong>{lowStock.map(p => p.name).join(', ')}</strong> {lowStock.length === 1 ? 'is' : 'are'} running low (≤ 5 units).</span>}
+            </div>
           </div>
+          {canManage && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 12 }}>
+              {selectLowOrOut(productList).map(p => (
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.65)', borderRadius: 8, padding: '5px 8px' }}>
+                  <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#78350f' }}>{p.name} ({p.stock})</span>
+                  <RestockInline onAdd={(raw) => handleRestock(p, raw)} />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -433,7 +493,10 @@ export default function Products() {
                         <div style={{ textDecoration: 'line-through', color: 'var(--text-muted)', fontSize: '0.75rem' }}>{fmt(p.compare_price)}</div>
                       )}
                     </td>
-                    <td><div className={`stock-indicator ${stockLevel(p.stock)}`}><span className="stock-dot" />{p.stock} units</div></td>
+                    <td>
+                      <div className={`stock-indicator ${stockLevel(p.stock)}`}><span className="stock-dot" />{p.stock} units</div>
+                      {canManage && <div style={{ marginTop: 6 }}><RestockInline onAdd={(raw) => handleRestock(p, raw)} /></div>}
+                    </td>
                     <td>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         {p.is_active === false && <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '2px 7px', borderRadius: 20, width: 'fit-content' }}>Hidden</span>}
