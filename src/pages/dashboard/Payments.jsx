@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { DollarSign, Landmark, Banknote, CreditCard, ChevronLeft, ChevronRight } from 'lucide-react';
 import { SkelKpiGrid, SkelTable, SkelDashHeader, SkelFilterPills } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../context/AuthContext';
 import { useOutletContext } from 'react-router-dom';
 import DashCalendar from '../../components/DashCalendar';
 
@@ -58,6 +59,8 @@ class ErrorBoundary extends React.Component {
 
 function PaymentsContent() {
   const { selectedStore } = useOutletContext() || {};
+  const { userRole } = useAuth();
+  const isAdmin = userRole === 'Admin';   // revenue KPIs are Admin-only
   const [payments, setPayments] = useState([]);
   const [kpis, setKpis] = useState(EMPTY_KPIS);
   const [loading, setLoading] = useState(true);
@@ -132,7 +135,7 @@ function PaymentsContent() {
   if (loading) return (
     <div>
       <SkelDashHeader />
-      <SkelKpiGrid count={4} />
+      {isAdmin && <SkelKpiGrid count={4} />}
       <SkelFilterPills count={4} />
       <SkelTable rows={8} cols={5} />
     </div>
@@ -144,6 +147,7 @@ function PaymentsContent() {
         <div className="dash-card-title" style={{ fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif", fontSize: '1.4rem' }}>Payments & Transactions</div>
       </div>
 
+      {isAdmin && (
       <div className="kpi-grid" style={{ marginBottom: 24 }}>
         <div className="kpi-card green">
           <div className="kpi-icon"><DollarSign size={24} /></div>
@@ -166,6 +170,7 @@ function PaymentsContent() {
           <div className="kpi-label">POS</div>
         </div>
       </div>
+      )}
 
       {/* Filters */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
