@@ -74,8 +74,8 @@ begin
   if p_add is null or p_add <= 0 then
     raise exception 'restock amount must be positive';
   end if;
-  if auth.role() <> 'authenticated' then
-    raise exception 'not authorized';
+  if auth.role() not in ('authenticated', 'service_role') then
+    raise exception 'not authorized';   -- blocks the public anon key
   end if;
   update products
      set stock = stock + p_add
@@ -91,9 +91,12 @@ $$;
 
 - **Atomic:** `stock = stock + p_add` is evaluated in the database, so concurrent
   auto-deduct decrements and other admins' restocks cannot clobber each other.
-- **Guarded:** rejects non-positive amounts, unauthenticated callers, and
+- **Guarded:** rejects non-positive amounts, the public **anon** role, and
   missing/deleted products. `security definer` is paired with an explicit
-  `authenticated` check so it grants no more than the existing product-edit path.
+  role check (`authenticated` = dashboard staff, `service_role` = tooling) so it
+  grants no more than the existing product-edit path and is not callable with the
+  public anon key baked into the storefront bundle. `canManage` remains the
+  UI-level gate, consistent with the rest of the Products page.
 - **Returns the new stock** so the client can update its row optimistically with
   the authoritative value (no refetch needed, no drift between UI and DB).
 - Migration is applied to prod with `supabase db query --linked -f` (this project
