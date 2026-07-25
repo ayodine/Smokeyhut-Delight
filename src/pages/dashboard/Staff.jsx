@@ -32,6 +32,9 @@ const EXTRA_ACTIONS = {
     { key: 'create', label: 'Add New' },
     { key: 'cancel', label: 'Cancel Orders' },
   ],
+  Payments: [
+    { key: 'kpi', label: 'View Revenue KPIs' },
+  ],
 };
 
 const EMPTY_FORM = { name: '', email: '', role: 'Staff', phone: '', password: '' };

@@ -8,10 +8,15 @@ import DashCalendar from '../../components/DashCalendar';
 
 const fmt = (n) => '₦' + Number(n || 0).toLocaleString();
 
-function paymentBadge(status) {
-  if (['pending', 'pending_payment'].includes(status)) return { cls: 'pending', label: 'Pending' };
-  if (status === 'cancelled') return { cls: 'cancelled', label: 'Failed' };
-  return { cls: 'delivered', label: 'Paid' };
+// Payment truth, not fulfilment status: a paid order (paid_at set) reads "Paid"
+// even while it's still 'pending' dispatch; only a genuinely unpaid Paystack
+// order (pending_payment, no paid_at) reads "Unpaid".
+function paymentBadge(order) {
+  if (order.status === 'cancelled') return { cls: 'cancelled', label: 'Cancelled' };
+  if (order.status === 'pending_payment') return { cls: 'pending', label: 'Unpaid' };
+  if (order.paid_at) return { cls: 'delivered', label: 'Paid' };              // Paystack confirmed
+  if (order.status === 'pending') return { cls: 'pending', label: 'Pending' }; // transfer/cash awaiting confirm
+  return { cls: 'delivered', label: 'Paid' };                                 // processing/shipped/delivered = paid
 }
 const PER_PAGE = 50;
 const EMPTY_KPIS = { total: 0, bank_transfer: 0, cash: 0, pos: 0 };
@@ -59,8 +64,11 @@ class ErrorBoundary extends React.Component {
 
 function PaymentsContent() {
   const { selectedStore } = useOutletContext() || {};
-  const { userRole } = useAuth();
-  const isAdmin = userRole === 'Admin';   // revenue KPIs are Admin-only
+  const { userRole, userPermissions } = useAuth();
+  const isAdmin = userRole === 'Admin';
+  // Revenue KPIs: Admins, or staff explicitly granted Payments:kpi (managed on
+  // the Staff page). Everyone else never sees or fetches the figures.
+  const canViewKpi = isAdmin || (userPermissions || []).includes('Payments:kpi');
   const [payments, setPayments] = useState([]);
   const [kpis, setKpis] = useState(EMPTY_KPIS);
   const [loading, setLoading] = useState(true);
@@ -85,7 +93,7 @@ function PaymentsContent() {
 
     let q = supabase
       .from('orders')
-      .select('id, customer_name, customer_email, total, payment_method, status, created_at, store_id', { count: 'exact' })
+      .select('id, customer_name, customer_email, total, payment_method, status, paid_at, created_at, store_id', { count: 'exact' })
       .is('deleted_at', null)
       .not('payment_method', 'is', null)
       .order('created_at', { ascending: false })
@@ -106,26 +114,30 @@ function PaymentsContent() {
       .in('status', ['processing', 'shipped', 'delivered']);
     if (selectedStore && selectedStore !== 'all') kpiFallbackQuery = kpiFallbackQuery.eq('store_id', selectedStore);
 
-    const [kpisRes, ordersRes, kpiFallbackRes] = await Promise.all([
-      supabase.rpc('get_payment_kpis', { p_store_id: storeParam }),
+    // Revenue KPIs are gated — unauthorized dashboards never fetch the figures
+    // (defense-in-depth with the get_payment_kpis RPC's own auth check).
+    const [ordersRes, kpisRes, kpiFallbackRes] = await Promise.all([
       q,
-      kpiFallbackQuery,
+      canViewKpi ? supabase.rpc('get_payment_kpis', { p_store_id: storeParam }) : Promise.resolve(null),
+      canViewKpi ? kpiFallbackQuery : Promise.resolve(null),
     ]);
 
     setPayments(ordersRes.data || []);
     setTotal(ordersRes.count || 0);
 
-    if (kpisRes.data) {
-      setKpis(kpisRes.data);
-    } else {
-      const confirmed = kpiFallbackRes.data || [];
-      const sum = (method) => confirmed.filter(p => p.payment_method === method).reduce((s, p) => s + Number(p.total), 0);
-      setKpis({
-        total:         confirmed.reduce((s, p) => s + Number(p.total), 0),
-        bank_transfer: sum('bank_transfer'),
-        cash:          sum('cash'),
-        pos:           sum('pos'),
-      });
+    if (canViewKpi) {
+      if (kpisRes?.data) {
+        setKpis(kpisRes.data);
+      } else {
+        const confirmed = kpiFallbackRes?.data || [];
+        const sum = (method) => confirmed.filter(p => p.payment_method === method).reduce((s, p) => s + Number(p.total), 0);
+        setKpis({
+          total:         confirmed.reduce((s, p) => s + Number(p.total), 0),
+          bank_transfer: sum('bank_transfer'),
+          cash:          sum('cash'),
+          pos:           sum('pos'),
+        });
+      }
     }
     setLoading(false);
   };
@@ -135,7 +147,7 @@ function PaymentsContent() {
   if (loading) return (
     <div>
       <SkelDashHeader />
-      {isAdmin && <SkelKpiGrid count={4} />}
+      {canViewKpi && <SkelKpiGrid count={4} />}
       <SkelFilterPills count={4} />
       <SkelTable rows={8} cols={5} />
     </div>
@@ -147,7 +159,7 @@ function PaymentsContent() {
         <div className="dash-card-title" style={{ fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif", fontSize: '1.4rem' }}>Payments & Transactions</div>
       </div>
 
-      {isAdmin && (
+      {canViewKpi && (
       <div className="kpi-grid" style={{ marginBottom: 24 }}>
         <div className="kpi-card green">
           <div className="kpi-icon"><DollarSign size={24} /></div>
@@ -226,7 +238,7 @@ function PaymentsContent() {
                   <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{p.customer_email || '—'}</td>
                   <td style={{ fontWeight: 700 }}>{fmt(p.total)}</td>
                   <td style={{ fontSize: '0.82rem' }}>{(p.payment_method || '').replace('_', ' ')}</td>
-                  <td>{(() => { const { cls, label } = paymentBadge(p.status); return <span className={`status-badge ${cls}`}>{label}</span>; })()}</td>
+                  <td>{(() => { const { cls, label } = paymentBadge(p); return <span className={`status-badge ${cls}`}>{label}</span>; })()}</td>
                   <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{new Date(p.created_at).toLocaleDateString()}</td>
                 </tr>
               ))}
