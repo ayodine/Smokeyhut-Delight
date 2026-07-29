@@ -13,6 +13,10 @@ import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Search, MapPin, Tag, 
 
 const SUPABASE_URL        = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY   = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+// Kill-switch for manual bank transfer. Set to true to re-enable if Paystack is down.
+const MANUAL_TRANSFER_ENABLED = false;
+
 // Fire-and-forget — notifications are non-critical, never block the UI
 async function notify(type, order) {
   try {
@@ -67,14 +71,13 @@ export default function Checkout() {
   const [transferName, setTransferName]               = useState('');
   const [transferNameTouched, setTransferNameTouched] = useState(false);
   const [transferConfirmed, setTransferConfirmed]     = useState(false);
-  // Live control is settings.paystack.enabled. The DEV-only escape hatch lets
-  // you test the Paystack flow locally (localStorage.force_paystack='1') WITHOUT
-  // enabling it on the live site. import.meta.env.DEV is false in prod builds,
-  // so this whole branch compiles away — it can never affect production.
+  // Paystack is always the active payment method while MANUAL_TRANSFER_ENABLED is false.
+  // The DEV-only escape hatch lets you test locally without enabling on live site.
   const paystackEnabled = !!settings?.paystack?.enabled
     || (import.meta.env.DEV && typeof localStorage !== 'undefined' && localStorage.getItem('force_paystack') === '1');
+  // When manual transfer is disabled, always use paystack regardless of UI state.
   const [payMethod, setPayMethod] = useState('paystack'); // 'paystack' | 'transfer'
-  const activeMethod = paystackEnabled ? payMethod : 'transfer';
+  const activeMethod = (MANUAL_TRANSFER_ENABLED && paystackEnabled) ? payMethod : 'paystack';
 
   // Disclaimer state
   const [disclaimerAgreed, setDisclaimerAgreed] = useState(false);
@@ -649,14 +652,14 @@ export default function Checkout() {
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontWeight: 900, fontSize: '1rem', color: '#c0201f' }}>{activeMethod === 'paystack' ? 'Pay now (card)' : 'Pay now (transfer)'}</span>
+              <span style={{ fontWeight: 900, fontSize: '1rem', color: '#c0201f' }}>Pay now (card)</span>
               <span style={{ fontWeight: 900, fontSize: '1.1rem', color: '#c0201f' }}>{fmt(amountToPayNow)}</span>
             </div>
           </div>
         </div>
 
-        {/* Payment method selector (only when Paystack is enabled) */}
-        {paystackEnabled && (
+        {/* Payment method selector — only shown if manual transfer is re-enabled */}
+        {MANUAL_TRANSFER_ENABLED && paystackEnabled && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
             {[
               ['paystack', 'Pay with Card / USSD', 'Instant confirmation via Paystack'],
@@ -679,8 +682,8 @@ export default function Checkout() {
           </div>
         )}
 
-        {/* Bank Transfer Payment */}
-        {activeMethod === 'transfer' && (
+        {/* Bank Transfer Payment — hidden while MANUAL_TRANSFER_ENABLED is false */}
+        {MANUAL_TRANSFER_ENABLED && activeMethod === 'transfer' && (
         <div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 14, border: '1.5px solid rgba(192,32,31,0.12)' }}>
           <div style={{ padding: '14px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 8 }}>
             <Banknote size={16} color="#c0201f" />
@@ -737,16 +740,14 @@ export default function Checkout() {
 
         {/* Complete Order button */}
         {(() => {
-          const disabled = processing || (activeMethod === 'transfer' && (!transferConfirmed || !transferName.trim()));
+          const disabled = processing;
           return (
         <button
-          onClick={() => (activeMethod === 'paystack' ? handlePaystack() : handleBankTransfer())}
+          onClick={() => handlePaystack()}
           disabled={disabled}
           style={{ width: '100%', padding: '16px', borderRadius: 14, background: disabled ? 'rgba(192,32,31,0.45)' : '#c0201f', color: '#fff', border: 'none', fontWeight: 900, fontSize: '1rem', cursor: disabled ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, letterSpacing: '-0.01em', transition: 'background 0.2s' }}>
           {processing ? <><Loader2 size={18} className="spin" /> Processing…</> : (
-            activeMethod === 'paystack'
-              ? <><Send size={18} /> Pay {fmt(amountToPayNow)} Securely →</>
-              : <><Send size={18} /> Complete Order · Pay {fmt(amountToPayNow)}</>
+            <><Send size={18} /> Pay {fmt(amountToPayNow)} Securely →</>
           )}
         </button>
           );

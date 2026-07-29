@@ -97,20 +97,7 @@ serve(async (req) => {
 
     // ── 1. Database Webhook — order status changed ─────────────────
     if (payload.table === 'orders' && payload.type === 'UPDATE') {
-      const { record, old_record } = payload;
-      if (record.status !== old_record.status) {
-        const info = STATUS_INFO[record.status];
-        if (info) {
-          // Only email the customer — shipped and delivered only
-          if (DELIVERY_STATUSES.has(record.status) && record.customer_email) {
-            await sendEmail(
-              record.customer_email,
-              info.subject,
-              buildEmail(info.heading, info.body, record.id),
-            );
-          }
-        }
-      }
+      // EMAIL DISABLED — status-change emails are off. Re-enable by restoring sendEmail calls.
       return new Response(JSON.stringify({ ok: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -118,35 +105,7 @@ serve(async (req) => {
 
     // ── 2. Storefront — new order placed ──────────────────────────────
     if (payload.type === 'order_confirmed') {
-      const order = payload.order;
-
-      const bankExtra = `
-        <div style="background:#111;border-radius:8px;padding:16px 18px;margin-bottom:20px">
-          <p style="color:#888;font-size:0.8rem;margin:0 0 10px">Complete your payment via bank transfer:</p>
-          <table style="width:100%;font-size:0.88rem;border-collapse:collapse">
-            <tr><td style="color:#888;padding:4px 0">Bank</td><td style="color:#fff;font-weight:700;text-align:right">Moniepoint</td></tr>
-            <tr><td style="color:#888;padding:4px 0">Account Name</td><td style="color:#fff;font-weight:700;text-align:right">Smokeyhut Delight</td></tr>
-            <tr><td style="color:#888;padding:4px 0">Account Number</td><td style="color:#fff;font-weight:700;text-align:right">5655718527</td></tr>
-            ${order.delivery_fee > 0 ? `<tr><td style="color:#888;padding:4px 0">Delivery Fee</td><td style="color:#fff;font-weight:700;text-align:right">₦${Number(order.delivery_fee).toLocaleString()}</td></tr>` : ''}
-            <tr><td style="color:#888;padding:4px 0">Total Amount</td><td style="color:#c0201f;font-weight:900;text-align:right">₦${Number(order.total).toLocaleString()}</td></tr>
-          </table>
-          <p style="color:#888;font-size:0.78rem;margin:10px 0 0">Use your order reference <strong style="color:#fff">${order.id}</strong> as the payment description.</p>
-        </div>`;
-
-      // Email customer
-      if (order.customer_email) {
-        await sendEmail(
-          order.customer_email,
-          'Order Confirmed',
-          buildEmail(
-            `Thanks, ${order.customer_name?.split(' ')[0] || 'there'}! Your order is placed 🎉`,
-            `We've received your order and are waiting to confirm your transfer. Once payment is verified, we'll get it ready for you right away.`,
-            order.id,
-            bankExtra,
-          ),
-        );
-      }
-
+      // EMAIL DISABLED — confirmation emails are off. Re-enable by restoring sendEmail call.
       return new Response(JSON.stringify({ ok: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

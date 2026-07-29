@@ -83,6 +83,9 @@ export async function classifyTransaction(
 // double-promote: only rows still matching the promotable states update.
 // Returns whether THIS call actually performed the transition — callers gate
 // the confirmation email on that so a racing entry point can't double-send.
+//
+// NOTE: Paystack is the source of truth. A confirmed payment moves directly to
+// 'processing' — there is no intermediate 'pending' state for paid Paystack orders.
 export async function promoteOrder(
   db: any,
   orderId: string,
@@ -91,7 +94,7 @@ export async function promoteOrder(
   const { data, error } = await db
     .from('orders')
     .update({
-      status: 'pending',
+      status: 'processing',
       paid_at: new Date().toISOString(),
       payment_channel: tx.channel ?? null,
       paystack_ref: tx.reference,
@@ -105,20 +108,12 @@ export async function promoteOrder(
   return (data?.length ?? 0) > 0;
 }
 
-// Fire-and-forget confirmation email via the existing notify function.
-// Never throws — the payment write is the critical section, not this.
-export async function sendOrderConfirmedEmail(order: {
+// Confirmation email disabled — all customer emails are off.
+// Function signature kept so callers don't need changes and re-enabling is trivial.
+export async function sendOrderConfirmedEmail(_order: {
   id: string; customer_name: string | null; customer_email: string | null;
   customer_phone: string | null; delivery_address: string | null; total: number;
 }): Promise<void> {
-  const url = (Deno.env.get('SUPABASE_URL') ?? '').trim();
-  const anon = (Deno.env.get('SUPABASE_ANON_KEY') ?? '').trim();
-  if (!url || !anon) return;
-  try {
-    await fetch(`${url}/functions/v1/notify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${anon}`, apikey: anon },
-      body: JSON.stringify({ type: 'order_confirmed', order }),
-    });
-  } catch { /* silent */ }
+  // EMAIL DISABLED — no emails sent at any stage. Re-enable by restoring the fetch below.
+  return;
 }
