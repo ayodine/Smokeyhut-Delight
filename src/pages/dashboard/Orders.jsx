@@ -309,7 +309,12 @@ export default function Orders() {
     } catch { /* ignore — browser may block audio without prior interaction */ }
   }, [getAudioCtx]);
 
-  // Realtime subscription — prepend new order and play sound
+  const ordersRef = useRef(orders);
+  useEffect(() => {
+    ordersRef.current = orders;
+  }, [orders]);
+
+  // Realtime subscription — listen for new orders and Paystack payment confirmations
   useEffect(() => {
     mountedRef.current = true;
     setRealtimeStatus('connecting');
@@ -317,43 +322,73 @@ export default function Orders() {
 
     const channel = supabase
       .channel(`orders-realtime-${Date.now()}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, async (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, async (payload) => {
         const order = payload.new;
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || !order) return;
         
         // Safe check for storeFilter matching
         if (storeFilter && order.store_id !== null && order.store_id !== undefined && String(order.store_id) !== String(storeFilter)) {
           return;
         }
 
-        // Short delay to allow order_items to be inserted by the sequential API/edge-function calls
+        const isInsert = payload.eventType === 'INSERT';
+        const isUpdate = payload.eventType === 'UPDATE';
+
+        // Check current order in local state
+        const existingInState = ordersRef.current.find(o => o.id === order.id);
+
+        // Determine if chime/alert should fire:
+        // 1. Direct new order created with active status (not pending_payment)
+        // 2. Paystack payment confirmed: status updated to 'processing' or 'pending' (from 'pending_payment')
+        let shouldChime = false;
+        if (isInsert && order.status !== 'pending_payment') {
+          shouldChime = true;
+        } else if (isUpdate && (order.status === 'processing' || order.status === 'pending')) {
+          if (payload.old?.status === 'pending_payment' || !existingInState || existingInState.status === 'pending_payment') {
+            shouldChime = true;
+          }
+        }
+
+        // Short delay to allow order_items to be inserted by the sequential API/edge-function/webhook calls
         await new Promise(resolve => setTimeout(resolve, 1000));
 
-        // Fetch order_items for the new order
+        // Fetch order_items for the order
         const { data: items } = await supabase.from('order_items').select('*').eq('order_id', order.id);
         const fullOrder = { ...order, order_items: items || [] };
 
-        setOrders(prev => [fullOrder, ...prev].slice(0, PER_PAGE));
-        playChime();
-        setNewOrderAlert({ id: order.id, name: order.customer_name, total: order.total });
-        fetchData();
+        setOrders(prev => {
+          const exists = prev.some(o => o.id === order.id);
+          if (exists) {
+            return prev.map(o => o.id === order.id ? fullOrder : o);
+          }
+          return [fullOrder, ...prev].slice(0, PER_PAGE);
+        });
 
-        // Request browser notification permission and show notification
-        if (Notification.permission === 'granted') {
-          new Notification('New Order — Smokeyhut Delight', {
-            body: `${order.customer_name} • ₦${Number(order.total).toLocaleString()}`,
-            icon: '/logo.svg',
-          });
-        } else if (Notification.permission !== 'denied') {
-          Notification.requestPermission().then(perm => {
-            if (perm === 'granted') {
+        if (shouldChime) {
+          playChime();
+          setNewOrderAlert({ id: order.id, name: order.customer_name, total: order.total });
+
+          // Request browser notification permission and show notification
+          if (typeof Notification !== 'undefined') {
+            if (Notification.permission === 'granted') {
               new Notification('New Order — Smokeyhut Delight', {
                 body: `${order.customer_name} • ₦${Number(order.total).toLocaleString()}`,
                 icon: '/logo.svg',
               });
+            } else if (Notification.permission !== 'denied') {
+              Notification.requestPermission().then(perm => {
+                if (perm === 'granted') {
+                  new Notification('New Order — Smokeyhut Delight', {
+                    body: `${order.customer_name} • ₦${Number(order.total).toLocaleString()}`,
+                    icon: '/logo.svg',
+                  });
+                }
+              });
             }
-          });
+          }
         }
+
+        fetchData();
       })
       .subscribe((status, err) => {
         if (!mountedRef.current) return;
