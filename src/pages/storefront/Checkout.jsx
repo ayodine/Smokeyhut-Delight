@@ -662,7 +662,7 @@ export default function Checkout() {
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontWeight: 900, fontSize: '1rem', color: '#c0201f' }}>Pay now (card)</span>
+              <span style={{ fontWeight: 900, fontSize: '1rem', color: '#c0201f' }}>Pay now</span>
               <span style={{ fontWeight: 900, fontSize: '1.1rem', color: '#c0201f' }}>{fmt(amountToPayNow)}</span>
             </div>
           </div>
