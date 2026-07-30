@@ -32,6 +32,16 @@ async function notify(type, order) {
   } catch { /* silent */ }
 }
 
+// Paystack branding icon — matches the /menu page button
+const PaystackIcon = ({ size = 20 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="2" y="3" width="18" height="3.5" rx="1.75" fill="currentColor" />
+    <rect x="2" y="8.5" width="20" height="3.5" rx="1.75" fill="currentColor" />
+    <rect x="2" y="14" width="18" height="3.5" rx="1.75" fill="currentColor" />
+    <rect x="2" y="19.5" width="10" height="3.5" rx="1.75" fill="currentColor" />
+  </svg>
+);
+
 export default function Checkout() {
   const { items, total, clearCart } = useCart();
   const { showToast } = useToast();
@@ -747,7 +757,7 @@ export default function Checkout() {
           disabled={disabled}
           style={{ width: '100%', padding: '16px', borderRadius: 14, background: disabled ? 'rgba(192,32,31,0.45)' : '#c0201f', color: '#fff', border: 'none', fontWeight: 900, fontSize: '1rem', cursor: disabled ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, letterSpacing: '-0.01em', transition: 'background 0.2s' }}>
           {processing ? <><Loader2 size={18} className="spin" /> Processing…</> : (
-            <><Send size={18} /> Pay {fmt(amountToPayNow)} Securely →</>
+            <><PaystackIcon size={20} /> Pay {fmt(amountToPayNow)} securely</>
           )}
         </button>
           );
