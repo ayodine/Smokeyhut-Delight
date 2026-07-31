@@ -1,10 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Package, Trash2, Edit2, Image as ImageIcon, X, FolderKanban, Loader2, AlertTriangle, TrendingUp, DollarSign, Layers, BarChart2, Eye, EyeOff } from 'lucide-react';
+import { Package, Trash2, Edit2, Image as ImageIcon, X, FolderKanban, Loader2, TrendingUp, Layers, Eye, EyeOff, Search } from 'lucide-react';
 import { SkelDashHeader, SkelKpiGrid, SkelTable } from '../../components/Skeleton';
 import Pagination from '../../components/Pagination';
 import { supabase } from '../../lib/supabase';
 import { invalidateProducts } from '../../lib/productsCache';
-import { parseRestockAmount, selectLowOrOut, buildBatchPayload } from '../../lib/restock';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import CustomSelect from '../../components/CustomSelect';
@@ -12,35 +11,6 @@ import ConfirmModal from '../../components/ConfirmModal';
 import BulkActionBar from '../../components/BulkActionBar';
 
 const fmt = (n) => '₦' + n.toLocaleString();
-
-// Compact "+qty [Add]" control. onAdd(rawValue) resolves true on success,
-// which clears the input.
-function RestockInline({ onAdd }) {
-  const [val, setVal] = useState('');
-  const [busy, setBusy] = useState(false);
-  const submit = async () => {
-    if (!val || busy) return;
-    setBusy(true);
-    const ok = await onAdd(val);
-    setBusy(false);
-    if (ok) setVal('');
-  };
-  return (
-    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-      <input
-        type="number" min="1" value={val}
-        onChange={e => setVal(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Enter') submit(); }}
-        placeholder="+ qty"
-        style={{ width: 62, padding: '4px 6px', fontSize: '0.75rem', border: '1px solid var(--border-subtle)', borderRadius: 6, background: 'var(--white)', color: 'var(--text)', fontFamily: 'inherit' }}
-      />
-      <button type="button" onClick={submit} disabled={busy || !val}
-        style={{ padding: '4px 10px', fontSize: '0.72rem', fontWeight: 700, borderRadius: 6, border: 'none', cursor: busy || !val ? 'default' : 'pointer', background: '#16a34a', color: '#fff', opacity: busy || !val ? 0.5 : 1 }}>
-        {busy ? '…' : 'Add'}
-      </button>
-    </div>
-  );
-}
 
 export default function Products() {
   const { userRole, userPermissions } = useAuth();
@@ -53,22 +23,20 @@ export default function Products() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState('');
   const PER_PAGE = 15;
   const { showToast } = useToast();
   const [confirmAction, setConfirmAction] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
 
   const [showForm, setShowForm] = useState(false);
-  const [showRestock, setShowRestock] = useState(false);
-  const [restockDrafts, setRestockDrafts] = useState({});
   const [showCatModal, setShowCatModal] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   const [editing, setEditing] = useState(null);
   const [pendingImageFile, setPendingImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState('');
 
-  // Frontend forms continue using standard naming
-  const [form, setForm] = useState({ name: '', desc: '', price: '', compare_price: '', category: '', image: '', badge: '', stock: '', free_shipping: false, cutoff: '' });
+  const [form, setForm] = useState({ name: '', desc: '', price: '', compare_price: '', category: '', image: '', badge: '', is_active: true, free_shipping: false, cutoff: '' });
 
   useEffect(() => {
     fetchData();
@@ -78,7 +46,7 @@ export default function Products() {
     setLoading(true);
     try {
       const [pRes, cRes, oiRes] = await Promise.all([
-        supabase.from('products').select('id,name,description,short_desc,price,compare_price,stock,category_id,badge,image,is_active,free_shipping,created_at,same_day_cutoff').is('deleted_at', null).order('created_at', { ascending: false }),
+        supabase.from('products').select('id,name,description,short_desc,price,compare_price,category_id,badge,image,is_active,free_shipping,created_at,same_day_cutoff').is('deleted_at', null).order('created_at', { ascending: false }),
         supabase.from('categories').select('*').order('created_at', { ascending: true }),
         supabase.from('order_items').select('product_id, name, qty, orders!inner(status)').neq('orders.status', 'cancelled'),
       ]);
@@ -106,10 +74,8 @@ export default function Products() {
     setImagePreview(URL.createObjectURL(file));
   };
 
-  const stockLevel = (s) => s <= 5 ? 'low' : s <= 15 ? 'medium' : 'high';
-
   const openAdd = () => {
-    setForm({ name: '', desc: '', price: '', compare_price: '', category: catList[0]?.id || '', image: '', badge: '', stock: '', free_shipping: false, cutoff: '' });
+    setForm({ name: '', desc: '', price: '', compare_price: '', category: catList[0]?.id || '', image: '', badge: '', is_active: true, free_shipping: false, cutoff: '' });
     setPendingImageFile(null);
     setImagePreview('');
     setEditing(null);
@@ -125,7 +91,7 @@ export default function Products() {
       category: p.category_id || '',
       image: p.image || '',
       badge: p.badge || '',
-      stock: String(p.stock),
+      is_active: p.is_active !== false,
       free_shipping: p.free_shipping || false,
       cutoff: p.same_day_cutoff ? p.same_day_cutoff.slice(0, 5) : '',
     });
@@ -161,15 +127,14 @@ export default function Products() {
       short_desc: form.desc.slice(0, 50),
       price: Number(form.price),
       compare_price: comparePrice && comparePrice > Number(form.price) ? comparePrice : null,
-      stock: Number(form.stock),
+      stock: 9999,
       category_id: form.category,
       badge: form.badge || null,
       image: imageUrl,
+      is_active: form.is_active,
       free_shipping: form.free_shipping,
       same_day_cutoff: form.cutoff || null,
     };
-    // Only default new products to active — editing must not silently un-hide a hidden product.
-    if (!editing) data.is_active = true;
 
     try {
       if (editing) {
@@ -192,70 +157,18 @@ export default function Products() {
     }
   };
 
-  const handleRestock = async (product, rawValue) => {
-    const amount = parseRestockAmount(rawValue);
-    if (amount === null) {
-      showToast('Invalid amount', 'Enter a positive whole number.', 'error');
-      return false;
-    }
-    const { data, error } = await supabase.rpc('restock_product', { p_id: product.id, p_add: amount });
-    if (error) {
-      showToast('Restock failed', error.message, 'error');
-      return false;
-    }
-    setProductList(prev => prev.map(x => x.id === product.id ? { ...x, stock: data } : x));
-    invalidateProducts();
-    showToast('Restocked', `${product.name}: +${amount} → ${data} units`, 'success');
-    return true;
-  };
-
-  const applyBatchRestock = async () => {
-    const payload = buildBatchPayload(
-      selectLowOrOut(productList).map(p => ({ id: p.id, value: restockDrafts[p.id] }))
-    );
-    if (payload.length === 0) {
-      showToast('Nothing to restock', 'Enter a quantity for at least one item.', 'error');
-      return;
-    }
-    const results = await Promise.all(payload.map(async ({ id, add }) => {
-      const { data, error } = await supabase.rpc('restock_product', { p_id: id, p_add: add });
-      return { id, data, error };
-    }));
-    const okResults = results.filter(r => !r.error);
-    const failResults = results.filter(r => r.error);
-    if (okResults.length) {
-      setProductList(prev => prev.map(x => {
-        const hit = okResults.find(r => r.id === x.id);
-        return hit ? { ...x, stock: hit.data } : x;
-      }));
-      invalidateProducts();
-    }
-    if (failResults.length === 0) {
-      showToast('Restocked', `Updated ${okResults.length} product${okResults.length === 1 ? '' : 's'}.`, 'success');
-      setShowRestock(false);
-      setRestockDrafts({});
-    } else {
-      showToast('Partial restock', `${okResults.length} updated, ${failResults.length} failed.`, 'error');
-      setRestockDrafts(prev => {
-        const next = { ...prev };
-        okResults.forEach(r => { delete next[r.id]; });
-        return next;
-      });
-    }
-  };
-
   const toggleActive = async (p) => {
     const { error } = await supabase.from('products').update({ is_active: !p.is_active }).eq('id', p.id);
     if (error) { showToast('Error', error.message, 'error'); return; }
     setProductList(prev => prev.map(x => x.id === p.id ? { ...x, is_active: !p.is_active } : x));
     invalidateProducts();
-    showToast(p.is_active ? 'Product hidden' : 'Product visible', p.is_active ? `${p.name} is now hidden from the storefront` : `${p.name} is now visible on the storefront`);
+    showToast(p.is_active ? 'Product hidden' : 'Product visible', p.is_active ? `${p.name} is now hidden from the storefront and marked as Out of Stock` : `${p.name} is now visible on the storefront`);
   };
 
   const handleDelete = (id) => {
     setConfirmAction({
       title: 'Delete Product',
-      message: 'Delete this product? It will be hidden from the storefront.',
+      message: 'Delete this product? It will be removed from the storefront.',
       onConfirm: async () => {
         setConfirmAction(prev => ({ ...prev, isLoading: true }));
         try {
@@ -276,7 +189,7 @@ export default function Products() {
   const handleBulkDelete = () => {
     setConfirmAction({
       title: 'Delete Selected Products',
-      message: `Delete ${selectedIds.length} products? They will be hidden from the storefront.`,
+      message: `Delete ${selectedIds.length} products? They will be removed from the storefront.`,
       onConfirm: async () => {
         setConfirmAction(prev => ({ ...prev, isLoading: true }));
         try {
@@ -334,10 +247,8 @@ export default function Products() {
   };
 
   // ── KPI computations ─────────────────────────────────────
-  const outOfStock   = useMemo(() => productList.filter(p => Number(p.stock) === 0), [productList]);
-  const lowStock     = useMemo(() => productList.filter(p => Number(p.stock) > 0 && Number(p.stock) <= 5), [productList]);
-  const inventoryVal = useMemo(() => productList.reduce((s, p) => s + Number(p.price || 0) * Number(p.stock || 0), 0), [productList]);
-  const priciest     = useMemo(() => productList.reduce((top, p) => (!top || Number(p.price) > Number(top.price) ? p : top), null), [productList]);
+  const publishedCount = useMemo(() => productList.filter(p => p.is_active !== false).length, [productList]);
+  const hiddenCount    = useMemo(() => productList.filter(p => p.is_active === false).length, [productList]);
 
   const topSeller = useMemo(() => {
     const salesMap = {};
@@ -357,34 +268,36 @@ export default function Products() {
 
   useEffect(() => { setSelectedIds([]); }, [page]);
 
-  const pagedProducts = productList.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const filtered = useMemo(() =>
+    productList.filter(p => p.name.toLowerCase().includes(search.toLowerCase())),
+    [productList, search]
+  );
+  const pagedProducts = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
   if (loading) return (
     <div>
       <SkelDashHeader hasButton />
-      <SkelKpiGrid count={6} />
+      <SkelKpiGrid count={4} />
       <SkelTable rows={6} cols={5} />
     </div>
   );
 
   return (
     <div>
+      {/* ── Page Header ─────────────────────────────────── */}
       <div className="dash-card-header" style={{ marginBottom: 20 }}>
         <div className="dash-card-title" style={{ fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif", fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: 8 }}>
           <Package size={24} color="var(--red)" /> Product Management
         </div>
-        <div style={{ display: 'flex', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 10 }}>
           <button className="btn-secondary" onClick={() => setShowCatModal(true)} style={{ padding: '10px 16px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6 }}>
             <FolderKanban size={16} /> Categories
           </button>
-          {canManage && <button className="btn-secondary" onClick={() => { setRestockDrafts({}); setShowRestock(true); }} style={{ padding: '10px 16px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Package size={16} /> Restock
-          </button>}
           {canManage && <button className="btn-primary" onClick={openAdd} style={{ padding: '10px 20px', fontSize: '0.85rem' }}>+ Add Product</button>}
         </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* ── KPI Cards (4) ───────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
         <div className="kpi-card blue">
           <div className="kpi-icon"><Layers size={22} /></div>
@@ -393,18 +306,18 @@ export default function Products() {
           <div className="kpi-change up">{catList.length} categor{catList.length !== 1 ? 'ies' : 'y'}</div>
         </div>
 
-        <div className="kpi-card red">
-          <div className="kpi-icon"><AlertTriangle size={22} /></div>
-          <div className="kpi-value">{outOfStock.length}</div>
-          <div className="kpi-label">Out of Stock</div>
-          <div className="kpi-change down">{outOfStock.length > 0 ? 'Needs restocking' : 'All stocked'}</div>
+        <div className="kpi-card green">
+          <div className="kpi-icon"><Eye size={22} /></div>
+          <div className="kpi-value">{publishedCount}</div>
+          <div className="kpi-label">Published</div>
+          <div className="kpi-change up">Visible on storefront</div>
         </div>
 
         <div className="kpi-card yellow">
-          <div className="kpi-icon"><Package size={22} /></div>
-          <div className="kpi-value">{lowStock.length}</div>
-          <div className="kpi-label">Low Stock</div>
-          <div className="kpi-change down">≤ 5 units remaining</div>
+          <div className="kpi-icon"><EyeOff size={22} /></div>
+          <div className="kpi-value">{hiddenCount}</div>
+          <div className="kpi-label">Hidden</div>
+          <div className={`kpi-change ${hiddenCount > 0 ? 'down' : 'up'}`}>{hiddenCount > 0 ? 'Out of stock on storefront' : 'All products visible'}</div>
         </div>
 
         <div className="kpi-card green">
@@ -415,49 +328,31 @@ export default function Products() {
           <div className="kpi-label">Top Seller</div>
           <div className="kpi-change up">{topSeller ? `${topSeller.qty} units sold` : 'No sales yet'}</div>
         </div>
-
-        <div className="kpi-card red">
-          <div className="kpi-icon"><DollarSign size={22} /></div>
-          <div className="kpi-value" style={{ fontSize: '1rem' }}>
-            {priciest ? priciest.name : '—'}
-          </div>
-          <div className="kpi-label">Highest Priced</div>
-          <div className="kpi-change up">{priciest ? fmt(priciest.price) : '—'}</div>
-        </div>
-
-        <div className="kpi-card green">
-          <div className="kpi-icon"><BarChart2 size={22} /></div>
-          <div className="kpi-value" style={{ fontSize: '1.1rem' }}>{fmt(inventoryVal)}</div>
-          <div className="kpi-label">Inventory Value</div>
-          <div className="kpi-change up">price × stock</div>
-        </div>
       </div>
 
-      {/* Low stock / out-of-stock alert strip */}
-      {(outOfStock.length > 0 || lowStock.length > 0) && (
-        <div style={{ background: '#fef9c3', border: '1px solid #fcd34d', borderRadius: 10, padding: '12px 18px', marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-            <AlertTriangle size={18} color="#92400e" style={{ marginTop: 1, flexShrink: 0 }} />
-            <div style={{ fontSize: '0.84rem', color: '#78350f', lineHeight: 1.6 }}>
-              <strong>Stock alert:</strong>{' '}
-              {outOfStock.length > 0 && <span><strong>{outOfStock.map(p => p.name).join(', ')}</strong> {outOfStock.length === 1 ? 'is' : 'are'} out of stock. </span>}
-              {lowStock.length > 0 && <span><strong>{lowStock.map(p => p.name).join(', ')}</strong> {lowStock.length === 1 ? 'is' : 'are'} running low (≤ 5 units).</span>}
-            </div>
-          </div>
-          {canManage && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 12 }}>
-              {selectLowOrOut(productList).map(p => (
-                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.65)', borderRadius: 8, padding: '5px 8px' }}>
-                  <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#78350f' }}>{p.name} ({p.stock})</span>
-                  <RestockInline onAdd={(raw) => handleRestock(p, raw)} />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
+      {/* ── Product Table ────────────────────────────────── */}
       <div className="dash-card">
+        {/* Search bar */}
+        <div style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 12, borderBottom: '1px solid var(--border-subtle)' }}>
+          <div style={{ position: 'relative', width: 320 }}>
+            <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+            <input
+              type="text"
+              placeholder="Search products..."
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1); }}
+              style={{
+                width: '100%', padding: '9px 12px 9px 36px', borderRadius: 8,
+                border: '1px solid var(--border-subtle)', background: 'var(--white)',
+                fontSize: '0.85rem', color: 'var(--text)', fontFamily: 'inherit'
+              }}
+            />
+          </div>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            {filtered.length} product{filtered.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+
         <div className="dash-table-wrapper">
           <table className="dash-table">
             <thead><tr>
@@ -477,22 +372,22 @@ export default function Products() {
                   />
                 </th>
               )}
-              <th>Image</th><th>Name</th><th>Category</th><th>Price</th><th>Stock</th><th>Badge</th>{(canManage || canDelete) && <th>Actions</th>}
+              <th style={{ width: 60 }}>Image</th>
+              <th>Product</th>
+              <th>Category</th>
+              <th>Price</th>
+              <th>Visibility</th>
+              <th>Badge</th>
+              {(canManage || canDelete) && <th style={{ width: 120 }}>Actions</th>}
             </tr></thead>
             <tbody>
               {pagedProducts.map(p => {
                 const imgSource = p.image;
                 const isEmoji = imgSource && imgSource.length <= 4 && !imgSource.startsWith('data:');
                 const catLabel = catList.find(c => c.id === p.category_id)?.label || p.category_id;
-                const stockNum = Number(p.stock);
-                const rowStyle = stockNum === 0
-                  ? { background: 'rgba(239,68,68,0.05)' }
-                  : stockNum <= 5
-                  ? { background: 'rgba(251,191,36,0.06)' }
-                  : {};
 
                 const isSelected = selectedIds.includes(p.id);
-                const finalStyle = { ...rowStyle };
+                const finalStyle = {};
                 if (isSelected) {
                   finalStyle.background = 'rgba(192, 32, 31, 0.06)';
                   finalStyle.borderLeft = '3px solid var(--red)';
@@ -525,7 +420,10 @@ export default function Products() {
                          </div>
                       )}
                     </td>
-                    <td><div style={{ fontWeight: 700 }}>{p.name}</div><div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', maxWidth: 200 }}>{p.description?.slice(0, 60)}...</div></td>
+                    <td>
+                      <div style={{ fontWeight: 700 }}>{p.name}</div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', maxWidth: 200 }}>{p.description?.slice(0, 60)}{p.description?.length > 60 ? '…' : ''}</div>
+                    </td>
                     <td style={{ fontSize: '0.82rem' }}>{catLabel}</td>
                     <td>
                       <span style={{ fontWeight: 700 }}>{fmt(p.price)}</span>
@@ -534,34 +432,46 @@ export default function Products() {
                       )}
                     </td>
                     <td>
-                      <div className={`stock-indicator ${stockLevel(p.stock)}`}><span className="stock-dot" />{p.stock} units</div>
-                      {canManage && <div style={{ marginTop: 6 }}><RestockInline onAdd={(raw) => handleRestock(p, raw)} /></div>}
+                      <button
+                        onClick={() => toggleActive(p)}
+                        style={{
+                          background: p.is_active !== false ? '#dcfce7' : '#fee2e2',
+                          color: p.is_active !== false ? '#15803d' : '#991b1b',
+                          border: `1px solid ${p.is_active !== false ? '#bbf7d0' : '#fecaca'}`,
+                          padding: '4px 10px', borderRadius: 20, fontWeight: 700, fontSize: '0.78rem',
+                          cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6
+                        }}
+                      >
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.is_active !== false ? '#22c55e' : '#ef4444' }} />
+                        {p.is_active !== false ? 'Published' : 'Hidden'}
+                      </button>
                     </td>
                     <td>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        {p.is_active === false && <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '2px 7px', borderRadius: 20, width: 'fit-content' }}>Hidden</span>}
                         {p.badge ? <span className={`status-badge ${p.badge}`}>{p.badge}</span> : null}
                         {p.free_shipping && <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#166534', background: '#dcfce7', padding: '2px 7px', borderRadius: 20 }}>Free Ship</span>}
-                        {!p.badge && !p.free_shipping && p.is_active !== false && '—'}
+                        {!p.badge && !p.free_shipping && '—'}
                       </div>
                     </td>
                     {(canManage || canDelete) && (
                       <td>
                         <div style={{ display: 'flex', gap: 6 }}>
                           {canManage && (
-                            <button onClick={() => toggleActive(p)} title={p.is_active === false ? 'Unhide (show on storefront)' : 'Hide from storefront'}
-                              style={{ background: 'none', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: p.is_active === false ? 'var(--text-muted)' : '#16a34a', display: 'flex', alignItems: 'center' }}>
-                              {p.is_active === false ? <EyeOff size={16} /> : <Eye size={16} />}
+                            <button onClick={() => toggleActive(p)} title={p.is_active !== false ? 'Hide product (Out of Stock)' : 'Publish product'}
+                              style={{ background: 'none', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '6px 8px', cursor: 'pointer', color: p.is_active !== false ? '#15803d' : '#dc2626', display: 'flex', alignItems: 'center' }}>
+                              {p.is_active !== false ? <Eye size={15} /> : <EyeOff size={15} />}
                             </button>
                           )}
                           {canManage && (
-                            <button onClick={() => openEdit(p)} className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.78rem', gap: 4 }}>
-                              <Edit2 size={12} /> Edit
+                            <button onClick={() => openEdit(p)} title="Edit product"
+                              style={{ background: 'none', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '6px 8px', cursor: 'pointer', color: 'var(--text)', display: 'flex', alignItems: 'center' }}>
+                              <Edit2 size={15} />
                             </button>
                           )}
                           {canDelete && (
-                            <button onClick={() => handleDelete(p.id)} style={{ background: '#fee2e2', border: 'none', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 4 }}>
-                              <Trash2 size={12} /> Delete
+                            <button onClick={() => handleDelete(p.id)} title="Delete product"
+                              style={{ background: 'none', border: '1px solid #fecaca', borderRadius: 6, padding: '6px 8px', cursor: 'pointer', color: '#dc2626', display: 'flex', alignItems: 'center' }}>
+                              <Trash2 size={15} />
                             </button>
                           )}
                         </div>
@@ -570,53 +480,20 @@ export default function Products() {
                   </tr>
                 );
               })}
-              {productList.length === 0 && (
+              {filtered.length === 0 && (
                 <tr>
-                   <td colSpan={canDelete ? (canManage || canDelete ? 8 : 7) : (canManage || canDelete ? 7 : 6)} style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>No products found. Add your first item!</td>
+                   <td colSpan={canDelete ? (canManage || canDelete ? 8 : 7) : (canManage || canDelete ? 7 : 6)} style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
+                     {search ? `No products matching "${search}"` : 'No products found. Add your first item!'}
+                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
-        <Pagination page={page} total={productList.length} perPage={PER_PAGE} onChange={setPage} />
+        <Pagination page={page} total={filtered.length} perPage={PER_PAGE} onChange={setPage} />
       </div>
 
-      {showRestock && (
-        <div className="product-form-modal" onClick={() => setShowRestock(false)}>
-          <div className="product-form-card" onClick={e => e.stopPropagation()} style={{ position: 'relative' }}>
-            <h3 style={{ marginTop: 0, marginBottom: 20 }}>
-              Restock session
-              <button onClick={() => setShowRestock(false)} className="dash-drawer-close"><X size={16} /></button>
-            </h3>
-            {selectLowOrOut(productList).length === 0 ? (
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Nothing is low or out of stock. 🎉</p>
-            ) : (
-              <>
-                {selectLowOrOut(productList).map(p => (
-                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{p.name}</div>
-                      <div style={{ fontSize: '0.74rem', color: Number(p.stock) === 0 ? '#ef4444' : '#f59e0b' }}>
-                        {Number(p.stock) === 0 ? 'Out of stock' : `Low — ${p.stock} left`}
-                      </div>
-                    </div>
-                    <input
-                      type="number" min="1" placeholder="+ qty"
-                      value={restockDrafts[p.id] ?? ''}
-                      onChange={e => setRestockDrafts(prev => ({ ...prev, [p.id]: e.target.value }))}
-                      style={{ width: 80, padding: '6px 8px', fontSize: '0.82rem', border: '1px solid var(--border-subtle)', borderRadius: 8, background: 'var(--white)', color: 'var(--text)', fontFamily: 'inherit' }}
-                    />
-                  </div>
-                ))}
-                <button className="btn-primary" onClick={applyBatchRestock} style={{ width: '100%', justifyContent: 'center', padding: '14px', marginTop: 16 }}>
-                  Apply all
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
+      {/* ── Add / Edit Product Modal ─────────────────────── */}
       {showForm && (
         <div className="product-form-modal" onClick={() => setShowForm(false)}>
           <div className="product-form-card" onClick={e => e.stopPropagation()} style={{ position: 'relative' }}>
@@ -656,23 +533,15 @@ export default function Products() {
                 <input type="number" value={form.compare_price} onChange={set('compare_price')} placeholder="e.g. 18000" />
               </div>
               <div className="form-group">
-                <label>Stock</label>
-                <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--border-subtle)', borderRadius: 8, overflow: 'hidden', background: 'var(--white)', height: 38 }}>
-                  <button type="button" onClick={() => set('stock')({ target: { value: Math.max(0, Number(form.stock || 0) - 1) } })} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 12px', fontSize: '1.1rem', fontWeight: 700, color: 'var(--text)', lineHeight: 1, flexShrink: 0 }}>−</button>
-                  <input
-                    type="number"
-                    value={form.stock}
-                    onChange={set('stock')}
-                    placeholder="0"
-                    style={{
-                      flex: 1, width: '100%', border: 'none', background: 'none',
-                      textAlign: 'center', fontWeight: 700, fontSize: '0.95rem',
-                      outline: 'none', padding: 0, color: 'var(--text)',
-                      fontFamily: 'inherit'
-                    }}
-                  />
-                  <button type="button" onClick={() => set('stock')({ target: { value: Number(form.stock || 0) + 1 } })} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 12px', fontSize: '1.1rem', fontWeight: 700, color: 'var(--text)', lineHeight: 1, flexShrink: 0 }}>+</button>
-                </div>
+                <label>Visibility</label>
+                <CustomSelect
+                  value={form.is_active ? 'published' : 'hidden'}
+                  onChange={(e) => setForm({ ...form, is_active: e.target.value === 'published' })}
+                  options={[
+                    { value: 'published', label: 'Published (Visible)' },
+                    { value: 'hidden', label: 'Hidden (Out of Stock)' }
+                  ]}
+                />
               </div>
             </div>
             {form.compare_price && Number(form.compare_price) > Number(form.price) && (
@@ -714,6 +583,7 @@ export default function Products() {
         </div>
       )}
 
+      {/* ── Categories Modal ─────────────────────────────── */}
       {showCatModal && (
         <div className="product-form-modal" onClick={() => setShowCatModal(false)}>
           <div className="product-form-card" onClick={e => e.stopPropagation()} style={{ position: 'relative', maxWidth: 400 }}>

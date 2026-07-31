@@ -1,14 +1,14 @@
 import React from 'react';
 import { useCart } from '../context/CartContext';
 import { useNavigate } from 'react-router-dom';
-import { ShoppingCart, Trash2 } from 'lucide-react';
+import { ShoppingCart, Trash2, Gift, Sparkles, Clock } from 'lucide-react';
 import { anyItemPastCutoff } from '../lib/deliveryCutoff';
 
 export default function CartSidebar({ isOpen, onClose }) {
   const { items, updateQty, removeItem, total, itemCount } = useCart();
   const navigate = useNavigate();
 
-  const fmt = (n) => '₦' + n.toLocaleString();
+  const fmt = (n) => '₦' + Number(n).toLocaleString();
 
   return (
     <>
@@ -40,7 +40,7 @@ export default function CartSidebar({ isOpen, onClose }) {
                 <div className="cart-qty">
                   <button className="qty-btn" onClick={() => updateQty(item.id, item.qty - 1)}>−</button>
                   <span className="qty-num">{item.qty}</span>
-                  <button className="qty-btn" onClick={() => updateQty(item.id, item.qty + 1)} disabled={item.qty >= Number(item.stock)} style={item.qty >= Number(item.stock) ? { opacity: 0.3, cursor: 'not-allowed' } : undefined}>+</button>
+                  <button className="qty-btn" onClick={() => updateQty(item.id, item.qty + 1)}>+</button>
                 </div>
               </div>
               <button className="cart-remove" onClick={() => removeItem(item.id)}><Trash2 size={18} color="var(--text-muted)" /></button>
@@ -56,15 +56,17 @@ export default function CartSidebar({ isOpen, onClose }) {
               }, 0);
               if (gfQty === 2) {
                 return (
-                  <div style={{ fontSize: '0.8rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 12px', marginBottom: 12, lineHeight: 1.4, fontWeight: 600 }}>
-                    🎁 <strong>You're just 1 Guinea Fowl away from discounted delivery!</strong> Add one more to your order to qualify for this special promotion.
+                  <div style={{ fontSize: '0.8rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 12px', marginBottom: 12, lineHeight: 1.4, fontWeight: 600, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                    <Gift size={16} color="#92400e" style={{ flexShrink: 0, marginTop: 2 }} />
+                    <div><strong>You're just 1 Guinea Fowl away from discounted delivery!</strong> Add one more to your order to qualify for this special promotion.</div>
                   </div>
                 );
               }
               if (gfQty >= 3) {
                 return (
-                  <div style={{ fontSize: '0.8rem', color: '#166534', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 12px', marginBottom: 12, lineHeight: 1.4, fontWeight: 600 }}>
-                    🎉 <strong>Delivery Discount Unlocked!</strong> You've added 3+ Guinea Fowls and your delivery discount is automatically applied.
+                  <div style={{ fontSize: '0.8rem', color: '#166534', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 12px', marginBottom: 12, lineHeight: 1.4, fontWeight: 600, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                    <Sparkles size={16} color="#166534" style={{ flexShrink: 0, marginTop: 2 }} />
+                    <div><strong>Delivery Discount Unlocked!</strong> You've added 3+ Guinea Fowls and your delivery discount is automatically applied.</div>
                   </div>
                 );
               }
@@ -75,8 +77,8 @@ export default function CartSidebar({ isOpen, onClose }) {
               <span>{fmt(total)}</span>
             </div>
             {anyItemPastCutoff(items) && (
-              <div style={{ fontSize: '0.78rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 10px', marginBottom: 8, fontWeight: 600 }}>
-                ⏰ Some items have passed today's cutoff and will be delivered tomorrow.
+              <div style={{ fontSize: '0.78rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 10px', marginBottom: 8, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Clock size={14} color="#92400e" style={{ flexShrink: 0 }} /> Some items have passed today's cutoff and will be delivered tomorrow.
               </div>
             )}
             <div className="cart-note">Delivery fee calculated at checkout. Order before 10am for same-day delivery.</div>

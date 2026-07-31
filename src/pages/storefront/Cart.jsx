@@ -4,7 +4,7 @@ import { useCart } from '../../context/CartContext';
 import { useToast } from '../../context/ToastContext';
 import { getProducts } from '../../lib/productsCache';
 import ProductCard from '../../components/ProductCard';
-import { ShoppingCart, Trash2, Plus, Minus, ArrowRight, Utensils } from 'lucide-react';
+import { ShoppingCart, Trash2, Plus, Minus, ArrowRight, Utensils, Gift, Sparkles, Clock } from 'lucide-react';
 import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
 
 const fmt = (n) => '₦' + Number(n).toLocaleString();
@@ -67,8 +67,8 @@ export default function Cart() {
         {/* Cart Items Card */}
         <div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 14 }}>
           {anyItemPastCutoff(items) && (
-            <div style={{ fontSize: '0.82rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', margin: '0 16px 12px', fontWeight: 600 }}>
-              ⏰ Some items have passed today's cutoff and will be delivered tomorrow.
+            <div style={{ fontSize: '0.82rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', margin: '0 16px 12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Clock size={15} color="#92400e" style={{ flexShrink: 0 }} /> Some items have passed today's cutoff and will be delivered tomorrow.
             </div>
           )}
           {items.map((item, idx) => {
@@ -83,7 +83,7 @@ export default function Cart() {
                       : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Utensils size={20} color="#ccc" /></div>
                     }
                   </div>
-                  <span style={{ position: 'absolute', top: -6, right: -6, background: '#111', color: '#fff', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 900 }}>
+                  <span style={{ position: 'absolute', top: -6, right: -6, background: '#c0201f', color: '#fff', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 900 }}>
                     {item.qty}
                   </span>
                 </div>
@@ -108,7 +108,7 @@ export default function Cart() {
                       {item.qty === 1 ? <Trash2 size={13} /> : <Minus size={13} />}
                     </button>
                     <span style={{ fontWeight: 800, fontSize: '0.82rem', minWidth: 22, textAlign: 'center', color: '#111' }}>{item.qty}</span>
-                    <button onClick={() => updateQty(item.id, item.qty + 1)} disabled={item.qty >= Number(item.stock)} style={{ width: 30, height: 30, background: 'none', border: 'none', cursor: item.qty >= Number(item.stock) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555', opacity: item.qty >= Number(item.stock) ? 0.3 : 1 }}>
+                    <button onClick={() => updateQty(item.id, item.qty + 1)} style={{ width: 30, height: 30, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555' }}>
                       <Plus size={13} />
                     </button>
                   </div>
@@ -127,7 +127,7 @@ export default function Cart() {
           if (gfQty === 2) {
             return (
               <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 14, padding: '12px 16px', marginBottom: 14, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                <span style={{ fontSize: '1.2rem', lineHeight: 1 }}>🎁</span>
+                <Gift size={18} color="#92400e" style={{ flexShrink: 0, marginTop: 1 }} />
                 <div style={{ fontSize: '0.85rem', color: '#92400e', fontWeight: 600, lineHeight: 1.45 }}>
                   <strong>You're just 1 Guinea Fowl away from discounted delivery!</strong> Add one more to your order to qualify for this special promotion.
                 </div>
@@ -137,7 +137,7 @@ export default function Cart() {
           if (gfQty >= 3) {
             return (
               <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 14, padding: '12px 16px', marginBottom: 14, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                <span style={{ fontSize: '1.2rem', lineHeight: 1 }}>🎉</span>
+                <Sparkles size={18} color="#166534" style={{ flexShrink: 0, marginTop: 1 }} />
                 <div style={{ fontSize: '0.85rem', color: '#166534', fontWeight: 600, lineHeight: 1.45 }}>
                   <strong>Delivery Discount Unlocked!</strong> You've added 3+ Guinea Fowls and your delivery discount has been automatically applied.
                 </div>
@@ -179,7 +179,7 @@ export default function Cart() {
             </div>
           </div>
           <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <Link to="/checkout" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: '#111', color: '#fff', padding: '16px', borderRadius: 12, fontWeight: 900, textDecoration: 'none', fontSize: '1rem', letterSpacing: '-0.01em' }}>
+            <Link to="/checkout" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: '#c0201f', color: '#fff', padding: '16px', borderRadius: 12, fontWeight: 900, textDecoration: 'none', fontSize: '1rem', letterSpacing: '-0.01em' }}>
               Proceed to Checkout <ArrowRight size={18} />
             </Link>
             <Link to="/menu" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', color: '#c0201f', fontWeight: 700, textDecoration: 'none', padding: '10px' }}>

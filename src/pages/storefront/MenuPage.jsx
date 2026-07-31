@@ -13,7 +13,7 @@ import { fetchDeliveryPromo, getPromoDeliveryFee } from '../../lib/deliveryPromo
 import {
   ShoppingCart, X, Truck, Store as StoreIcon, Loader2, MapPin,
   MessageCircle, Banknote, Plus, Minus, Trash2, Tag, Copy, CheckCircle,
-  Utensils, PackageSearch, Send,
+  Utensils, PackageSearch, Send, ClipboardList, Gift, Sparkles, AlertTriangle, Lightbulb,
 } from 'lucide-react';
 
 const SUPABASE_URL        = import.meta.env.VITE_SUPABASE_URL;
@@ -239,7 +239,7 @@ export default function MenuPage() {
       showToast('Required fields missing', 'Please fill in all required fields', 'error'); return false;
     }
     if (!/^\d{11}$/.test(form.phone.trim())) {
-      showToast('Invalid phone number', 'Please enter a valid 11-digit phone number.', 'error'); return false;
+      return false;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
       showToast('Invalid email', 'Please enter a valid email address', 'error'); return false;
@@ -287,7 +287,7 @@ export default function MenuPage() {
       : `${form.address}, ${selectedMatch?.area?.name || selectedMatch?.zone?.name || form.city}`;
     const itemLines = itemsSnapshot.map(i => `• ${i.name} ×${i.qty} — ${fmt(i.price * i.qty)}`).join('\n');
     const waLines = [
-      `🧾 *New Order — ${orderId}*`,
+      `*New Order — ${orderId}*`,
       ``,
       `*Customer:* ${customerName}`,
       `*Phone:* ${form.phone}`,
@@ -300,7 +300,7 @@ export default function MenuPage() {
       couponDiscount > 0 ? `*Coupon:* ${appliedCoupon?.code} (−${fmt(couponDiscount)})` : null,
       `*Amount paid:* ${fmt(amountSnapshot)}`,
       `*Transfer Name:* ${transferName.trim()}`,
-      `*Payment:* Bank Transfer 🏦`,
+      `*Payment:* Bank Transfer`,
       form.notes ? `\n*Notes:* ${form.notes}` : null,
     ].filter(Boolean).join('\n');
     const waUrl = `https://api.whatsapp.com/send?phone=${WA_NUMBER}&text=${encodeURIComponent(waLines)}`;
@@ -630,7 +630,7 @@ export default function MenuPage() {
           <div style={{ margin: '12px 14px 0', borderRadius: 14, overflow: 'hidden', border: '1.5px solid #fde68a', background: '#fffbeb' }}>
             <div style={{ padding: '12px 16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
-                <span style={{ fontSize: '0.95rem' }}>📋</span>
+                <ClipboardList size={16} color="#92400e" style={{ flexShrink: 0 }} />
                 <span style={{ fontWeight: 800, fontSize: '0.82rem', color: '#92400e' }}>Please Note Our Policy</span>
               </div>
               <div style={{ fontSize: '0.75rem', color: '#78350f', fontWeight: 600, marginBottom: 4 }}>Order & Delivery Guide</div>
@@ -678,7 +678,7 @@ export default function MenuPage() {
                           : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ccc' }}><Utensils size={20} /></div>
                         }
                       </div>
-                      <span style={{ position: 'absolute', top: -6, right: -6, background: '#111', color: '#fff', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 900 }}>
+                      <span style={{ position: 'absolute', top: -6, right: -6, background: '#c0201f', color: '#fff', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 900 }}>
                         {item.qty}
                       </span>
                     </div>
@@ -713,7 +713,7 @@ export default function MenuPage() {
             if (gfQty === 2) {
               return (
                 <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 14, padding: '12px 14px', margin: '0 14px 12px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  <span style={{ fontSize: '1.2rem', lineHeight: 1 }}>🎁</span>
+                  <Gift size={18} color="#92400e" style={{ flexShrink: 0, marginTop: 1 }} />
                   <div style={{ fontSize: '0.83rem', color: '#92400e', fontWeight: 600, lineHeight: 1.45 }}>
                     <strong>You're just 1 Guinea Fowl away from discounted delivery!</strong> Add one more to your order to qualify for this special promotion.
                   </div>
@@ -723,7 +723,7 @@ export default function MenuPage() {
             if (gfQty >= 3) {
               return (
                 <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 14, padding: '12px 14px', margin: '0 14px 12px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  <span style={{ fontSize: '1.2rem', lineHeight: 1 }}>🎉</span>
+                  <Sparkles size={18} color="#166534" style={{ flexShrink: 0, marginTop: 1 }} />
                   <div style={{ fontSize: '0.83rem', color: '#166534', fontWeight: 600, lineHeight: 1.45 }}>
                     <strong>Delivery Discount Unlocked!</strong> You've added 3+ Guinea Fowls and your delivery discount has been automatically applied.
                   </div>
@@ -806,7 +806,7 @@ export default function MenuPage() {
                         {/* Zone note/alias banner — shown when admin has added notes to this area */}
                         {selectedMatch.area?.aliases?.length > 0 && (
                           <div style={{ marginTop: 8, padding: '10px 13px', background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 10, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                            <span style={{ fontSize: '1rem', flexShrink: 0, lineHeight: 1.2 }}>📍</span>
+                            <MapPin size={16} color="#c0201f" style={{ flexShrink: 0, marginTop: 2 }} />
                             <div>
                               <div style={{ fontWeight: 800, fontSize: '0.72rem', color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Delivery Notice</div>
                               {selectedMatch.area.aliases.map((note, i) => (
@@ -845,8 +845,31 @@ export default function MenuPage() {
                   <input value={form.lastName} onChange={set('lastName')} onBlur={() => setTouched(t => ({ ...t, lastName: true }))} placeholder="Last name *"
                     style={{ flex: '1 1 140px', minWidth: 0, padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${touched.lastName && !form.lastName.trim() ? '#ef4444' : '#e5e5e5'}`, background: '#fafafa', fontSize: '0.9rem', outline: 'none', color: '#111', boxSizing: 'border-box' }} />
                 </div>
-                <input value={form.phone} onChange={set('phone')} onBlur={() => setTouched(t => ({ ...t, phone: true }))} placeholder="Phone number *" type="tel"
-                  style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${touched.phone && !form.phone.trim() ? '#ef4444' : '#e5e5e5'}`, background: '#fafafa', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', color: '#111' }} />
+                {(() => {
+                  const phoneInvalid = touched.phone && (!form.phone.trim() || !/^\d{11}$/.test(form.phone.trim()));
+                  return (
+                    <div>
+                      <input
+                        value={form.phone}
+                        onChange={set('phone')}
+                        onBlur={() => setTouched(t => ({ ...t, phone: true }))}
+                        placeholder="Phone number (11 digits) *"
+                        type="tel"
+                        style={{
+                          width: '100%', padding: '12px 14px', borderRadius: 10,
+                          border: `1.5px solid ${phoneInvalid ? '#dc2626' : '#e5e5e5'}`,
+                          background: phoneInvalid ? '#fff5f5' : '#fafafa',
+                          fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', color: '#111'
+                        }}
+                      />
+                      {phoneInvalid && (
+                        <span style={{ color: '#dc2626', fontSize: '0.78rem', marginTop: 4, display: 'block', fontWeight: 600 }}>
+                          Please enter a valid 11-digit phone number.
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
                 <input value={form.email} onChange={set('email')} onBlur={() => setTouched(t => ({ ...t, email: true }))} placeholder="Email address *" type="email"
                   style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${touched.email && !form.email.trim() ? '#ef4444' : '#e5e5e5'}`, background: '#fafafa', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', color: '#111' }} />
                 <textarea value={form.notes} onChange={set('notes')} placeholder="Order notes (optional)" rows={2}
@@ -900,7 +923,7 @@ export default function MenuPage() {
                 {[
                   ['Subtotal', fmt(total)],
                   couponDiscount > 0 ? [`Discount (${appliedCoupon?.code})`, `−${fmt(couponDiscount)}`] : null,
-                  !isPickup && promoApplied ? ['Delivery (pay rider) 🎉 Promo', deliveryFee === 0 ? 'Free' : fmt(deliveryFee)] : (!isPickup && deliveryFee > 0 ? ['Delivery (pay rider)', fmt(deliveryFee)] : null),
+                  !isPickup && promoApplied ? ['Delivery (pay rider) Promo', deliveryFee === 0 ? 'Free' : fmt(deliveryFee)] : (!isPickup && deliveryFee > 0 ? ['Delivery (pay rider)', fmt(deliveryFee)] : null),
                   ['VAT', fmt(VAT)],
                 ].filter(Boolean).map(([label, value]) => (
                   <div key={label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: '0.85rem' }}>
@@ -912,7 +935,7 @@ export default function MenuPage() {
                 {!isPickup && deliveryFee > 0 && (
                   <div style={{ padding: '11px 13px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, marginBottom: 12 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
-                      <span style={{ fontSize: '0.85rem' }}>💡</span>
+                      <Lightbulb size={14} color="#92400e" style={{ flexShrink: 0 }} />
                       <span style={{ fontWeight: 800, fontSize: '0.75rem', color: '#92400e' }}>How payment works</span>
                     </div>
                     <p style={{ fontSize: '0.76rem', color: '#78350f', lineHeight: 1.5, margin: 0 }}>
@@ -1147,7 +1170,7 @@ function DisclaimerModal({ isOpen, onAgree }) {
       <div style={{ background: '#fff', borderRadius: 20, padding: 24, maxWidth: 400, width: '100%', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
           <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#fffbeb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <span style={{ fontSize: '1.5rem' }}>⚠️</span>
+            <AlertTriangle size={24} color="#92400e" />
           </div>
           <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#92400e' }}>Delivery Fee Notice</h3>
         </div>

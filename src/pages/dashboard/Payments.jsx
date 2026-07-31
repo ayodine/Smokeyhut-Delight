@@ -77,7 +77,7 @@ function PaymentsContent() {
   const [period, setPeriod]   = useState('');
   const [page, setPage]       = useState(1);
   const [total, setTotal]     = useState(0);
-  const methods = ['all', 'bank_transfer', 'cash', 'pos'];
+  const methods = ['all', 'paystack', 'bank_transfer', 'cash', 'pos'];
 
   useEffect(() => { setPage(1); }, [selectedStore, filter, dateFilter, period]);
   useEffect(() => {
@@ -102,7 +102,13 @@ function PaymentsContent() {
     const activePeriod = period ? getPeriodRange(period) : { from: dateFilter?.start, to: dateFilter?.end };
 
     if (selectedStore && selectedStore !== 'all') q = q.eq('store_id', selectedStore);
-    if (filter !== 'all') q = q.eq('payment_method', filter);
+    if (filter !== 'all') {
+      if (filter === 'paystack') {
+        q = q.or('payment_method.eq.paystack,payment_method.eq.card,payment_method.eq.online');
+      } else {
+        q = q.eq('payment_method', filter);
+      }
+    }
     if (activePeriod.from) q = q.gte('created_at', activePeriod.from + 'T00:00:00');
     if (activePeriod.to)   q = q.lte('created_at', activePeriod.to   + 'T23:59:59');
 
@@ -190,7 +196,7 @@ function PaymentsContent() {
           <div className="dash-filters" style={{ margin: 0 }}>
             {methods.map(m => (
               <button key={m} className={`dash-filter-btn${filter === m ? ' active' : ''}`} onClick={() => setFilter(m)}>
-                {m === 'all' ? 'All' : m === 'bank_transfer' ? 'Bank Transfer' : m.charAt(0).toUpperCase() + m.slice(1)}
+                {m === 'all' ? 'All' : m === 'paystack' ? 'Paystack' : m === 'bank_transfer' ? 'Bank Transfer' : m === 'pos' ? 'POS' : m.charAt(0).toUpperCase() + m.slice(1)}
               </button>
             ))}
           </div>

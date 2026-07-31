@@ -251,6 +251,57 @@ export default function Orders() {
   const [sourceFilter, setSourceFilter] = useState('all'); // 'all' | 'storefront' | 'whatsapp'
   const [newOrderAlert, setNewOrderAlert] = useState(null); // { id, name, total }
   
+  // Reschedule Delivery state
+  const [rescheduleDate, setRescheduleDate] = useState('');
+  const [showReschedulePicker, setShowReschedulePicker] = useState(false);
+  const [rescheduling, setRescheduling] = useState(false);
+  const [rescheduleErr, setRescheduleErr] = useState('');
+
+  const handleSaveReschedule = async (order) => {
+    setRescheduleErr('');
+    if (!rescheduleDate) {
+      setRescheduleErr('Please select a new delivery date.');
+      return;
+    }
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (rescheduleDate < todayStr) {
+      setRescheduleErr('Delivery date cannot be in the past.');
+      return;
+    }
+    setRescheduling(true);
+    try {
+      const oldDateFormatted = order.scheduled_delivery_date
+        ? new Date(`${order.scheduled_delivery_date}T00:00:00`).toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+        : new Date(order.created_at).toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+      const newDateFormatted = new Date(`${rescheduleDate}T00:00:00`).toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const adminName = user?.user_metadata?.full_name || user?.email || 'Admin';
+
+      const auditLog = `[Rescheduled] ${oldDateFormatted} → ${newDateFormatted} by ${adminName} at ${timeStr}`;
+      const updatedNotes = order.notes ? `${order.notes}\n${auditLog}` : auditLog;
+
+      const updatePayload = {
+        scheduled_delivery_date: rescheduleDate,
+        delivery_status: 'Rescheduled',
+        delivery_rescheduled_at: new Date().toISOString(),
+        delivery_rescheduled_by: adminName,
+        notes: updatedNotes,
+      };
+
+      const { error } = await supabase.from('orders').update(updatePayload).eq('id', order.id);
+      if (error) throw error;
+
+      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, ...updatePayload } : o));
+      showToast('Delivery Rescheduled', `Delivery date updated to ${newDateFormatted}`, 'success');
+      setShowReschedulePicker(false);
+      setRescheduleDate('');
+    } catch (err) {
+      showToast('Reschedule failed', err.message || 'Failed to update delivery date', 'error');
+    } finally {
+      setRescheduling(false);
+    }
+  };
+  
   // Auto-clear new order alert after 10 seconds
   useEffect(() => {
     if (!newOrderAlert) return;
@@ -643,20 +694,6 @@ export default function Orders() {
     if (validItems.length === 0) return;
     setSavingNew(true);
     try {
-      const linkedItems = validItems.filter(i => i.product);
-      if (linkedItems.length > 0) {
-        const { data: stockData } = await supabase.from('products').select('id,name,stock').in('id', linkedItems.map(i => i.product));
-        if (stockData) {
-          const stockMap = Object.fromEntries(stockData.map(p => [String(p.id), p]));
-          const failures = linkedItems.filter(i => { const p = stockMap[String(i.product)]; return p && p.stock < Number(i.qty); });
-          if (failures.length) {
-            const msg = failures.map(i => { const p = stockMap[String(i.product)]; return p.stock === 0 ? `${i.name} is out of stock` : `Only ${p.stock} left of ${i.name}`; }).join(' · ');
-            showToast('Stock check failed', msg, 'error');
-            setSavingNew(false);
-            return;
-          }
-        }
-      }
       const notesStr = `[via ${newOrder.channel}]${newOrder.notes ? '\n' + newOrder.notes : ''}`;
       const orderTimestamp = newOrder.orderDate
         ? new Date(`${newOrder.orderDate}T${newOrder.orderTime || '00:00'}:00`).toISOString()
@@ -1303,13 +1340,78 @@ export default function Orders() {
                     )}
                     {sel.status === 'cancelled' && (
                       <div style={{ marginTop: 12, padding: '12px 16px', background: 'rgba(239, 68, 68, 0.07)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: 10, fontSize: '0.85rem', color: '#dc2626' }}>
-                        <div style={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.72rem', letterSpacing: 0.5, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                          ⚠️ Cancellation Reason (Audit Log)
+                        <div style={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.72rem', letterSpacing: 0.5, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <AlertTriangle size={14} color="#dc2626" /> Cancellation Reason (Audit Log)
                         </div>
                         <div style={{ fontWeight: 600 }}>{sel.cancel_reason || 'No reason provided.'}</div>
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* ── Delivery Schedule ── */}
+                <div style={{ background: '#fff', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 20, marginBottom: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <h4 style={{ fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text-muted)', margin: 0 }}>Delivery Schedule</h4>
+                    {sel.delivery_status && (
+                      <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '3px 9px', borderRadius: 20, background: sel.delivery_status === 'Rescheduled' ? '#fef3c7' : '#dcfce7', color: sel.delivery_status === 'Rescheduled' ? '#92400e' : '#15803d' }}>
+                        {sel.delivery_status}
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ fontSize: '0.9rem', color: '#111', marginBottom: 14 }}>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: 4 }}>Current Delivery Date</div>
+                    <div style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--text)' }}>
+                      {sel.scheduled_delivery_date
+                        ? new Date(`${sel.scheduled_delivery_date}T00:00:00`).toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+                        : new Date(sel.created_at).toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+                      }
+                    </div>
+                    {sel.delivery_rescheduled_by && (
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                        Rescheduled by {sel.delivery_rescheduled_by} on {new Date(sel.delivery_rescheduled_at).toLocaleDateString()}
+                      </div>
+                    )}
+                  </div>
+
+                  {canManageOrder && (
+                    !showReschedulePicker ? (
+                      <button
+                        onClick={() => { setShowReschedulePicker(true); setRescheduleDate(sel.scheduled_delivery_date || ''); setRescheduleErr(''); }}
+                        style={{ padding: '8px 14px', borderRadius: 8, background: 'var(--card-bg2)', border: '1px solid var(--border-subtle)', color: 'var(--text)', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                      >
+                        <Clock size={14} /> Reschedule Delivery Date
+                      </button>
+                    ) : (
+                      <div style={{ marginTop: 10 }}>
+                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: 6, color: 'var(--text)' }}>Select New Delivery Date:</label>
+                        <DashCalendar
+                          value={rescheduleDate}
+                          onChange={val => { setRescheduleDate(typeof val === 'string' ? val : val?.start || ''); setRescheduleErr(''); }}
+                          placeholder="Select new delivery date"
+                          wrapperStyle={{ width: '100%' }}
+                        />
+                        {rescheduleErr && <div style={{ color: '#dc2626', fontSize: '0.78rem', marginTop: 6, marginBottom: 8 }}>{rescheduleErr}</div>}
+                        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                          <button
+                            onClick={() => handleSaveReschedule(sel)}
+                            disabled={rescheduling}
+                            style={{ flex: 1, padding: '8px 12px', borderRadius: 8, background: 'var(--red)', color: '#fff', border: 'none', fontWeight: 800, fontSize: '0.82rem', cursor: rescheduling ? 'not-allowed' : 'pointer', opacity: rescheduling ? 0.6 : 1 }}
+                          >
+                            {rescheduling ? 'Saving...' : 'Save New Delivery Date'}
+                          </button>
+                          <button
+                            onClick={() => { setShowReschedulePicker(false); setRescheduleErr(''); }}
+                            disabled={rescheduling}
+                            style={{ padding: '8px 12px', borderRadius: 8, background: '#fff', border: '1px solid var(--border-subtle)', color: 'var(--text-muted)', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer' }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  )}
                 </div>
 
               </div>

@@ -9,7 +9,7 @@ import { profileToPrefill } from '../../lib/customerProfile';
 import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher';
 import { fetchDeliveryPromo, getPromoDeliveryFee } from '../../lib/deliveryPromo';
 import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
-import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Search, MapPin, Tag, X, Copy, Banknote, Send } from 'lucide-react';
+import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Search, MapPin, Tag, X, Copy, Banknote, Send, ClipboardList, Utensils, AlertTriangle, Clock, Sparkles, Lightbulb } from 'lucide-react';
 
 const SUPABASE_URL        = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY   = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -246,7 +246,6 @@ export default function Checkout() {
       return false;
     }
     if (!/^\d{11}$/.test(form.phone.trim())) {
-      showToast('Invalid phone number', 'Please enter a valid 11-digit phone number.', 'error');
       return false;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
@@ -272,17 +271,7 @@ export default function Checkout() {
 
 
   const checkStock = async (itemsSnapshot) => {
-    const ids = itemsSnapshot.map(i => i.id).filter(Boolean);
-    if (!ids.length) return null;
-    const { data, error } = await publicSupabase
-      .from('products')
-      .select('id, name, stock')
-      .in('id', ids);
-    if (error || !data) return null; // fail open — don't block on a read error
-    const stockMap = Object.fromEntries(data.map(p => [String(p.id), p]));
-    return itemsSnapshot
-      .filter(i => i.id && stockMap[String(i.id)] && stockMap[String(i.id)].stock < i.qty)
-      .map(i => ({ ...i, available: stockMap[String(i.id)].stock }));
+    return null;
   };
 
   const handleBankTransfer = async (skipCutoffGate = false) => {
@@ -442,7 +431,7 @@ export default function Checkout() {
         <div style={{ marginBottom: 14, borderRadius: 14, overflow: 'hidden', border: '1.5px solid #fde68a', background: '#fffbeb' }}>
           <div style={{ padding: '12px 16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
-              <span style={{ fontSize: '0.95rem' }}>📋</span>
+              <ClipboardList size={16} color="#92400e" style={{ flexShrink: 0 }} />
               <span style={{ fontWeight: 800, fontSize: '0.82rem', color: '#92400e' }}>Please Note Our Policy</span>
             </div>
             <ul style={{ margin: 0, paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -467,9 +456,9 @@ export default function Checkout() {
             <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: idx < items.length - 1 ? '1px solid #f5f5f5' : 'none' }}>
               <div style={{ position: 'relative', flexShrink: 0 }}>
                 <div style={{ width: 52, height: 52, borderRadius: 10, overflow: 'hidden', background: '#f5f5f7', border: '1px solid #e5e5e5' }}>
-                  {item.image ? <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3rem' }}>🍗</div>}
+                  {item.image ? <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Utensils size={20} color="#ccc" /></div>}
                 </div>
-                <span style={{ position: 'absolute', top: -6, right: -6, background: '#111', color: '#fff', borderRadius: '50%', width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 900 }}>{item.qty}</span>
+                <span style={{ position: 'absolute', top: -6, right: -6, background: '#c0201f', color: '#fff', borderRadius: '50%', width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 900 }}>{item.qty}</span>
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
@@ -548,7 +537,7 @@ export default function Checkout() {
                     {/* Zone note/alias banner — shown when admin has added notes to this area */}
                     {selectedMatch.area?.aliases?.length > 0 && (
                       <div style={{ marginTop: 8, padding: '10px 13px', background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 10, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                        <span style={{ fontSize: '1rem', flexShrink: 0, lineHeight: 1.2 }}>📍</span>
+                        <MapPin size={16} color="#c0201f" style={{ flexShrink: 0, marginTop: 2 }} />
                         <div>
                           <div style={{ fontWeight: 800, fontSize: '0.72rem', color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Delivery Notice</div>
                           {selectedMatch.area.aliases.map((note, i) => (
@@ -588,8 +577,31 @@ export default function Checkout() {
               <input value={form.lastName} onChange={set('lastName')} onBlur={() => setTouched(t => ({ ...t, lastName: true }))} placeholder="Last name *"
                 style={{ flex: '1 1 140px', minWidth: 0, padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${touched.lastName && !form.lastName.trim() ? '#ef4444' : '#e5e5e5'}`, background: '#fafafa', fontSize: '0.9rem', outline: 'none', color: '#111', boxSizing: 'border-box' }} />
             </div>
-            <input value={form.phone} onChange={set('phone')} onBlur={() => setTouched(t => ({ ...t, phone: true }))} placeholder="Phone number *" type="tel"
-              style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${touched.phone && !form.phone.trim() ? '#ef4444' : '#e5e5e5'}`, background: '#fafafa', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', color: '#111' }} />
+            {(() => {
+              const phoneInvalid = touched.phone && (!form.phone.trim() || !/^\d{11}$/.test(form.phone.trim()));
+              return (
+                <div>
+                  <input
+                    value={form.phone}
+                    onChange={set('phone')}
+                    onBlur={() => setTouched(t => ({ ...t, phone: true }))}
+                    placeholder="Phone number (11 digits) *"
+                    type="tel"
+                    style={{
+                      width: '100%', padding: '12px 14px', borderRadius: 10,
+                      border: `1.5px solid ${phoneInvalid ? '#dc2626' : '#e5e5e5'}`,
+                      background: phoneInvalid ? '#fff5f5' : '#fafafa',
+                      fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', color: '#111'
+                    }}
+                  />
+                  {phoneInvalid && (
+                    <span style={{ color: '#dc2626', fontSize: '0.78rem', marginTop: 4, display: 'block', fontWeight: 600 }}>
+                      Please enter a valid 11-digit phone number.
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
             <input value={form.email} onChange={set('email')} onBlur={() => setTouched(t => ({ ...t, email: true }))} placeholder="Email address *" type="email"
               style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${touched.email && !form.email.trim() ? '#ef4444' : '#e5e5e5'}`, background: '#fafafa', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', color: '#111' }} />
             <textarea value={form.notes} onChange={set('notes')} placeholder="Order notes (optional)" rows={2}
@@ -639,7 +651,7 @@ export default function Checkout() {
             {[
               ['Subtotal', fmt(total)],
               couponDiscount > 0 ? [`Discount (${appliedCoupon?.code})`, `−${fmt(couponDiscount)}`] : null,
-              !isPickup && promoApplied ? ['Delivery (pay rider) 🎉 Promo', deliveryFee === 0 ? 'Free' : fmt(deliveryFee)] : (!isPickup && deliveryFee > 0 ? ['Delivery (pay rider)', fmt(deliveryFee)] : null),
+              !isPickup && promoApplied ? ['Delivery (pay rider) Promo', deliveryFee === 0 ? 'Free' : fmt(deliveryFee)] : (!isPickup && deliveryFee > 0 ? ['Delivery (pay rider)', fmt(deliveryFee)] : null),
               ['VAT', fmt(VAT)],
             ].filter(Boolean).map(([label, value]) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: '0.85rem' }}>
@@ -651,7 +663,7 @@ export default function Checkout() {
             {!isPickup && deliveryFee > 0 && (
               <div style={{ padding: '11px 13px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, marginBottom: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
-                  <span style={{ fontSize: '0.85rem' }}>💡</span>
+                  <Lightbulb size={14} color="#92400e" style={{ flexShrink: 0 }} />
                   <span style={{ fontWeight: 800, fontSize: '0.75rem', color: '#92400e' }}>How payment works</span>
                 </div>
                 <p style={{ fontSize: '0.76rem', color: '#78350f', lineHeight: 1.5, margin: 0 }}>
@@ -854,7 +866,7 @@ function DisclaimerModal({ isOpen, onAgree }) {
       <div style={{ background: '#fff', borderRadius: 20, padding: 24, maxWidth: 400, width: '100%', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
           <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#fffbeb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <span style={{ fontSize: '1.5rem' }}>⚠️</span>
+            <AlertTriangle size={24} color="#92400e" />
           </div>
           <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#92400e' }}>Delivery Fee Notice</h3>
         </div>
@@ -880,7 +892,7 @@ function CutoffModal({ isOpen, isPickup, onAgree, onClose }) {
       <div style={{ background: '#fff', borderRadius: 20, padding: 24, maxWidth: 400, width: '100%', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
           <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#fffbeb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <span style={{ fontSize: '1.5rem' }}>⏰</span>
+            <Clock size={24} color="#92400e" />
           </div>
           <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#92400e' }}>{isPickup ? 'Next-Day Pickup Notice' : 'Next-Day Delivery Notice'}</h3>
         </div>

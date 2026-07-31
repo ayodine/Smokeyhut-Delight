@@ -1,7 +1,7 @@
 import React from 'react';
 import { useCart } from '../context/CartContext';
 import { useToast } from '../context/ToastContext';
-import { Drumstick, Plus, ShoppingBag } from 'lucide-react';
+import { Drumstick, Plus, ShoppingBag, Clock } from 'lucide-react';
 import { getCutoffState } from '../lib/deliveryCutoff';
 
 const fmt = (n) => '₦' + Number(n).toLocaleString();
@@ -16,12 +16,6 @@ function ProductCard({ product, variant }) {
 
   const handleAdd = (e) => {
     e.stopPropagation();
-    const stock = Number(product.stock ?? Infinity);
-    const inCart = cartItems.find(i => i.id === product.id)?.qty ?? 0;
-    if (inCart >= stock) {
-      showToast('Max quantity reached', `Only ${stock} available`, 'error');
-      return;
-    }
     addItem(product);
     showToast(`${product.name} added!`, 'Check your cart', 'success');
   };
@@ -33,7 +27,7 @@ function ProductCard({ product, variant }) {
   const discountPct = hasDiscount
     ? Math.round((1 - Number(product.price) / Number(product.compare_price)) * 100)
     : 0;
-  const isOutOfStock = Number(product.stock) === 0;
+  const isOutOfStock = false;
   const cutoff = getCutoffState(product);
 
   /* ── Shopify-style white card (matches reference UI) ── */
@@ -81,8 +75,8 @@ function ProductCard({ product, variant }) {
             )}
           </div>
           {cutoff.hasCutoff && (
-            <div style={{ fontSize: '0.72rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '4px 8px', marginBottom: 10, fontWeight: 600, lineHeight: 1.3 }}>
-              ⏰ Orders for this product stop by {cutoff.cutoffLabel} for same day delivery
+            <div style={{ fontSize: '0.72rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '4px 8px', marginBottom: 10, fontWeight: 600, lineHeight: 1.3, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Clock size={12} color="#92400e" style={{ flexShrink: 0 }} /> Orders for this product stop by {cutoff.cutoffLabel} for same day delivery
             </div>
           )}
           {/* Full-width Add to Cart button */}
@@ -134,8 +128,8 @@ function ProductCard({ product, variant }) {
           <div className="product-name">{product.name}</div>
           <div className="product-desc-text">{product.shortDesc || product.desc}</div>
           {cutoff.hasCutoff && (
-            <div style={{ fontSize: '0.7rem', color: '#92400e', fontWeight: 600, marginTop: 4 }}>
-              ⏰ Orders for this product stop by {cutoff.cutoffLabel} for same day delivery
+            <div style={{ fontSize: '0.7rem', color: '#92400e', fontWeight: 600, marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Clock size={12} color="#92400e" style={{ flexShrink: 0 }} /> Orders for this product stop by {cutoff.cutoffLabel} for same day delivery
             </div>
           )}
           <div className="product-footer">
@@ -179,8 +173,8 @@ function ProductCard({ product, variant }) {
         <div className="product-name">{product.name}</div>
         <div className="product-desc-text">{product.shortDesc || product.desc}</div>
         {cutoff.hasCutoff && (
-          <div style={{ fontSize: '0.7rem', color: '#92400e', fontWeight: 600, marginTop: 4 }}>
-            ⏰ Orders for this product stop by {cutoff.cutoffLabel} for same day delivery
+          <div style={{ fontSize: '0.7rem', color: '#92400e', fontWeight: 600, marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Clock size={12} color="#92400e" style={{ flexShrink: 0 }} /> Orders for this product stop by {cutoff.cutoffLabel} for same day delivery
           </div>
         )}
         <div className="product-footer">
