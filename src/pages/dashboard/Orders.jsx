@@ -212,7 +212,7 @@ const emptyNewOrder = {
   orderDate: todayDate(), orderTime: currentTime(),
 };
 export default function Orders() {
-  const { userRole, userPermissions } = useAuth();
+  const { user, userRole, userPermissions } = useAuth();
   const { selectedStore } = useOutletContext() || {};
   const { showToast } = useToast();
   const isAdmin = userRole === 'Admin';
@@ -282,16 +282,13 @@ export default function Orders() {
 
       const updatePayload = {
         scheduled_delivery_date: rescheduleDate,
-        delivery_status: 'Rescheduled',
-        delivery_rescheduled_at: new Date().toISOString(),
-        delivery_rescheduled_by: adminName,
         notes: updatedNotes,
       };
 
       const { error } = await supabase.from('orders').update(updatePayload).eq('id', order.id);
       if (error) throw error;
 
-      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, ...updatePayload } : o));
+      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, ...updatePayload, delivery_status: 'Rescheduled', delivery_rescheduled_by: adminName, delivery_rescheduled_at: new Date().toISOString() } : o));
       showToast('Delivery Rescheduled', `Delivery date updated to ${newDateFormatted}`, 'success');
       setShowReschedulePicker(false);
       setRescheduleDate('');
@@ -1353,9 +1350,9 @@ export default function Orders() {
                 <div style={{ background: '#fff', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 20, marginBottom: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                     <h4 style={{ fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text-muted)', margin: 0 }}>Delivery Schedule</h4>
-                    {sel.delivery_status && (
-                      <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '3px 9px', borderRadius: 20, background: sel.delivery_status === 'Rescheduled' ? '#fef3c7' : '#dcfce7', color: sel.delivery_status === 'Rescheduled' ? '#92400e' : '#15803d' }}>
-                        {sel.delivery_status}
+                    {(sel.delivery_status === 'Rescheduled' || sel.notes?.includes('[Rescheduled]')) && (
+                      <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '3px 9px', borderRadius: 20, background: '#fef3c7', color: '#92400e' }}>
+                        Rescheduled
                       </span>
                     )}
                   </div>
