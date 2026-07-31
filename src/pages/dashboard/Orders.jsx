@@ -13,7 +13,7 @@ import DashCalendar from '../../components/DashCalendar';
 import ConfirmModal from '../../components/ConfirmModal';
 
 const fmt = (n) => '₦' + Number(n).toLocaleString();
-const statuses = ['all', 'pending_payment', 'pending', 'processing', 'shipped', 'delivered', 'cancelled'];
+const statuses = ['all', 'pending_payment', 'pending', 'processing', 'shipped', 'delivered', 'cancelled', 'rescheduled'];
 
 const PERIODS = [
   { label: 'Today',      value: 'today' },
@@ -504,17 +504,21 @@ export default function Orders() {
       return q;
     };
 
-    const [countsRes, storefrontRes, whatsappRes, productsRes, storesRes, zonesRes] = await Promise.all([
+    const [countsRes, storefrontRes, whatsappRes, rescheduledRes, productsRes, storesRes, zonesRes] = await Promise.all([
       supabase.rpc('get_orders_status_counts', { p_store_id, p_start, p_end }),
       getBaseCountQuery().eq('channel', 'storefront'),
       getBaseCountQuery().eq('channel', 'whatsapp'),
+      getBaseCountQuery().or('delivery_status.eq.Rescheduled,notes.ilike.%[Rescheduled]%'),
       supabase.from('products').select('id, name, price').order('name'),
       supabase.from('stores').select('id, name').eq('is_active', true).order('id'),
       fetchFlatAreas(supabase),
     ]);
 
     if (countsRes.data) {
-      setStatusCounts(countsRes.data);
+      setStatusCounts({
+        ...countsRes.data,
+        rescheduled: rescheduledRes.count || 0
+      });
     }
     setSourceCounts({
       storefront: storefrontRes.count || 0,
@@ -525,8 +529,13 @@ export default function Orders() {
     if (storeFilter) q = q.or(`store_id.eq.${storeFilter},store_id.is.null`);
     if (p_start) q = q.gte('created_at', p_start);
     if (p_end) q = q.lte('created_at', p_end);
-    if (filter !== 'all') q = q.eq('status', filter);
-    else q = q.neq('status', 'pending_payment'); // hide unpaid Paystack orders from the default view
+    if (filter === 'rescheduled') {
+      q = q.or('delivery_status.eq.Rescheduled,notes.ilike.%[Rescheduled]%');
+    } else if (filter !== 'all') {
+      q = q.eq('status', filter);
+    } else {
+      q = q.neq('status', 'pending_payment'); // hide unpaid Paystack orders from the default view
+    }
     if (sourceFilter !== 'all') q = q.eq('channel', sourceFilter);
 
     if (debouncedSearch.trim()) {
@@ -1116,6 +1125,7 @@ export default function Orders() {
           <button key={s} className={`dash-filter-btn${filter === s ? ' active' : ''}`} onClick={() => setFilter(s)}>
             {s === 'all' ? `All (${statusCounts.all || 0})`
               : s === 'pending_payment' ? `Awaiting Payment (${statusCounts.pending_payment || 0})`
+              : s === 'rescheduled' ? `Rescheduled Delivery (${statusCounts.rescheduled || 0})`
               : `${s.charAt(0).toUpperCase() + s.slice(1)} (${statusCounts[s] || 0})`}
           </button>
         ))}
@@ -1431,7 +1441,7 @@ export default function Orders() {
                         updateStatus(sel.id, e.target.value);
                       }
                     }}
-                    options={statuses.filter(s => s !== 'all' && s !== 'pending_payment' && (canCancelOrder || s !== 'cancelled')).map(s => ({ value: s, label: s }))}
+                    options={statuses.filter(s => s !== 'all' && s !== 'pending_payment' && s !== 'rescheduled' && (canCancelOrder || s !== 'cancelled')).map(s => ({ value: s, label: s }))}
                     disabled={!canManageOrder}
                   />
                 </div>
