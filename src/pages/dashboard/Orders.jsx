@@ -282,13 +282,16 @@ export default function Orders() {
 
       const updatePayload = {
         scheduled_delivery_date: rescheduleDate,
+        delivery_status: 'Rescheduled',
+        delivery_rescheduled_at: new Date().toISOString(),
+        delivery_rescheduled_by: adminName,
         notes: updatedNotes,
       };
 
       const { error } = await supabase.from('orders').update(updatePayload).eq('id', order.id);
       if (error) throw error;
 
-      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, ...updatePayload, delivery_status: 'Rescheduled', delivery_rescheduled_by: adminName, delivery_rescheduled_at: new Date().toISOString() } : o));
+      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, ...updatePayload } : o));
       showToast('Delivery Rescheduled', `Delivery date updated to ${newDateFormatted}`, 'success');
       setShowReschedulePicker(false);
       setRescheduleDate('');
