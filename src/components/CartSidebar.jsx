@@ -49,14 +49,27 @@ export default function CartSidebar({ isOpen, onClose }) {
         </div>
         {items.length > 0 && (
           <div className="cart-footer">
-            {items.reduce((acc, item) => {
-              const name = (item.name || '').toLowerCase();
-              return (name.includes('guinea') || name.includes('guineafowl')) ? acc + (item.qty || 0) : acc;
-            }, 0) === 2 && (
-              <div style={{ fontSize: '0.8rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 12px', marginBottom: 12, lineHeight: 1.4, fontWeight: 600 }}>
-                🎁 <strong>You're just 1 Guinea Fowl away from discounted delivery!</strong> Add one more to your order to qualify for this special promotion.
-              </div>
-            )}
+            {(() => {
+              const gfQty = items.reduce((acc, item) => {
+                const name = (item.name || '').toLowerCase();
+                return (name.includes('guinea') || name.includes('guineafowl')) ? acc + (item.qty || 0) : acc;
+              }, 0);
+              if (gfQty === 2) {
+                return (
+                  <div style={{ fontSize: '0.8rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 12px', marginBottom: 12, lineHeight: 1.4, fontWeight: 600 }}>
+                    🎁 <strong>You're just 1 Guinea Fowl away from discounted delivery!</strong> Add one more to your order to qualify for this special promotion.
+                  </div>
+                );
+              }
+              if (gfQty >= 3) {
+                return (
+                  <div style={{ fontSize: '0.8rem', color: '#166534', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 12px', marginBottom: 12, lineHeight: 1.4, fontWeight: 600 }}>
+                    🎉 <strong>Delivery Discount Unlocked!</strong> You've added 3+ Guinea Fowls and your delivery discount is automatically applied.
+                  </div>
+                );
+              }
+              return null;
+            })()}
             <div className="cart-subtotal">
               <span>Subtotal</span>
               <span>{fmt(total)}</span>

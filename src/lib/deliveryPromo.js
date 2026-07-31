@@ -19,22 +19,30 @@ export async function fetchDeliveryPromo(supabaseClient) {
   return data.value || null;
 }
 
-/**
- * Returns the promo delivery fee (number, 0 = free) or null when no override applies.
- * Qualification: the cart contains at least one promo product (other items are fine).
- * Never returns more than normalPrice, so the promo can only lower a fee.
- */
 export function getPromoDeliveryFee(promo, cartItems, areaName, normalPrice) {
-  if (!promo?.enabled) return null;
-  const productIds = (promo.product_ids || []).map(String);
-  if (productIds.length === 0) return null;
   if (!Array.isArray(cartItems) || cartItems.length === 0) return null;
-  if (!cartItems.some(i => productIds.includes(String(i.id)))) return null;
 
-  const key = (areaName || '').toLowerCase().trim();
-  const fee = promo.area_fees?.[key];
-  if (typeof fee !== 'number' || fee < 0) return null;
+  // 1. Calculate total Guinea Fowl quantity
+  const guineaFowlQty = cartItems.reduce((acc, item) => {
+    const name = (item.name || '').toLowerCase();
+    return (name.includes('guinea') || name.includes('guineafowl')) ? acc + (item.qty || 0) : acc;
+  }, 0);
+
+  // 2. Qualification: 3+ Guinea Fowls OR promo active in settings with matching promo product
+  const productIds = (promo?.product_ids || []).map(String);
+  const matchesProduct = promo?.enabled && productIds.length > 0 && cartItems.some(i => productIds.includes(String(i.id)));
+  const qualifies = guineaFowlQty >= 3 || matchesProduct;
+
+  if (!qualifies) return null;
 
   const normal = typeof normalPrice === 'number' ? normalPrice : Infinity;
-  return Math.min(fee, normal);
+  const key = (areaName || '').toLowerCase().trim();
+  const fee = promo?.area_fees?.[key];
+
+  if (typeof fee === 'number' && fee >= 0) {
+    return Math.min(fee, normal);
+  }
+
+  // Fallback discount for 3+ Guinea Fowls: 50% off normal delivery fee
+  return Math.round(normal * 0.5);
 }
