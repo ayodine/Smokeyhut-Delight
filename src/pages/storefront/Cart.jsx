@@ -118,6 +118,19 @@ export default function Cart() {
           })}
         </div>
 
+        {/* Promotional Upsell Banner for Guinea Fowl */}
+        {items.reduce((acc, item) => {
+          const name = (item.name || '').toLowerCase();
+          return (name.includes('guinea') || name.includes('guineafowl')) ? acc + (item.qty || 0) : acc;
+        }, 0) === 2 && (
+          <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 14, padding: '12px 16px', marginBottom: 14, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+            <span style={{ fontSize: '1.2rem', lineHeight: 1 }}>🎁</span>
+            <div style={{ fontSize: '0.85rem', color: '#92400e', fontWeight: 600, lineHeight: 1.45 }}>
+              <strong>You're just 1 Guinea Fowl away from discounted delivery!</strong> Add one more to your order to qualify for this special promotion.
+            </div>
+          </div>
+        )}
+
         {/* Order Summary Card */}
         <div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 14 }}>
           <div style={{ padding: '14px 16px', borderBottom: '1px solid #f0f0f0' }}>

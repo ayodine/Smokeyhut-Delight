@@ -118,15 +118,7 @@ export default function MenuPage() {
   const [payMethod, setPayMethod] = useState('paystack'); // 'paystack' | 'transfer'
   const activeMethod = (MANUAL_TRANSFER_ENABLED && paystackEnabled) ? payMethod : 'paystack';
 
-  // Disclaimer state
-  const [disclaimerAgreed, setDisclaimerAgreed] = useState(false);
-  const [showDisclaimerModal, setShowDisclaimerModal] = useState(false);
 
-  useEffect(() => {
-    if (checkoutOpen && deliveryType === 'delivery' && !disclaimerAgreed) {
-      setShowDisclaimerModal(true);
-    }
-  }, [checkoutOpen, deliveryType, disclaimerAgreed]);
 
   const applyCoupon = async () => {
     const code = couponCode.trim().toUpperCase();
@@ -245,6 +237,9 @@ export default function MenuPage() {
     setTouched({ firstName: true, lastName: true, phone: true, email: true, address: true, city: true });
     if (!form.firstName.trim() || !form.lastName.trim() || !form.phone.trim() || !form.email.trim()) {
       showToast('Required fields missing', 'Please fill in all required fields', 'error'); return false;
+    }
+    if (!/^\d{11}$/.test(form.phone.trim())) {
+      showToast('Invalid phone number', 'Please enter a valid 11-digit phone number.', 'error'); return false;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
       showToast('Invalid email', 'Please enter a valid email address', 'error'); return false;
@@ -709,6 +704,19 @@ export default function MenuPage() {
             )}
           </div>
 
+          {/* Promotional Upsell Banner for Guinea Fowl */}
+          {items.reduce((acc, item) => {
+            const name = (item.name || '').toLowerCase();
+            return (name.includes('guinea') || name.includes('guineafowl')) ? acc + (item.qty || 0) : acc;
+          }, 0) === 2 && (
+            <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 14, padding: '12px 14px', margin: '0 14px 12px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+              <span style={{ fontSize: '1.2rem', lineHeight: 1 }}>🎁</span>
+              <div style={{ fontSize: '0.83rem', color: '#92400e', fontWeight: 600, lineHeight: 1.45 }}>
+                <strong>You're just 1 Guinea Fowl away from discounted delivery!</strong> Add one more to your order to qualify for this special promotion.
+              </div>
+            </div>
+          )}
+
           {items.length > 0 && (<>
 
             {/* Delivery */}
@@ -874,7 +882,7 @@ export default function MenuPage() {
               </div>
               <div style={{ padding: '14px 16px' }}>
                 {[
-                  ['Subtotal (food)', fmt(total)],
+                  ['Subtotal', fmt(total)],
                   couponDiscount > 0 ? [`Discount (${appliedCoupon?.code})`, `−${fmt(couponDiscount)}`] : null,
                   !isPickup && promoApplied ? ['Delivery (pay rider) 🎉 Promo', deliveryFee === 0 ? 'Free' : fmt(deliveryFee)] : (!isPickup && deliveryFee > 0 ? ['Delivery (pay rider)', fmt(deliveryFee)] : null),
                   ['VAT', fmt(VAT)],
@@ -1111,7 +1119,7 @@ export default function MenuPage() {
         </div>
       </div>
 
-      <DisclaimerModal isOpen={showDisclaimerModal} onAgree={() => { setDisclaimerAgreed(true); setShowDisclaimerModal(false); }} />
+
     </>
   );
 }

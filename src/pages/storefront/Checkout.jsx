@@ -104,12 +104,6 @@ export default function Checkout() {
   const [appliedCoupon, setAppliedCoupon] = useState(null); // { id, code, type, value, discount }
   const [couponError, setCouponError] = useState('');
 
-  useEffect(() => {
-    if (deliveryType === 'delivery' && !disclaimerAgreed) {
-      setShowDisclaimerModal(true);
-    }
-  }, [deliveryType, disclaimerAgreed]);
-
   // Re-require acknowledgment whenever the cart contents change.
   useEffect(() => { setCutoffAck(false); }, [items]);
 
@@ -249,6 +243,10 @@ export default function Checkout() {
     setTouched({ firstName: true, lastName: true, phone: true, email: true, address: true, city: true });
     if (!form.firstName.trim() || !form.lastName.trim() || !form.phone.trim() || !form.email.trim()) {
       showToast('Required fields missing', 'Please fill in all required fields', 'error');
+      return false;
+    }
+    if (!/^\d{11}$/.test(form.phone.trim())) {
+      showToast('Invalid phone number', 'Please enter a valid 11-digit phone number.', 'error');
       return false;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
@@ -639,7 +637,7 @@ export default function Checkout() {
           </div>
           <div style={{ padding: '14px 16px' }}>
             {[
-              ['Subtotal (food)', fmt(total)],
+              ['Subtotal', fmt(total)],
               couponDiscount > 0 ? [`Discount (${appliedCoupon?.code})`, `−${fmt(couponDiscount)}`] : null,
               !isPickup && promoApplied ? ['Delivery (pay rider) 🎉 Promo', deliveryFee === 0 ? 'Free' : fmt(deliveryFee)] : (!isPickup && deliveryFee > 0 ? ['Delivery (pay rider)', fmt(deliveryFee)] : null),
               ['VAT', fmt(VAT)],
@@ -765,7 +763,6 @@ export default function Checkout() {
 
       </div>
 
-      <DisclaimerModal isOpen={showDisclaimerModal} onAgree={() => { setDisclaimerAgreed(true); setShowDisclaimerModal(false); }} />
       <CutoffModal
         isOpen={showCutoffModal}
         isPickup={deliveryType === 'pickup'}

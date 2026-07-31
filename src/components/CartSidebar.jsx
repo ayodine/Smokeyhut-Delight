@@ -49,6 +49,14 @@ export default function CartSidebar({ isOpen, onClose }) {
         </div>
         {items.length > 0 && (
           <div className="cart-footer">
+            {items.reduce((acc, item) => {
+              const name = (item.name || '').toLowerCase();
+              return (name.includes('guinea') || name.includes('guineafowl')) ? acc + (item.qty || 0) : acc;
+            }, 0) === 2 && (
+              <div style={{ fontSize: '0.8rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 12px', marginBottom: 12, lineHeight: 1.4, fontWeight: 600 }}>
+                🎁 <strong>You're just 1 Guinea Fowl away from discounted delivery!</strong> Add one more to your order to qualify for this special promotion.
+              </div>
+            )}
             <div className="cart-subtotal">
               <span>Subtotal</span>
               <span>{fmt(total)}</span>
