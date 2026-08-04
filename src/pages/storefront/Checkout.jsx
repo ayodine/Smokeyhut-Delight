@@ -157,7 +157,7 @@ export default function Checkout() {
   const deliveryFee = isPickup ? 0 : (allFreeShipping ? 0 : (promoApplied ? promoFee : (selectedMatch?.zone.price ?? 0)));
   const couponDiscount = appliedCoupon?.discount ?? 0;
   const grandTotal = Math.max(0, total + deliveryFee - couponDiscount) + VAT;
-  const amountToPayNow = Math.max(0, total - couponDiscount) + VAT;
+  const amountToPayNow = Math.max(0, total + deliveryFee - couponDiscount) + VAT;
 
   const applyCoupon = async () => {
     const code = couponCode.trim().toUpperCase();
@@ -651,7 +651,7 @@ export default function Checkout() {
             {[
               ['Subtotal', fmt(total)],
               couponDiscount > 0 ? [`Discount (${appliedCoupon?.code})`, `−${fmt(couponDiscount)}`] : null,
-              !isPickup && promoApplied ? ['Delivery (pay rider) Promo', deliveryFee === 0 ? 'Free' : fmt(deliveryFee)] : (!isPickup && deliveryFee > 0 ? ['Delivery (pay rider)', fmt(deliveryFee)] : null),
+              !isPickup && promoApplied ? ['Delivery Promo', deliveryFee === 0 ? 'Free' : fmt(deliveryFee)] : (!isPickup && deliveryFee > 0 ? ['Delivery Fee', fmt(deliveryFee)] : null),
               ['VAT', fmt(VAT)],
             ].filter(Boolean).map(([label, value]) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: '0.85rem' }}>
@@ -660,17 +660,6 @@ export default function Checkout() {
               </div>
             ))}
             <div style={{ height: 1, background: '#f0f0f0', margin: '10px 0' }} />
-            {!isPickup && deliveryFee > 0 && (
-              <div style={{ padding: '11px 13px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, marginBottom: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
-                  <Lightbulb size={14} color="#92400e" style={{ flexShrink: 0 }} />
-                  <span style={{ fontWeight: 800, fontSize: '0.75rem', color: '#92400e' }}>How payment works</span>
-                </div>
-                <p style={{ fontSize: '0.76rem', color: '#78350f', lineHeight: 1.5, margin: 0 }}>
-                  Pay <strong>{fmt(amountToPayNow)}</strong> for your food now. Pay the <strong>{fmt(deliveryFee)}</strong> delivery fee directly to the rider in cash on arrival.
-                </p>
-              </div>
-            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontWeight: 900, fontSize: '1rem', color: '#c0201f' }}>Pay now</span>
               <span style={{ fontWeight: 900, fontSize: '1.1rem', color: '#c0201f' }}>{fmt(amountToPayNow)}</span>
@@ -871,7 +860,7 @@ function DisclaimerModal({ isOpen, onAgree }) {
           <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#92400e' }}>Delivery Fee Notice</h3>
         </div>
         <p style={{ fontSize: '0.9rem', color: '#555', lineHeight: 1.6, marginBottom: 24 }}>
-          Pay the delivery fee directly to the rider. We no longer collect delivery payments on behalf of riders. If you mistakenly send the delivery fee to us, refunds will take 24–48 hours to process, and you will still be required to pay the rider directly upon delivery.
+          Please review your delivery details before placing your order.
         </p>
         <button
           onClick={onAgree}

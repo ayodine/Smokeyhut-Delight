@@ -83,7 +83,7 @@ export default function PaymentSuccess() {
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}><CheckCircle size={64} color="#16a34a" /></div>
         <h2 style={{ fontWeight: 900 }}>Payment confirmed! 🎉</h2>
         <p style={{ color: '#555', margin: '10px 0 4px' }}>Your order <strong style={{ color: '#c0201f' }}>{orderId}</strong> is being prepared.</p>
-        <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>A confirmation email is on its way. Pay the delivery fee to the rider in cash on arrival.</p>
+        <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>A confirmation email is on its way with your order details.</p>
         <Link to="/shop" className="btn-primary">Back to Menu</Link>
       </div></div>
     );
