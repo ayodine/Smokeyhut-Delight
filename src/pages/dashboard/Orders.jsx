@@ -329,35 +329,73 @@ export default function Orders() {
     return audioCtxRef.current;
   }, []);
 
-  // Play a two-tone chime using Web Audio API (no external file needed)
+  // Play a crisp, pleasant chime using Web Audio API
   const playChime = useCallback(async () => {
     try {
       const ctx = getAudioCtx();
-      // Browsers suspend AudioContext until first user gesture — resume it
-      if (ctx.state === 'suspended') await ctx.resume();
-      const compressor = ctx.createDynamicsCompressor();
-      compressor.connect(ctx.destination);
-      // 5-second chime: ascending then descending melody [freq, startSec, durationSec]
-      [
-        [880,  0.0,  0.8],
-        [1100, 0.9,  0.8],
-        [1320, 1.8,  0.8],
-        [1100, 2.7,  0.8],
-        [880,  3.6,  1.4],
-      ].forEach(([freq, start, dur]) => {
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+      }
+
+      const now = ctx.currentTime;
+      const masterGain = ctx.createGain();
+      masterGain.gain.setValueAtTime(0.9, now);
+      masterGain.connect(ctx.destination);
+
+      // Distinct 4-note ascending/bright chime (C6 -> E6 -> G6 -> C7)
+      const notes = [
+        { freq: 1046.50, start: 0.00, dur: 0.40 }, // C6
+        { freq: 1318.51, start: 0.15, dur: 0.40 }, // E6
+        { freq: 1567.98, start: 0.30, dur: 0.45 }, // G6
+        { freq: 2093.00, start: 0.45, dur: 0.85 }, // C7
+      ];
+
+      notes.forEach(({ freq, start, dur }) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + start);
+
+        gain.gain.setValueAtTime(0.0001, now + start);
+        gain.gain.exponentialRampToValueAtTime(0.7, now + start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + start + dur);
+
         osc.connect(gain);
-        gain.connect(compressor);
-        osc.type = 'triangle';
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0, ctx.currentTime + start);
-        gain.gain.linearRampToValueAtTime(1.0, ctx.currentTime + start + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur);
-        osc.start(ctx.currentTime + start);
-        osc.stop(ctx.currentTime + start + dur + 0.05);
+        gain.connect(masterGain);
+
+        osc.start(now + start);
+        osc.stop(now + start + dur + 0.05);
       });
-    } catch { /* ignore — browser may block audio without prior interaction */ }
+      return true;
+    } catch (err) {
+      console.warn('[Audio] Could not play notification chime:', err);
+      return false;
+    }
+  }, [getAudioCtx]);
+
+  // Auto-unlock Web Audio on first user interaction anywhere on the window
+  useEffect(() => {
+    const unlockAudio = () => {
+      try {
+        const ctx = getAudioCtx();
+        if (ctx && ctx.state === 'suspended') {
+          ctx.resume();
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    window.addEventListener('click', unlockAudio, { once: true });
+    window.addEventListener('keydown', unlockAudio, { once: true });
+    window.addEventListener('touchstart', unlockAudio, { once: true });
+
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
   }, [getAudioCtx]);
 
   const ordersRef = useRef(orders);
@@ -1002,7 +1040,14 @@ export default function Orders() {
         {/* Primary Action Buttons */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <button
-            onClick={() => playChime()}
+            onClick={async () => {
+              const ok = await playChime();
+              if (ok) {
+                showToast('🔔 Chime Active', 'Notification sound played. Order alerts are ready.', 'info');
+              } else {
+                showToast('Audio Notice', 'Click anywhere on the page first to enable sound.', 'warning');
+              }
+            }}
             title="Test notification alert chime"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', width: 38, height: 38,
