@@ -389,6 +389,7 @@ BEGIN
   WHERE cs.created_at >= v_start AND cs.created_at <= v_end
     AND (
       p_filter = 'all' OR
+      (p_filter = 'abandoned' AND cs.stage <> 'converted') OR
       (p_filter = 'recoverable' AND cs.stage <> 'converted' AND (cs.customer_phone IS NOT NULL OR cs.customer_email IS NOT NULL)) OR
       (p_filter = 'recovered' AND cs.recovered = true) OR
       (p_filter = cs.stage)
@@ -428,6 +429,7 @@ BEGIN
     WHERE cs.created_at >= v_start AND cs.created_at <= v_end
       AND (
         p_filter = 'all' OR
+        (p_filter = 'abandoned' AND cs.stage <> 'converted') OR
         (p_filter = 'recoverable' AND cs.stage <> 'converted' AND (cs.customer_phone IS NOT NULL OR cs.customer_email IS NOT NULL)) OR
         (p_filter = 'recovered' AND cs.recovered = true) OR
         (p_filter = cs.stage)
@@ -454,5 +456,26 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.get_abandoned_cart_list(timestamptz, timestamptz, text, text, int, int) TO authenticated;
+
+-- 8. Delete Cart Session RPC
+CREATE OR REPLACE FUNCTION public.delete_cart_session(p_session_id text)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NOT public.is_staff() THEN
+    RAISE EXCEPTION 'Unauthorized: staff only';
+  END IF;
+
+  DELETE FROM public.cart_sessions
+  WHERE session_id = p_session_id;
+
+  RETURN true;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.delete_cart_session(text) TO authenticated;
 
 COMMIT;

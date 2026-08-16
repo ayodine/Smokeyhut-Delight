@@ -3,7 +3,7 @@ import {
   ShoppingCart, DollarSign, TrendingDown, CheckCircle2,
   Phone, MessageCircle, Mail, MapPin, Clock, Search,
   RefreshCw, Download, ChevronLeft, ChevronRight, ExternalLink,
-  User, Check, AlertCircle, Eye, X, Smartphone, Globe, Calendar, Filter, Loader2
+  User, Check, AlertCircle, Eye, X, Smartphone, Globe, Calendar, Filter, Loader2, Trash2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../lib/supabase';
@@ -12,6 +12,7 @@ import { useToast } from '../../context/ToastContext';
 import { SkelKpiGrid, SkelTable, SkelDashHeader } from '../../components/Skeleton';
 import DashCalendar from '../../components/DashCalendar';
 import CustomSelect from '../../components/CustomSelect';
+import ConfirmModal from '../../components/ConfirmModal';
 
 const fmt = (n) => '₦' + Number(n || 0).toLocaleString();
 const PER_PAGE = 30;
@@ -151,6 +152,8 @@ function AbandonedCartsContent() {
   const [page, setPage] = useState(1);
   const [selectedSession, setSelectedSession] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
+  const [deletingSession, setDeletingSession] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Derive active date range
   const activeRange = useMemo(() => {
@@ -225,6 +228,43 @@ function AbandonedCartsContent() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const executeDelete = async () => {
+    if (!deletingSession) return;
+    setIsDeleting(true);
+    try {
+      const { error: rpcError } = await supabase.rpc('delete_cart_session', {
+        p_session_id: deletingSession.session_id
+      });
+
+      if (rpcError) {
+        const { error: delError } = await supabase
+          .from('cart_sessions')
+          .delete()
+          .eq('session_id', deletingSession.session_id);
+        if (delError) throw delError;
+      }
+
+      showToast('Cart Deleted', 'The cart session has been permanently removed.', 'success');
+
+      setRecords(prev => prev.filter(r => r.session_id !== deletingSession.session_id));
+      setTotalCount(prev => Math.max(0, prev - 1));
+
+      if (selectedSession?.session_id === deletingSession.session_id) {
+        setSelectedSession(null);
+      }
+      setDeletingSession(null);
+
+      // Refresh stats quietly
+      supabase.rpc('get_abandoned_cart_stats', { p_start: activeRange.start, p_end: activeRange.end })
+        .then(({ data }) => { if (data) setStats(data); });
+    } catch (err) {
+      console.error('Delete cart failed:', err);
+      showToast('Delete Failed', err.message || 'Could not delete cart session.', 'error');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const handleToggleRecovered = async (session, e) => {
     e?.stopPropagation();
@@ -833,6 +873,24 @@ function AbandonedCartsContent() {
                           >
                             <Eye size={14} />
                           </button>
+
+                          {/* Delete Cart */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeletingSession(record);
+                            }}
+                            title="Delete Abandoned Cart"
+                            style={{
+                              padding: '7px 9px', borderRadius: 8,
+                              background: '#fef2f2', color: '#dc2626', border: '1px solid #fee2e2',
+                              fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer',
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              transition: 'all 0.15s'
+                            }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1032,32 +1090,58 @@ function AbandonedCartsContent() {
             </div>
 
             {/* Modal Actions */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
               <button
-                onClick={(e) => handleToggleRecovered(selectedSession, e)}
+                onClick={() => setDeletingSession(selectedSession)}
                 style={{
                   padding: '9px 16px', borderRadius: 10,
-                  border: '1px solid var(--border-subtle)', background: selectedSession.recovered ? '#f1f5f9' : '#dcfce7',
-                  color: selectedSession.recovered ? '#64748b' : '#15803d',
-                  fontWeight: 800, fontSize: '0.84rem', cursor: 'pointer'
+                  border: '1px solid #fee2e2', background: '#fef2f2',
+                  color: '#dc2626', fontWeight: 800, fontSize: '0.84rem',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6
                 }}
               >
-                {selectedSession.recovered ? 'Mark as Unrecovered' : 'Mark as Recovered'}
+                <Trash2 size={14} /> Delete
               </button>
-              <button
-                onClick={() => setSelectedSession(null)}
-                style={{
-                  padding: '9px 16px', borderRadius: 10,
-                  border: 'none', background: '#0f172a', color: '#fff',
-                  fontWeight: 800, fontSize: '0.84rem', cursor: 'pointer'
-                }}
-              >
-                Close
-              </button>
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  onClick={(e) => handleToggleRecovered(selectedSession, e)}
+                  style={{
+                    padding: '9px 16px', borderRadius: 10,
+                    border: '1px solid var(--border-subtle)', background: selectedSession.recovered ? '#f1f5f9' : '#dcfce7',
+                    color: selectedSession.recovered ? '#64748b' : '#15803d',
+                    fontWeight: 800, fontSize: '0.84rem', cursor: 'pointer'
+                  }}
+                >
+                  {selectedSession.recovered ? 'Mark as Unrecovered' : 'Mark as Recovered'}
+                </button>
+                <button
+                  onClick={() => setSelectedSession(null)}
+                  style={{
+                    padding: '9px 16px', borderRadius: 10,
+                    border: 'none', background: '#0f172a', color: '#fff',
+                    fontWeight: 800, fontSize: '0.84rem', cursor: 'pointer'
+                  }}
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* Confirm Delete Modal */}
+      <ConfirmModal
+        isOpen={!!deletingSession}
+        onClose={() => setDeletingSession(null)}
+        onConfirm={executeDelete}
+        isLoading={isDeleting}
+        title="Delete Abandoned Cart?"
+        message={`Are you sure you want to remove this cart session for ${deletingSession?.customer_name || 'Guest'} (${fmt(deletingSession?.cart_total)})? This action cannot be undone.`}
+        confirmText="Delete Cart"
+        isDestructive={true}
+      />
     </div>
   );
 }
