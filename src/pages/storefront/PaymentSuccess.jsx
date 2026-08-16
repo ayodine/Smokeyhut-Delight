@@ -18,7 +18,7 @@ const SECOND_PHASE_MS = 10000;  // keep polling a little after the backup
 export default function PaymentSuccess() {
   const [params] = useSearchParams();
   const reference = params.get('reference') || params.get('trxref') || '';
-  const { clearCart } = useCart();
+  const { clearCart, markConverted } = useCart();
   // Derive the no-reference state at init so the effect never setStates synchronously.
   const [state, setState] = useState(reference ? 'checking' : 'noref'); // 'checking' | 'paid' | 'processing' | 'noref'
   const [orderId, setOrderId] = useState(null);
@@ -36,9 +36,16 @@ export default function PaymentSuccess() {
       setState('paid');
       if (!clearedRef.current) {
         clearedRef.current = true;
+        if (markConverted) {
+          markConverted(id);
+        }
         clearCart();
         if (typeof window !== 'undefined' && window.fbq) {
-          window.fbq('track', 'Purchase', { content_type: 'product', currency: 'NGN' });
+          window.fbq('track', 'Purchase', {
+            content_type: 'product',
+            currency: 'NGN',
+            order_id: id,
+          });
         }
       }
     };

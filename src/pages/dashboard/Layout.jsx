@@ -4,7 +4,7 @@ import { NavLink, Outlet, Navigate, useNavigate, useLocation } from 'react-route
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import {
-  BarChart2, Package, Truck, CreditCard, Store, ShoppingBag, Users,
+  BarChart2, Package, Truck, CreditCard, Store, ShoppingBag, ShoppingCart, Users,
   Settings, LogOut, Globe, Menu, UserCog, MapPin, Tag,
   DollarSign, TrendingUp, Receipt, Archive, ChevronDown, Boxes,
   ChevronLeft, ChevronRight, Shield, Briefcase, Bike, User
@@ -20,27 +20,59 @@ const ROLE_METADATA = {
 };
 
 const allNavItems = [
-  { to: '/admin',           icon: BarChart2,   label: 'Overview',  end: true, roles: ['Admin', 'Manager', 'Staff'] },
-  { to: '/admin/orders',    icon: Package,     label: 'Orders',               roles: ['Admin', 'Manager', 'Staff'] },
-  { to: '/admin/shipping',  icon: Truck,       label: 'Shipping',             roles: ['Admin', 'Manager', 'Rider', 'Staff'] },
-  { to: '/admin/payments',  icon: CreditCard,  label: 'Payments',             roles: ['Admin', 'Manager', 'Staff'] },
-  { to: '/admin/stores',    icon: Store,       label: 'Stores',               roles: ['Admin', 'Manager', 'Staff'] },
-  { to: '/admin/products',  icon: ShoppingBag, label: 'Products',             roles: ['Admin', 'Manager', 'Staff'] },
-  { to: '/admin/customers', icon: Users,       label: 'Customers',            roles: ['Admin', 'Manager', 'Staff'] },
-  { to: '/admin/stats',     icon: TrendingUp,  label: 'Stats',                roles: ['Admin', 'Manager', 'Staff'] },
-  { to: '/admin/products-sold', icon: Boxes,   label: 'Units Sold',           roles: ['Admin', 'Manager', 'Staff'] },
-  { to: '/admin/zones',     icon: MapPin,      label: 'Zones',                roles: ['Admin', 'Manager', 'Staff'] },
-  { to: '/admin/coupons',   icon: Tag,         label: 'Coupons',              roles: ['Admin', 'Manager', 'Staff'] },
+  // 1. Dashboard Overview
+  { to: '/admin', icon: BarChart2, label: 'Overview', end: true, roles: ['Admin', 'Manager', 'Staff'] },
+
+  // 2. Orders & Sales Group
   {
-    type: 'group', icon: DollarSign, label: 'Finance', roles: ['Admin', 'Manager', 'Staff'],
+    type: 'group', icon: Package, label: 'Orders & Sales', roles: ['Admin', 'Manager', 'Rider', 'Staff'],
     children: [
-      { to: '/admin/finance/sales',     icon: TrendingUp, label: 'Sales Report', roles: ['Admin', 'Manager', 'Staff'] },
-      { to: '/admin/finance/expenses',  icon: Receipt,    label: 'Expenses',     roles: ['Admin', 'Manager', 'Staff'] },
-      { to: '/admin/finance/inventory', icon: Archive,    label: 'Inventory',    roles: ['Admin', 'Manager', 'Staff'] },
+      { to: '/admin/orders',          icon: Package,      label: 'Orders',          roles: ['Admin', 'Manager', 'Staff'] },
+      { to: '/admin/abandoned-carts', icon: ShoppingCart, label: 'Abandoned Carts', roles: ['Admin', 'Manager', 'Staff'] },
+      { to: '/admin/shipping',        icon: Truck,        label: 'Shipping',        roles: ['Admin', 'Manager', 'Rider', 'Staff'] },
+      { to: '/admin/payments',        icon: CreditCard,   label: 'Payments',        roles: ['Admin', 'Manager', 'Staff'] },
     ],
   },
-  { to: '/admin/staff',     icon: UserCog,     label: 'Staff',                roles: ['Admin'] },
-  { to: '/admin/settings',  icon: Settings,    label: 'Settings',             roles: ['Admin', 'Manager', 'Staff'] },
+
+  // 3. Menu & Catalog Group
+  {
+    type: 'group', icon: ShoppingBag, label: 'Menu & Products', roles: ['Admin', 'Manager', 'Staff'],
+    children: [
+      { to: '/admin/products',        icon: ShoppingBag, label: 'Products',   roles: ['Admin', 'Manager', 'Staff'] },
+      { to: '/admin/products-sold',   icon: Boxes,       label: 'Units Sold', roles: ['Admin', 'Manager', 'Staff'] },
+      { to: '/admin/finance/inventory', icon: Archive,   label: 'Inventory',  roles: ['Admin', 'Manager', 'Staff'] },
+    ],
+  },
+
+  // 4. Customers & Growth
+  {
+    type: 'group', icon: Users, label: 'Customers & Promos', roles: ['Admin', 'Manager', 'Staff'],
+    children: [
+      { to: '/admin/customers', icon: Users, label: 'Customers', roles: ['Admin', 'Manager', 'Staff'] },
+      { to: '/admin/coupons',   icon: Tag,   label: 'Coupons',   roles: ['Admin', 'Manager', 'Staff'] },
+    ],
+  },
+
+  // 5. Finance & Analytics
+  {
+    type: 'group', icon: DollarSign, label: 'Finance & Analytics', roles: ['Admin', 'Manager', 'Staff'],
+    children: [
+      { to: '/admin/stats',            icon: TrendingUp, label: 'Stats',        roles: ['Admin', 'Manager', 'Staff'] },
+      { to: '/admin/finance/sales',    icon: TrendingUp, label: 'Sales Report', roles: ['Admin', 'Manager', 'Staff'] },
+      { to: '/admin/finance/expenses', icon: Receipt,    label: 'Expenses',     roles: ['Admin', 'Manager', 'Staff'] },
+    ],
+  },
+
+  // 6. Store Operations & Management
+  {
+    type: 'group', icon: Settings, label: 'Management', roles: ['Admin', 'Manager', 'Staff'],
+    children: [
+      { to: '/admin/stores',   icon: Store,    label: 'Stores',   roles: ['Admin', 'Manager', 'Staff'] },
+      { to: '/admin/zones',    icon: MapPin,   label: 'Zones',    roles: ['Admin', 'Manager', 'Staff'] },
+      { to: '/admin/staff',    icon: UserCog,  label: 'Staff',    roles: ['Admin'] },
+      { to: '/admin/settings', icon: Settings, label: 'Settings', roles: ['Admin', 'Manager', 'Staff'] },
+    ],
+  },
 ];
 
 function passesPermission(label, role, userPermissions) {
@@ -67,13 +99,43 @@ export default function DashboardLayout() {
   });
   const [selectedStore, setSelectedStore] = useState('all');
   const [storeOptions, setStoreOptions] = useState([]);
-  const [financeOpen, setFinanceOpen] = useState(location.pathname.startsWith('/admin/finance'));
+  
+  // Multi-group collapsible state
+  const [openGroups, setOpenGroups] = useState(() => {
+    const initial = {};
+    allNavItems.forEach(item => {
+      if (item.type === 'group') {
+        const isActive = item.children?.some(c => location.pathname.startsWith(c.to));
+        if (isActive) initial[item.label] = true;
+      }
+    });
+    return initial;
+  });
+
+  const toggleGroup = (groupLabel) => {
+    setOpenGroups(prev => ({
+      ...prev,
+      [groupLabel]: !prev[groupLabel]
+    }));
+  };
 
   useEffect(() => {
     localStorage.setItem('dash_sidebar_collapsed', sidebarCollapsed);
   }, [sidebarCollapsed]);
 
-
+  // Keep group open when navigating within its child routes
+  useEffect(() => {
+    allNavItems.forEach(item => {
+      if (item.type === 'group') {
+        const isActive = item.children?.some(c =>
+          c.to === '/admin' ? location.pathname === '/admin' : location.pathname.startsWith(c.to)
+        );
+        if (isActive) {
+          setOpenGroups(prev => ({ ...prev, [item.label]: true }));
+        }
+      }
+    });
+  }, [location.pathname]);
 
   const role = userRole || 'Admin';
 
@@ -120,11 +182,6 @@ export default function DashboardLayout() {
     };
   }, []);
 
-  // Keep finance sub-menu open when navigating within it
-  useEffect(() => {
-    if (location.pathname.startsWith('/admin/finance')) setFinanceOpen(true);
-  }, [location.pathname]);
-
   useEffect(() => {
     if (loading || !userRole || isRouteAllowed) return;
     navigate(firstAllowedPath || '/admin/shipping', { replace: true });
@@ -137,7 +194,6 @@ export default function DashboardLayout() {
 
   const roleMeta = ROLE_METADATA[role] || { icon: User, label: role };
   const RoleIcon = roleMeta.icon;
-  const isFinanceActive = location.pathname.startsWith('/admin/finance');
 
   if (loading) {
     return (
@@ -188,21 +244,26 @@ export default function DashboardLayout() {
           {navItems.map(item => {
             if (item.type === 'group') {
               const Icon = item.icon;
+              const isGroupOpen = !!openGroups[item.label];
+              const isGroupActive = item.children.some(child =>
+                child.to === '/admin' ? location.pathname === '/admin' : location.pathname.startsWith(child.to)
+              );
+
               return (
                 <div key={item.label}>
                   <button
-                    className={`dash-nav-item dash-nav-group-btn${isFinanceActive ? ' active' : ''}`}
-                    onClick={() => setFinanceOpen(v => !v)}
+                    className={`dash-nav-item dash-nav-group-btn${isGroupActive ? ' active' : ''}`}
+                    onClick={() => toggleGroup(item.label)}
                     title={sidebarCollapsed ? item.label : undefined}
                   >
                     <Icon className="nav-icon" size={18} />
                     <span className="nav-label">{item.label}</span>
                     <ChevronDown
                       size={14}
-                      style={{ marginLeft: 'auto', transform: financeOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}
+                      style={{ marginLeft: 'auto', transform: isGroupOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}
                     />
                   </button>
-                  {financeOpen && (
+                  {isGroupOpen && (
                     <div className="dash-nav-sub">
                       {item.children.map(child => {
                         const CIcon = child.icon;

@@ -43,7 +43,7 @@ const PaystackIcon = ({ size = 20 }) => (
 );
 
 export default function Checkout() {
-  const { items, total, clearCart } = useCart();
+  const { items, total, clearCart, cartSessionId, promoteStage, captureContact, markConverted } = useCart();
   const { showToast } = useToast();
   const { settings } = useSettings();
   const fmt = (n) => '₦' + Number(n).toLocaleString();
@@ -107,8 +107,11 @@ export default function Checkout() {
   // Re-require acknowledgment whenever the cart contents change.
   useEffect(() => { setCutoffAck(false); }, [items]);
 
-  // Track InitiateCheckout on page mount
+  // Track InitiateCheckout on page mount & promote stage
   useEffect(() => {
+    if (promoteStage) {
+      promoteStage('checkout');
+    }
     if (typeof window !== 'undefined' && window.fbq) {
       window.fbq('track', 'InitiateCheckout', {
         content_type: 'product',
@@ -117,7 +120,7 @@ export default function Checkout() {
         currency: 'NGN'
       });
     }
-  }, []);
+  }, [promoteStage]);
 
   // Fetch zones and active stores on mount
   useEffect(() => {
@@ -213,6 +216,26 @@ export default function Checkout() {
     }
   };
 
+  const handleContactBlur = (field) => {
+    setTouched(t => ({ ...t, [field]: true }));
+    if (captureContact) {
+      const customerName = `${form.firstName} ${form.lastName}`.trim();
+      const pickupStore = stores.find(s => s.id === selectedStoreId);
+      const deliveryAddress = isPickup
+        ? `Store Pickup — ${pickupStore?.name || 'Store'}`
+        : `${form.address}, ${selectedMatch?.area?.name || selectedMatch?.zone?.name || form.city}`;
+      const deliveryZoneName = isPickup ? 'Store Pickup' : (selectedMatch?.area?.name || selectedMatch?.zone?.name || '');
+
+      captureContact({
+        name: customerName,
+        phone: form.phone,
+        email: form.email,
+        deliveryAddress: form.address ? deliveryAddress : null,
+        deliveryZone: deliveryZoneName || null,
+      });
+    }
+  };
+
   const buildOrderPayload = (method) => {
     const customerName = `${form.firstName} ${form.lastName}`.trim();
     const pickupStore = stores.find(s => s.id === selectedStoreId);
@@ -234,6 +257,7 @@ export default function Checkout() {
       coupon_code: appliedCoupon?.code || null,
       coupon_discount: appliedCoupon?.discount || 0,
       status: 'pending',
+      session_id: cartSessionId || null,
       notes: (promoApplied ? '[via Website] [Delivery Promo]' : '[via Website]') + (form.notes ? '\n' + form.notes : ''),
     };
   };
@@ -325,6 +349,10 @@ export default function Checkout() {
       });
     }
 
+    if (markConverted) {
+      markConverted(orderId);
+    }
+
     clearCart();
     await incrementCouponUse();
     setTransferName('');
@@ -363,6 +391,15 @@ export default function Checkout() {
     }
 
     try {
+      if (typeof window !== 'undefined' && window.fbq) {
+        window.fbq('track', 'AddPaymentInfo', {
+          content_type: 'product',
+          value: Number(amountToPayNow),
+          currency: 'NGN',
+          num_items: itemsSnapshot.reduce((acc, i) => acc + i.qty, 0)
+        });
+      }
+
       // Hidden until paid: the webhook flips pending_payment -> pending.
       // No notify() and no clearCart() here — email fires on payment,
       // cart clears on the success page.
@@ -548,9 +585,9 @@ export default function Checkout() {
                     )}
                   </div>
                 )}
-                <input value={form.address} onChange={set('address')} onBlur={() => setTouched(t => ({ ...t, address: true }))} placeholder="Street address *"
+                <input value={form.address} onChange={set('address')} onBlur={() => handleContactBlur('address')} placeholder="Street address *"
                   style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${touched.address && !form.address.trim() ? '#ef4444' : '#e5e5e5'}`, background: '#fafafa', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', marginBottom: 10, color: '#111' }} />
-                <input value={form.city} onChange={set('city')} onBlur={() => setTouched(t => ({ ...t, city: true }))} placeholder="City *"
+                <input value={form.city} onChange={set('city')} onBlur={() => handleContactBlur('city')} placeholder="City *"
                   style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${touched.city && !form.city.trim() ? '#ef4444' : '#e5e5e5'}`, background: '#fafafa', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', color: '#111' }} />
               </>
             ) : (
@@ -572,9 +609,9 @@ export default function Checkout() {
           </div>
           <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <input value={form.firstName} onChange={set('firstName')} onBlur={() => setTouched(t => ({ ...t, firstName: true }))} placeholder="First name *"
+              <input value={form.firstName} onChange={set('firstName')} onBlur={() => handleContactBlur('firstName')} placeholder="First name *"
                 style={{ flex: '1 1 140px', minWidth: 0, padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${touched.firstName && !form.firstName.trim() ? '#ef4444' : '#e5e5e5'}`, background: '#fafafa', fontSize: '0.9rem', outline: 'none', color: '#111', boxSizing: 'border-box' }} />
-              <input value={form.lastName} onChange={set('lastName')} onBlur={() => setTouched(t => ({ ...t, lastName: true }))} placeholder="Last name *"
+              <input value={form.lastName} onChange={set('lastName')} onBlur={() => handleContactBlur('lastName')} placeholder="Last name *"
                 style={{ flex: '1 1 140px', minWidth: 0, padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${touched.lastName && !form.lastName.trim() ? '#ef4444' : '#e5e5e5'}`, background: '#fafafa', fontSize: '0.9rem', outline: 'none', color: '#111', boxSizing: 'border-box' }} />
             </div>
             {(() => {
@@ -584,7 +621,7 @@ export default function Checkout() {
                   <input
                     value={form.phone}
                     onChange={set('phone')}
-                    onBlur={() => setTouched(t => ({ ...t, phone: true }))}
+                    onBlur={() => handleContactBlur('phone')}
                     placeholder="Phone number (11 digits) *"
                     type="tel"
                     style={{
@@ -602,7 +639,7 @@ export default function Checkout() {
                 </div>
               );
             })()}
-            <input value={form.email} onChange={set('email')} onBlur={() => setTouched(t => ({ ...t, email: true }))} placeholder="Email address *" type="email"
+            <input value={form.email} onChange={set('email')} onBlur={() => handleContactBlur('email')} placeholder="Email address *" type="email"
               style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${touched.email && !form.email.trim() ? '#ef4444' : '#e5e5e5'}`, background: '#fafafa', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', color: '#111' }} />
             <textarea value={form.notes} onChange={set('notes')} placeholder="Order notes (optional)" rows={2}
               style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1.5px solid #e5e5e5', background: '#fafafa', fontSize: '0.9rem', outline: 'none', resize: 'none', boxSizing: 'border-box', fontFamily: 'inherit', color: '#111' }} />

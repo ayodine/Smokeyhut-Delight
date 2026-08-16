@@ -27,7 +27,7 @@
   --shadow-md: 0 6px 24px rgba(0,0,0,0.10);
   --shadow-lg: 0 16px 48px rgba(0,0,0,0.13);
   --r: 8px;
-  --sidebar-w: 260px;
+  --sidebar-w: 280px;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -781,18 +781,19 @@ section { padding: 80px 20px; }
 .dash-sidebar-logo .accent { color: var(--yellow-bright); }
 .dash-nav { padding: 16px 12px; flex: 1; }
 .dash-nav-item {
-  display: flex; align-items: center; gap: 12px; padding: 12px 16px;
-  border-radius: 8px; font-size: 0.88rem; font-weight: 600;
+  display: flex; align-items: center; justify-content: flex-start; gap: 12px; padding: 12px 16px;
+  border-radius: 8px; font-size: 0.88rem; font-weight: 600; text-align: left;
   color: rgba(255,255,255,0.55); cursor: pointer; transition: all 0.2s;
   margin-bottom: 4px; text-decoration: none; border: none; background: none; width: 100%;
 }
 .dash-nav-item:hover { color: #fff; background: rgba(255,255,255,0.08); }
 .dash-nav-item.active { color: #fff; background: var(--red); }
-.dash-nav-item .nav-icon { font-size: 1.1rem; width: 24px; text-align: center; }
-.dash-nav-group-btn { font-family: 'DM Sans', sans-serif; }
+.dash-nav-item .nav-icon { font-size: 1.1rem; width: 24px; text-align: center; flex-shrink: 0; }
+.dash-nav-item .nav-label { text-align: left; white-space: nowrap; }
+.dash-nav-group-btn { font-family: 'DM Sans', sans-serif; text-align: left; }
 .dash-nav-group-btn.active { color: #fff; background: rgba(255,255,255,0.1); }
 .dash-nav-sub { margin: 0 0 4px 12px; border-left: 2px solid rgba(255,255,255,0.12); padding-left: 4px; }
-.dash-nav-sub-item { font-size: 0.84rem !important; padding: 8px 12px !important; margin-bottom: 2px !important; }
+.dash-nav-sub-item { font-size: 0.84rem !important; padding: 8px 12px !important; margin-bottom: 2px !important; text-align: left !important; justify-content: flex-start !important; }
 .dash-sidebar-footer {
   padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.08);
   font-size: 0.78rem; color: rgba(255,255,255,0.35);

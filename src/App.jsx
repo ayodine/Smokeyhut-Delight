@@ -39,6 +39,7 @@ const ResetPassword = lazy(() => import('./pages/dashboard/ResetPassword'));
 const DashboardLayout = lazy(() => import('./pages/dashboard/Layout'));
 const Overview      = lazy(() => import('./pages/dashboard/Overview'));
 const Orders        = lazy(() => import('./pages/dashboard/Orders'));
+const AbandonedCarts = lazy(() => import('./pages/dashboard/AbandonedCarts'));
 const Shipping      = lazy(() => import('./pages/dashboard/Shipping'));
 const Payments      = lazy(() => import('./pages/dashboard/Payments'));
 const Stores        = lazy(() => import('./pages/dashboard/Stores'));
@@ -301,6 +302,7 @@ export default function App() {
                 }>
                   <Route index element={<Suspense fallback={null}><Overview /></Suspense>} />
                   <Route path="orders" element={<Suspense fallback={null}><Orders /></Suspense>} />
+                  <Route path="abandoned-carts" element={<Suspense fallback={null}><AbandonedCarts /></Suspense>} />
                   <Route path="shipping" element={<Suspense fallback={null}><Shipping /></Suspense>} />
                   <Route path="payments" element={<Suspense fallback={null}><Payments /></Suspense>} />
                   <Route path="stores" element={<Suspense fallback={null}><Stores /></Suspense>} />

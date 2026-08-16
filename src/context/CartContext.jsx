@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react';
+import { useCartTracker } from '../hooks/useCartTracker';
 
 const CartContext = createContext(null);
 
@@ -13,13 +14,25 @@ export function CartProvider({ children }) {
     }
   });
 
+  const {
+    sessionId,
+    trackCartChange,
+    promoteStage,
+    captureContact,
+    markConverted,
+  } = useCartTracker();
+
+  const total = useMemo(() => items.reduce((sum, i) => sum + i.price * i.qty, 0), [items]);
+  const itemCount = useMemo(() => items.reduce((sum, i) => sum + i.qty, 0), [items]);
+
   useEffect(() => {
     try {
       localStorage.setItem(CART_KEY, JSON.stringify(items));
     } catch {
       // localStorage unavailable (iOS Private Browsing) or quota exceeded — cart stays in memory
     }
-  }, [items]);
+    trackCartChange(items, total, itemCount);
+  }, [items, total, itemCount, trackCartChange]);
 
   const addItem = useCallback((product) => {
     setItems(prev => {
@@ -52,12 +65,21 @@ export function CartProvider({ children }) {
 
   const clearCart = useCallback(() => setItems([]), []);
 
-  const total = useMemo(() => items.reduce((sum, i) => sum + i.price * i.qty, 0), [items]);
-  const itemCount = useMemo(() => items.reduce((sum, i) => sum + i.qty, 0), [items]);
-
   const value = useMemo(
-    () => ({ items, addItem, removeItem, updateQty, clearCart, total, itemCount }),
-    [items, addItem, removeItem, updateQty, clearCart, total, itemCount]
+    () => ({
+      items,
+      addItem,
+      removeItem,
+      updateQty,
+      clearCart,
+      total,
+      itemCount,
+      cartSessionId: sessionId,
+      promoteStage,
+      captureContact,
+      markConverted,
+    }),
+    [items, addItem, removeItem, updateQty, clearCart, total, itemCount, sessionId, promoteStage, captureContact, markConverted]
   );
 
   return (
@@ -68,3 +90,4 @@ export function CartProvider({ children }) {
 }
 
 export const useCart = () => useContext(CartContext);
+
