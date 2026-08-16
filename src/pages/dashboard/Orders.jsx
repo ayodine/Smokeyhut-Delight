@@ -318,6 +318,8 @@ export default function Orders() {
   }, [filter, sourceFilter, page]);
 
   const [realtimeStatus, setRealtimeStatus] = useState('connecting'); // 'connecting' | 'ok' | 'error'
+  const [isRinging, setIsRinging] = useState(false);
+  const ringTimeoutRef = useRef(null);
   const audioCtxRef = useRef(null);
   const mountedRef = useRef(true);
 
@@ -329,7 +331,7 @@ export default function Orders() {
     return audioCtxRef.current;
   }, []);
 
-  // Play a crisp, pleasant chime using Web Audio API
+  // Play the original 5-second melodic chime using Web Audio API
   const playChime = useCallback(async () => {
     try {
       const ctx = getAudioCtx();
@@ -337,39 +339,42 @@ export default function Orders() {
         await ctx.resume();
       }
 
+      // Trigger red ringing visual state for the duration of the 5-second chime
+      setIsRinging(true);
+      if (ringTimeoutRef.current) clearTimeout(ringTimeoutRef.current);
+      ringTimeoutRef.current = setTimeout(() => {
+        setIsRinging(false);
+      }, 5000);
+
+      const compressor = ctx.createDynamicsCompressor();
+      compressor.connect(ctx.destination);
+
       const now = ctx.currentTime;
-      const masterGain = ctx.createGain();
-      masterGain.gain.setValueAtTime(0.9, now);
-      masterGain.connect(ctx.destination);
 
-      // Distinct 4-note ascending/bright chime (C6 -> E6 -> G6 -> C7)
-      const notes = [
-        { freq: 1046.50, start: 0.00, dur: 0.40 }, // C6
-        { freq: 1318.51, start: 0.15, dur: 0.40 }, // E6
-        { freq: 1567.98, start: 0.30, dur: 0.45 }, // G6
-        { freq: 2093.00, start: 0.45, dur: 0.85 }, // C7
-      ];
-
-      notes.forEach(({ freq, start, dur }) => {
+      // Original 5-second chime: ascending then descending melody [freq, startSec, durationSec]
+      [
+        [880,  0.0,  0.8],
+        [1100, 0.9,  0.8],
+        [1320, 1.8,  0.8],
+        [1100, 2.7,  0.8],
+        [880,  3.6,  1.4],
+      ].forEach(([freq, start, dur]) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
-
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, now + start);
-
-        gain.gain.setValueAtTime(0.0001, now + start);
-        gain.gain.exponentialRampToValueAtTime(0.7, now + start + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + start + dur);
-
         osc.connect(gain);
-        gain.connect(masterGain);
-
+        gain.connect(compressor);
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, now + start);
+        gain.gain.setValueAtTime(0.0001, now + start);
+        gain.gain.linearRampToValueAtTime(1.0, now + start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + start + dur);
         osc.start(now + start);
         osc.stop(now + start + dur + 0.05);
       });
       return true;
     } catch (err) {
       console.warn('[Audio] Could not play notification chime:', err);
+      setIsRinging(false);
       return false;
     }
   }, [getAudioCtx]);
@@ -1043,20 +1048,24 @@ export default function Orders() {
             onClick={async () => {
               const ok = await playChime();
               if (ok) {
-                showToast('🔔 Chime Active', 'Notification sound played. Order alerts are ready.', 'info');
+                showToast('🔔 Chime Active', 'Notification chime playing. Order alerts are ready.', 'info');
               } else {
                 showToast('Audio Notice', 'Click anywhere on the page first to enable sound.', 'warning');
               }
             }}
-            title="Test notification alert chime"
+            title={isRinging ? "Order notification chime playing" : "Test notification alert chime"}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', width: 38, height: 38,
               borderRadius: 10, cursor: 'pointer',
-              border: '1px solid var(--border-subtle)', background: 'var(--white)',
-              color: 'var(--text-muted)', transition: 'all 0.15s'
+              border: `1.5px solid ${isRinging ? 'var(--red)' : 'var(--border-subtle)'}`,
+              background: isRinging ? 'var(--red)' : 'var(--white)',
+              color: isRinging ? '#ffffff' : 'var(--text-muted)',
+              boxShadow: isRinging ? '0 0 14px rgba(192, 32, 31, 0.45)' : 'none',
+              transform: isRinging ? 'scale(1.05)' : 'scale(1)',
+              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
             }}
           >
-            <BellRing size={16} />
+            <BellRing size={16} className={isRinging ? 'bell-shake' : ''} />
           </button>
 
           {canCreateOrder && (

@@ -53,9 +53,10 @@ button { font-family: 'DM Sans', sans-serif; }
   white-space: nowrap; gap: 60px; padding-right: 40px;
 }
 @keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-@keyframes pulse { 0%, 100% { opacity: 0.6; } 50% { opacity: 0.3; } }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .spin { animation: spin 0.8s linear infinite; display: inline-block; }
+@keyframes bellShake { 0%, 100% { transform: rotate(0deg); } 20%, 60% { transform: rotate(-16deg); } 40%, 80% { transform: rotate(16deg); } }
+.bell-shake { animation: bellShake 0.6s ease-in-out infinite; display: inline-block; }
 @keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
 .skel {
   background: linear-gradient(90deg, var(--black2) 25%, rgba(255,255,255,0.06) 50%, var(--black2) 75%);
