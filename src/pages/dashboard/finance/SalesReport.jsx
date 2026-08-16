@@ -4,6 +4,7 @@ import { TrendingUp, TrendingDown, DollarSign, ShoppingBag, Truck, Tag, Calendar
 import * as XLSX from 'xlsx';
 import { supabase } from '../../../lib/supabase';
 import DashCalendar from '../../../components/DashCalendar';
+import CustomSelect from '../../../components/CustomSelect';
 
 const fmt = v => `₦${Number(v || 0).toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
 
@@ -237,30 +238,29 @@ export default function SalesReport() {
           <h2 style={{ fontFamily: "'Mona Sans','Mona-Sans','Helvetica Neue',sans-serif", fontSize: '1.4rem', fontWeight: 900, marginBottom: 4 }}>Sales Report</h2>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Revenue, gross, and net profit overview.</p>
         </div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          {PERIODS.map(p => (
-            <button
-              key={p.value}
-              onClick={() => { setPeriod(p.value); setCustomDate({ start: null, end: null }); }}
-              style={{
-                padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border-subtle)',
-                background: period === p.value ? 'var(--red)' : 'var(--white)',
-                color:      period === p.value ? '#fff' : 'var(--text)',
-                fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer', fontFamily: "'DM Sans',sans-serif",
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ width: 140 }}>
+            <CustomSelect
+              value={period}
+              onChange={(e) => {
+                setPeriod(e.target.value);
+                setCustomDate({ start: null, end: null });
               }}
-            >
-              {p.label}
-            </button>
-          ))}
+              options={PERIODS}
+            />
+          </div>
           <DashCalendar
             range={true}
             value={customDate}
             onChange={v => { setCustomDate(v); if (v && (v.start || v.end)) setPeriod('custom'); }}
             placeholder="Pick a date range"
           />
-          {((customDate && (customDate.start || customDate.end)) || period === 'custom') && (
-            <button onClick={() => { setCustomDate({ start: null, end: null }); setPeriod('month'); }} style={{ background: 'none', border: 'none', fontSize: '0.8rem', color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 600 }}>
-              Clear dates
+          {((customDate && (customDate.start || customDate.end)) || (period && period !== 'month')) && (
+            <button
+              onClick={() => { setCustomDate({ start: null, end: null }); setPeriod('month'); }}
+              style={{ background: 'none', border: 'none', fontSize: '0.78rem', color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 600, padding: '4px 6px' }}
+            >
+              Reset
             </button>
           )}
           <button

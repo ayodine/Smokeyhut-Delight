@@ -968,119 +968,169 @@ export default function Orders() {
           }} />
         </div>
       )}
-      <div className="dash-card-header" style={{ marginBottom: 20, alignItems: 'flex-start' }}>
+      {/* Redesigned Orders Page Header & Action Bar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, flexWrap: 'wrap', gap: 14 }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div className="dash-card-title" style={{ fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif", fontSize: '1.4rem' }}>
+            <div className="dash-card-title" style={{ fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif", fontSize: '1.4rem', fontWeight: 800 }}>
               Orders Management
             </div>
-            {/* Realtime status dot */}
-            <span title={realtimeStatus === 'ok' ? 'Live updates active' : realtimeStatus === 'error' ? 'Live updates failed — refresh' : 'Connecting…'} style={{
-              display: 'inline-block', width: 9, height: 9, borderRadius: '50%', flexShrink: 0,
-              background: realtimeStatus === 'ok' ? '#22c55e' : realtimeStatus === 'error' ? '#ef4444' : '#f59e0b',
-              boxShadow: realtimeStatus === 'ok' ? '0 0 0 3px rgba(34,197,94,0.2)' : 'none',
-            }} />
+            {/* Realtime status badge */}
+            <span
+              title={realtimeStatus === 'ok' ? 'Live updates active' : realtimeStatus === 'error' ? 'Live updates failed — refresh' : 'Connecting…'}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 8px', borderRadius: 12,
+                fontSize: '0.72rem', fontWeight: 700,
+                background: realtimeStatus === 'ok' ? '#dcfce7' : realtimeStatus === 'error' ? '#fee2e2' : '#fef3c7',
+                color: realtimeStatus === 'ok' ? '#15803d' : realtimeStatus === 'error' ? '#b91c1c' : '#b45309',
+                border: `1px solid ${realtimeStatus === 'ok' ? '#bbf7d0' : realtimeStatus === 'error' ? '#fecaca' : '#fde68a'}`,
+              }}
+            >
+              <span style={{
+                width: 6, height: 6, borderRadius: '50%',
+                background: realtimeStatus === 'ok' ? '#22c55e' : realtimeStatus === 'error' ? '#ef4444' : '#f59e0b',
+                display: 'inline-block'
+              }} />
+              {realtimeStatus === 'ok' ? 'Live' : realtimeStatus === 'error' ? 'Offline' : 'Syncing'}
+            </span>
+          </div>
+          <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)', marginTop: 3 }}>
+            Track, fulfill, and manage all customer & store orders
           </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
-          {/* Period filter */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            {PERIODS.map(p => (
+
+        {/* Primary Action Buttons */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            onClick={() => playChime()}
+            title="Test notification alert chime"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', width: 38, height: 38,
+              borderRadius: 10, cursor: 'pointer',
+              border: '1px solid var(--border-subtle)', background: 'var(--white)',
+              color: 'var(--text-muted)', transition: 'all 0.15s'
+            }}
+          >
+            <BellRing size={16} />
+          </button>
+
+          {canCreateOrder && (
+            <>
               <button
-                key={p.value}
-                onClick={() => setPeriod(p.value)}
-                style={{
-                  padding: '6px 14px', borderRadius: 20,
-                  border: `1px solid ${period === p.value ? 'var(--red)' : 'var(--border-subtle)'}`,
-                  background: period === p.value ? 'var(--red)' : 'var(--white)',
-                  color: period === p.value ? '#fff' : 'var(--text)',
-                  fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer',
-                  fontFamily: "'DM Sans',sans-serif", transition: 'all 0.15s',
+                className="btn-secondary"
+                onClick={() => {
+                  if (bulkOrders.length === 1 && !bulkOrders[0].name) {
+                    setBulkOrders([{ ...emptyNewOrder, orderDate: todayDate(), orderTime: currentTime() }]);
+                  }
+                  setShowBulkOrder(true);
                 }}
-              >{p.label}</button>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <div style={{ position: 'relative' }}>
-                <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 12, top: 12 }} />
-                <input
-                  className="dash-search"
-                  placeholder="Search orders..."
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') {
-                      setDebouncedSearch(search);
-                    }
-                  }}
-                  style={{ paddingLeft: 40, paddingRight: search ? 30 : 12 }}
-                />
-                {search && (
-                  <button
-                    onClick={() => {
-                      setSearch('');
-                      setDebouncedSearch('');
-                    }}
-                    style={{
-                      position: 'absolute',
-                      right: 10,
-                      top: 10,
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--text-muted)',
-                      cursor: 'pointer',
-                      padding: 2,
-                      fontSize: '0.85rem'
-                    }}
-                    title="Clear search"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px',
+                  fontSize: '0.84rem', borderRadius: 10, border: '1px solid var(--border-subtle)',
+                  background: 'var(--white)', color: 'var(--text)', cursor: 'pointer',
+                  fontFamily: "'DM Sans',sans-serif", fontWeight: 700
+                }}
+              >
+                <Layers size={16} /> Bulk Orders
+              </button>
               <button
                 className="btn-primary"
-                onClick={() => setDebouncedSearch(search)}
-                style={{ padding: '8px 16px', fontSize: '0.82rem', height: 38, display: 'flex', alignItems: 'center' }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '9px 18px',
+                  fontSize: '0.84rem', borderRadius: 10, fontWeight: 700
+                }}
+                onClick={() => {
+                  setNewOrder({ ...emptyNewOrder, orderDate: todayDate(), orderTime: currentTime() });
+                  setShowNewOrder(true);
+                }}
               >
-                Search
+                <Plus size={16} /> New Order
               </button>
-            </div>
-            <DashCalendar
-              range={true}
-              value={dateFilter}
-              onChange={v => { setDateFilter(v); if (v && (v.start || v.end)) setPeriod('all'); }}
-              placeholder="Filter by date range"
-            />
-            {/* Test chime button — helps "unlock" AudioContext after first interaction */}
-            <button
-              onClick={() => playChime()}
-              title="Test notification sound"
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px',
-                fontSize: '0.85rem', whiteSpace: 'nowrap', borderRadius: 8, cursor: 'pointer',
-                border: '1px solid var(--border-subtle)', background: 'var(--white)',
-                color: 'var(--text-muted)', fontFamily: "'DM Sans',sans-serif",
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Filter & Search Bar Row */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        flexWrap: 'wrap', gap: 12, marginBottom: 20
+      }}>
+        {/* Date & Period Controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          {/* Period Dropdown */}
+          <div style={{ width: 140 }}>
+            <CustomSelect
+              value={period}
+              onChange={(e) => {
+                setPeriod(e.target.value);
+                setDateFilter({ start: null, end: null });
               }}
-            >🔔</button>
-            {canCreateOrder && (
-              <>
-                <button
-                  className="btn-secondary"
-                  onClick={() => { if(bulkOrders.length === 1 && !bulkOrders[0].name) { setBulkOrders([{ ...emptyNewOrder, orderDate: todayDate(), orderTime: currentTime() }]); } setShowBulkOrder(true); }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', fontSize: '0.85rem', whiteSpace: 'nowrap', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--white)', color: 'var(--text)', cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", fontWeight: 700 }}
-                >
-                  <Layers size={16} /> Bulk Orders
-                </button>
-                <button
-                  className="btn-primary"
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', fontSize: '0.85rem', whiteSpace: 'nowrap' }}
-                  onClick={() => { setNewOrder({ ...emptyNewOrder, orderDate: todayDate(), orderTime: currentTime() }); setShowNewOrder(true); }}
-                >
-                  <Plus size={16} /> New Order
-                </button>
-              </>
+              options={PERIODS}
+            />
+          </div>
+
+          {/* Custom Date Range Picker */}
+          <DashCalendar
+            range={true}
+            value={dateFilter}
+            onChange={v => {
+              setDateFilter(v);
+              if (v && (v.start || v.end)) setPeriod('all');
+            }}
+            placeholder="Filter date range"
+          />
+
+          {((dateFilter && (dateFilter.start || dateFilter.end)) || (period && period !== 'month')) && (
+            <button
+              onClick={() => {
+                setDateFilter({ start: null, end: null });
+                setPeriod('month');
+              }}
+              style={{
+                background: 'none', border: 'none', fontSize: '0.78rem',
+                color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 600, padding: '4px 6px'
+              }}
+            >
+              Reset
+            </button>
+          )}
+        </div>
+
+        {/* Instant Search Bar */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 260, flex: '1', maxWidth: 360 }}>
+          <div style={{ position: 'relative', width: '100%' }}>
+            <Search size={15} color="var(--text-muted)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+            <input
+              className="dash-search"
+              placeholder="Search orders, phone, ID..."
+              value={search}
+              onChange={e => {
+                setSearch(e.target.value);
+                setDebouncedSearch(e.target.value);
+              }}
+              style={{
+                width: '100%', padding: '9px 32px 9px 36px',
+                borderRadius: 10, border: '1.5px solid var(--border-subtle)',
+                background: 'var(--white)', fontSize: '0.84rem', outline: 'none',
+                boxSizing: 'border-box'
+              }}
+            />
+            {search && (
+              <button
+                onClick={() => {
+                  setSearch('');
+                  setDebouncedSearch('');
+                }}
+                style={{
+                  position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                  background: 'none', border: 'none', color: 'var(--text-muted)',
+                  cursor: 'pointer', padding: 2, fontSize: '0.85rem'
+                }}
+                title="Clear search"
+              >
+                ✕
+              </button>
             )}
           </div>
         </div>

@@ -4,6 +4,7 @@ import { Package, Search, X } from 'lucide-react';
 import { SkelKpiGrid, SkelFilterPills, SkelTable } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import DashCalendar from '../../components/DashCalendar';
+import CustomSelect from '../../components/CustomSelect';
 import { STATUS_FILTERS, DEFAULT_STATUS, toStatusParam, statusLabelFor } from '../../lib/orderStatusFilter';
 
 const fmt    = (n) => '₦' + Number(n).toLocaleString();
@@ -12,10 +13,10 @@ const fmtNum = (n) => Number(n).toLocaleString();
 const STATUS_COLOR = { pending: '#f59e0b', pending_payment: '#f59e0b', paid: '#3b82f6', processing: '#3b82f6', shipped: '#8b5cf6', delivered: '#16a34a', cancelled: '#ef4444' };
 
 const PERIODS = [
-  { key: 'today',  label: 'Today' },
-  { key: 'week',   label: 'This Week' },
-  { key: 'month',  label: 'This Month' },
-  { key: 'all',    label: 'All Time' },
+  { value: 'today',  label: 'Today' },
+  { value: 'week',   label: 'This Week' },
+  { value: 'month',  label: 'This Month' },
+  { value: 'all',    label: 'All Time' },
 ];
 
 // Card colour variants cycled through for visual variety.
@@ -204,16 +205,12 @@ export default function ProductsSold() {
               </button>
             ))}
           </div>
-          <div className="dash-segmented-control">
-            {PERIODS.map(p => (
-              <button
-                key={p.key}
-                className={`dash-filter-btn${period === p.key ? ' active' : ''}`}
-                onClick={() => { setPeriod(p.key); setCustomDate({ start: null, end: null }); }}
-              >
-                {p.label}
-              </button>
-            ))}
+          <div style={{ width: 140 }}>
+            <CustomSelect
+              value={period}
+              onChange={(e) => { setPeriod(e.target.value); setCustomDate({ start: null, end: null }); }}
+              options={PERIODS}
+            />
           </div>
           <DashCalendar
             range={true}

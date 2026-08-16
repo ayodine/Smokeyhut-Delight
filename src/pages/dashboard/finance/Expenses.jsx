@@ -230,21 +230,12 @@ export default function Expenses() {
       </div>
 
       {/* Period filter */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
-        {PERIODS.map(p => (
-          <button
-            key={p.value}
-            onClick={() => setPeriod(p.value)}
-            style={{
-              padding: '7px 16px', borderRadius: 20,
-              border: `1px solid ${period === p.value ? 'var(--red)' : 'var(--border-subtle)'}`,
-              background: period === p.value ? 'var(--red)' : 'var(--white)',
-              color: period === p.value ? '#fff' : 'var(--text)',
-              fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer',
-              fontFamily: "'DM Sans',sans-serif", transition: 'all 0.15s',
-            }}
-          >{p.label}</button>
-        ))}
+      <div style={{ width: 140, marginBottom: 16 }}>
+        <CustomSelect
+          value={period}
+          onChange={(e) => setPeriod(e.target.value)}
+          options={PERIODS}
+        />
       </div>
 
       {/* KPI Cards */}

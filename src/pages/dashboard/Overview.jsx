@@ -5,6 +5,7 @@ import { SkelKpiGrid, SkelTable, SkelDashHeader, SkelFilterPills, SkelChart } fr
 import { supabase } from '../../lib/supabase';
 import { useOutletContext } from 'react-router-dom';
 import DashCalendar from '../../components/DashCalendar';
+import CustomSelect from '../../components/CustomSelect';
 
 const fmt = (n) => '₦' + n.toLocaleString();
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -498,31 +499,30 @@ export default function Overview() {
         </button>
       </div>
 
-      {/* Period filter */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 24, flexWrap: 'wrap', alignItems: 'center' }}>
-        {PERIODS.map(p => (
-          <button
-            key={p.value}
-            onClick={() => { setPeriod(p.value); setCustomDate({ start: null, end: null }); }}
-            style={{
-              padding: '7px 16px', borderRadius: 20,
-              border: `1px solid ${period === p.value ? 'var(--red)' : 'var(--border-subtle)'}`,
-              background: period === p.value ? 'var(--red)' : 'var(--white)',
-              color: period === p.value ? '#fff' : 'var(--text)',
-              fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer',
-              fontFamily: "'DM Sans',sans-serif", transition: 'all 0.15s',
+      {/* Period filter & Custom Range */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ width: 140 }}>
+          <CustomSelect
+            value={period}
+            onChange={(e) => {
+              setPeriod(e.target.value);
+              setCustomDate({ start: null, end: null });
             }}
-          >{p.label}</button>
-        ))}
+            options={PERIODS}
+          />
+        </div>
         <DashCalendar
           range={true}
           value={customDate}
           onChange={v => { setCustomDate(v); if (v && (v.start || v.end)) setPeriod('custom'); }}
           placeholder="Pick a date range"
         />
-        {((customDate && (customDate.start || customDate.end)) || period === 'custom') && (
-          <button onClick={() => { setCustomDate({ start: null, end: null }); setPeriod('all'); }} style={{ background: 'none', border: 'none', fontSize: '0.8rem', color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 600 }}>
-            Clear dates
+        {((customDate && (customDate.start || customDate.end)) || (period && period !== 'all')) && (
+          <button
+            onClick={() => { setCustomDate({ start: null, end: null }); setPeriod('all'); }}
+            style={{ background: 'none', border: 'none', fontSize: '0.78rem', color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 600, padding: '4px 6px' }}
+          >
+            Reset
           </button>
         )}
       </div>

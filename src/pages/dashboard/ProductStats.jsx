@@ -4,16 +4,17 @@ import { DollarSign, ShoppingBag, TrendingUp, TrendingDown, Users, ChevronRight,
 import { SkelKpiGrid, SkelTopListCard, SkelFilterPills, SkelTable } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import DashCalendar from '../../components/DashCalendar';
+import CustomSelect from '../../components/CustomSelect';
 import { STATUS_FILTERS, DEFAULT_STATUS, toStatusParam } from '../../lib/orderStatusFilter';
 
 const fmt    = (n) => '₦' + Number(n).toLocaleString();
 const fmtNum = (n) => Number(n).toLocaleString();
 
 const PERIODS = [
-  { key: 'today',  label: 'Today' },
-  { key: 'week',   label: 'This Week' },
-  { key: 'month',  label: 'This Month' },
-  { key: 'all',    label: 'All Time' },
+  { value: 'today',  label: 'Today' },
+  { value: 'week',   label: 'This Week' },
+  { value: 'month',  label: 'This Month' },
+  { value: 'all',    label: 'All Time' },
 ];
 
 function getPeriodParams(key, customDate) {
@@ -568,16 +569,12 @@ export default function Stats() {
               </button>
             ))}
           </div>
-          <div className="dash-segmented-control">
-            {PERIODS.map(p => (
-              <button
-                key={p.key}
-                className={`dash-filter-btn${period === p.key ? ' active' : ''}`}
-                onClick={() => { setPeriod(p.key); setCustomDate({ start: null, end: null }); }}
-              >
-                {p.label}
-              </button>
-            ))}
+          <div style={{ width: 140 }}>
+            <CustomSelect
+              value={period}
+              onChange={(e) => { setPeriod(e.target.value); setCustomDate({ start: null, end: null }); }}
+              options={PERIODS}
+            />
           </div>
           <DashCalendar
             range={true}

@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { useOutletContext } from 'react-router-dom';
 import DashCalendar from '../../components/DashCalendar';
+import CustomSelect from '../../components/CustomSelect';
 
 const fmt = (n) => '₦' + Number(n || 0).toLocaleString();
 
@@ -22,6 +23,7 @@ const PER_PAGE = 50;
 const EMPTY_KPIS = { total: 0, bank_transfer: 0, cash: 0, pos: 0 };
 
 const PERIODS = [
+  { label: 'All Time',   value: '' },
   { label: 'Today',      value: 'today' },
   { label: 'This Week',  value: 'week' },
   { label: 'This Month', value: 'month' },
@@ -201,21 +203,17 @@ function PaymentsContent() {
             ))}
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {PERIODS.map(p => (
-            <button
-              key={p.value}
-              onClick={() => { setPeriod(period === p.value ? '' : p.value); setDateFilter({ start: null, end: null }); }}
-              style={{
-                padding: '6px 14px', borderRadius: 20,
-                border: `1px solid ${period === p.value ? 'var(--red)' : 'var(--border-subtle)'}`,
-                background: period === p.value ? 'var(--red)' : 'var(--white)',
-                color: period === p.value ? '#fff' : 'var(--text)',
-                fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer',
-                fontFamily: "'DM Sans',sans-serif", transition: 'all 0.15s',
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ width: 140 }}>
+            <CustomSelect
+              value={period}
+              onChange={(e) => {
+                setPeriod(e.target.value);
+                setDateFilter({ start: null, end: null });
               }}
-            >{p.label}</button>
-          ))}
+              options={PERIODS}
+            />
+          </div>
           <DashCalendar
             range={true}
             value={dateFilter}
@@ -223,8 +221,11 @@ function PaymentsContent() {
             placeholder="Pick a date range"
           />
           {((dateFilter && (dateFilter.start || dateFilter.end)) || period) && (
-            <button onClick={() => { setDateFilter({ start: null, end: null }); setPeriod(''); }} style={{ background: 'none', border: 'none', fontSize: '0.8rem', color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 600 }}>
-              Clear dates
+            <button
+              onClick={() => { setDateFilter({ start: null, end: null }); setPeriod(''); }}
+              style={{ background: 'none', border: 'none', fontSize: '0.78rem', color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 600, padding: '4px 6px' }}
+            >
+              Reset
             </button>
           )}
         </div>
