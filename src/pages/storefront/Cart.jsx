@@ -6,6 +6,8 @@ import { getProducts } from '../../lib/productsCache';
 import ProductCard from '../../components/ProductCard';
 import { ShoppingCart, Trash2, Plus, Minus, ArrowRight, Utensils, Gift, Sparkles, Clock } from 'lucide-react';
 import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
+import { fetchDeliveryPromo, getQualifyingGuineaFowlQty } from '../../lib/deliveryPromo';
+import { publicSupabase } from '../../lib/supabase';
 
 const fmt = (n) => '₦' + Number(n).toLocaleString();
 
@@ -14,8 +16,10 @@ export default function Cart() {
   const { showToast } = useToast();
 
   const [products, setProducts] = React.useState([]);
+  const [deliveryPromo, setDeliveryPromo] = React.useState(null);
   React.useEffect(() => {
     getProducts().then(({ products: p }) => setProducts(p));
+    fetchDeliveryPromo(publicSupabase).then(setDeliveryPromo);
   }, []);
 
   const cartIds = items.map(i => i.id);
@@ -120,16 +124,23 @@ export default function Cart() {
 
         {/* Promotional Upsell Banner for Guinea Fowl */}
         {(() => {
-          const gfQty = items.reduce((acc, item) => {
-            const name = (item.name || '').toLowerCase();
-            return (name.includes('guinea') || name.includes('guineafowl')) ? acc + (item.qty || 0) : acc;
-          }, 0);
+          const gfQty = getQualifyingGuineaFowlQty(items, deliveryPromo);
+          if (gfQty === 1) {
+            return (
+              <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 14, padding: '12px 16px', marginBottom: 14, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <Gift size={18} color="#92400e" style={{ flexShrink: 0, marginTop: 1 }} />
+                <div style={{ fontSize: '0.85rem', color: '#92400e', fontWeight: 600, lineHeight: 1.45 }}>
+                  <strong>You're 2 Guinea Fowls away from discounted delivery!</strong> Add 2 more Guinea Fowls to qualify for this special promotion.
+                </div>
+              </div>
+            );
+          }
           if (gfQty === 2) {
             return (
               <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 14, padding: '12px 16px', marginBottom: 14, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                 <Gift size={18} color="#92400e" style={{ flexShrink: 0, marginTop: 1 }} />
                 <div style={{ fontSize: '0.85rem', color: '#92400e', fontWeight: 600, lineHeight: 1.45 }}>
-                  <strong>You're just 1 Guinea Fowl away from discounted delivery!</strong> Add one more to your order to qualify for this special promotion.
+                  <strong>You're just 1 Guinea Fowl away from discounted delivery!</strong> Add 1 more Guinea Fowl to qualify for this special promotion.
                 </div>
               </div>
             );

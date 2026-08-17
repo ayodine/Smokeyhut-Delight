@@ -166,10 +166,10 @@ function generateInvoice(order) {
   <hr class="divider" />
 
   <div class="row"><span>Subtotal</span><span>₦${subtotal.toLocaleString()}</span></div>
-  <div class="row" style="color: #c0201f; font-weight: 700;"><span>Delivery (Pay on Delivery)</span><span>${deliveryFee > 0 ? '₦' + deliveryFee.toLocaleString() : 'Free'}</span></div>
+  <div class="row"><span>Delivery Fee</span><span>${deliveryFee > 0 ? '₦' + deliveryFee.toLocaleString() : 'Free'}</span></div>
   ${couponDiscount > 0 ? `<div class="row" style="color:#16a34a"><span>Discount (${order.coupon_code})</span><span>−₦${couponDiscount.toLocaleString()}</span></div>` : ''}
   ${notes ? `<div style="font-size:9px;color:#555;margin:2mm 0">Notes: ${notes}</div>` : ''}
-  <div class="row total"><span>AMOUNT PAID UPFRONT</span><span>₦${Number(order.total).toLocaleString()}</span></div>
+  <div class="row total"><span>TOTAL PAID</span><span>₦${Number(order.total).toLocaleString()}</span></div>
 
   <div class="footer">
     <hr class="divider" />

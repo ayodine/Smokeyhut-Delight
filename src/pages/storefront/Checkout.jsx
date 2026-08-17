@@ -7,9 +7,10 @@ import { publicSupabase, customerSupabase } from '../../lib/supabase';
 import { useCustomerAuth } from '../../context/CustomerAuthContext';
 import { profileToPrefill } from '../../lib/customerProfile';
 import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher';
-import { fetchDeliveryPromo, getPromoDeliveryFee } from '../../lib/deliveryPromo';
+import { fetchDeliveryPromo, getPromoDeliveryFee, getQualifyingGuineaFowlQty } from '../../lib/deliveryPromo';
+import { validateEmail, applyEmailSuggestion } from '../../lib/emailValidation';
 import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
-import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Search, MapPin, Tag, X, Copy, Banknote, Send, ClipboardList, Utensils, AlertTriangle, Clock, Sparkles, Lightbulb } from 'lucide-react';
+import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Search, MapPin, Tag, X, Copy, Banknote, Send, ClipboardList, Utensils, AlertTriangle, Clock, Sparkles, Lightbulb, Gift } from 'lucide-react';
 
 const SUPABASE_URL        = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY   = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -272,8 +273,9 @@ export default function Checkout() {
     if (!/^\d{11}$/.test(form.phone.trim())) {
       return false;
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
-      showToast('Invalid email', 'Please enter a valid email address', 'error');
+    const emailCheck = validateEmail(form.email);
+    if (!emailCheck.isValid) {
+      showToast('Invalid email', emailCheck.error || 'Please enter a valid email address', 'error');
       return false;
     }
     if (!isPickup && (!form.address.trim() || !form.city.trim())) {
@@ -506,6 +508,42 @@ export default function Checkout() {
           ))}
         </div>
 
+        {/* Promotional Banner for Guinea Fowl */}
+        {(() => {
+          const gfQty = getQualifyingGuineaFowlQty(items, deliveryPromo);
+          if (gfQty === 1) {
+            return (
+              <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 14, padding: '12px 14px', marginBottom: 14, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <Gift size={18} color="#92400e" style={{ flexShrink: 0, marginTop: 1 }} />
+                <div style={{ fontSize: '0.83rem', color: '#92400e', fontWeight: 600, lineHeight: 1.45 }}>
+                  <strong>You're 2 Guinea Fowls away from discounted delivery!</strong> <Link to="/shop" style={{ color: '#c0201f', textDecoration: 'underline', fontWeight: 700 }}>Add 2 more Guinea Fowls</Link> to qualify for this special promotion.
+                </div>
+              </div>
+            );
+          }
+          if (gfQty === 2) {
+            return (
+              <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 14, padding: '12px 14px', marginBottom: 14, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <Gift size={18} color="#92400e" style={{ flexShrink: 0, marginTop: 1 }} />
+                <div style={{ fontSize: '0.83rem', color: '#92400e', fontWeight: 600, lineHeight: 1.45 }}>
+                  <strong>You're just 1 Guinea Fowl away from discounted delivery!</strong> <Link to="/shop" style={{ color: '#c0201f', textDecoration: 'underline', fontWeight: 700 }}>Add 1 more Guinea Fowl</Link> to qualify for this special promotion.
+                </div>
+              </div>
+            );
+          }
+          if (gfQty >= 3) {
+            return (
+              <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 14, padding: '12px 14px', marginBottom: 14, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <Sparkles size={18} color="#166534" style={{ flexShrink: 0, marginTop: 1 }} />
+                <div style={{ fontSize: '0.83rem', color: '#166534', fontWeight: 600, lineHeight: 1.45 }}>
+                  <strong>Delivery Discount Unlocked!</strong> You've added 3+ Guinea Fowls and your delivery discount has been automatically applied.
+                </div>
+              </div>
+            );
+          }
+          return null;
+        })()}
+
         {/* Delivery Section */}
         <div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 14 }}>
           <div style={{ padding: '14px 16px', borderBottom: '1px solid #f0f0f0' }}>
@@ -639,8 +677,48 @@ export default function Checkout() {
                 </div>
               );
             })()}
-            <input value={form.email} onChange={set('email')} onBlur={() => handleContactBlur('email')} placeholder="Email address *" type="email"
-              style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${touched.email && !form.email.trim() ? '#ef4444' : '#e5e5e5'}`, background: '#fafafa', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', color: '#111' }} />
+            {(() => {
+              const emailVal = validateEmail(form.email);
+              const emailInvalid = touched.email && (!form.email.trim() || !emailVal.isValid);
+              return (
+                <div>
+                  <input
+                    value={form.email}
+                    onChange={set('email')}
+                    onBlur={() => handleContactBlur('email')}
+                    placeholder="Email address *"
+                    type="email"
+                    style={{
+                      width: '100%', padding: '12px 14px', borderRadius: 10,
+                      border: `1.5px solid ${emailInvalid ? '#dc2626' : '#e5e5e5'}`,
+                      background: emailInvalid ? '#fff5f5' : '#fafafa',
+                      fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', color: '#111'
+                    }}
+                  />
+                  {emailInvalid && (
+                    <span style={{ color: '#dc2626', fontSize: '0.78rem', marginTop: 4, display: 'block', fontWeight: 600 }}>
+                      {emailVal.error || 'Please enter a valid email address.'}
+                    </span>
+                  )}
+                  {emailVal.suggestion && (
+                    <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', color: '#92400e', background: '#fffbeb', padding: '6px 10px', borderRadius: 8, border: '1px solid #fde68a' }}>
+                      <Lightbulb size={14} color="#d97706" style={{ flexShrink: 0 }} />
+                      <span>Did you mean <strong>{emailVal.suggestion}</strong>?</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForm(f => ({ ...f, email: emailVal.suggestion }));
+                          captureContact({ email: emailVal.suggestion });
+                        }}
+                        style={{ marginLeft: 'auto', background: '#d97706', color: '#fff', border: 'none', borderRadius: 6, padding: '2px 8px', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        Fix
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             <textarea value={form.notes} onChange={set('notes')} placeholder="Order notes (optional)" rows={2}
               style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1.5px solid #e5e5e5', background: '#fafafa', fontSize: '0.9rem', outline: 'none', resize: 'none', boxSizing: 'border-box', fontFamily: 'inherit', color: '#111' }} />
           </div>

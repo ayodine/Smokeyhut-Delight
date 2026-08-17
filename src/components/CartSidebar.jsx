@@ -1,12 +1,19 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useCart } from '../context/CartContext';
 import { useNavigate } from 'react-router-dom';
 import { ShoppingCart, Trash2, Gift, Sparkles, Clock } from 'lucide-react';
 import { anyItemPastCutoff } from '../lib/deliveryCutoff';
+import { fetchDeliveryPromo, getQualifyingGuineaFowlQty } from '../lib/deliveryPromo';
+import { publicSupabase } from '../lib/supabase';
 
 export default function CartSidebar({ isOpen, onClose }) {
   const { items, updateQty, removeItem, total, itemCount } = useCart();
   const navigate = useNavigate();
+  const [deliveryPromo, setDeliveryPromo] = useState(null);
+
+  useEffect(() => {
+    fetchDeliveryPromo(publicSupabase).then(setDeliveryPromo);
+  }, []);
 
   const fmt = (n) => '₦' + Number(n).toLocaleString();
 
@@ -50,15 +57,20 @@ export default function CartSidebar({ isOpen, onClose }) {
         {items.length > 0 && (
           <div className="cart-footer">
             {(() => {
-              const gfQty = items.reduce((acc, item) => {
-                const name = (item.name || '').toLowerCase();
-                return (name.includes('guinea') || name.includes('guineafowl')) ? acc + (item.qty || 0) : acc;
-              }, 0);
+              const gfQty = getQualifyingGuineaFowlQty(items, deliveryPromo);
+              if (gfQty === 1) {
+                return (
+                  <div style={{ fontSize: '0.8rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 12px', marginBottom: 12, lineHeight: 1.4, fontWeight: 600, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                    <Gift size={16} color="#92400e" style={{ flexShrink: 0, marginTop: 2 }} />
+                    <div><strong>You're 2 Guinea Fowls away from discounted delivery!</strong> Add 2 more Guinea Fowls to qualify for this special promotion.</div>
+                  </div>
+                );
+              }
               if (gfQty === 2) {
                 return (
                   <div style={{ fontSize: '0.8rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 12px', marginBottom: 12, lineHeight: 1.4, fontWeight: 600, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                     <Gift size={16} color="#92400e" style={{ flexShrink: 0, marginTop: 2 }} />
-                    <div><strong>You're just 1 Guinea Fowl away from discounted delivery!</strong> Add one more to your order to qualify for this special promotion.</div>
+                    <div><strong>You're just 1 Guinea Fowl away from discounted delivery!</strong> Add 1 more Guinea Fowl to qualify for this special promotion.</div>
                   </div>
                 );
               }
