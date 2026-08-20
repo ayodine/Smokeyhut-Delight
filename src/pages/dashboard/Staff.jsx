@@ -16,7 +16,7 @@ const ROLE_INFO = {
 };
 
 const GRANTABLE_PAGES = [
-  'Overview', 'Orders', 'Shipping', 'Payments',
+  'Overview', 'Orders', 'Abandoned Carts', 'Shipping', 'Payments',
   'Stores', 'Products', 'Customers', 'Zones', 'Coupons',
   'Sales Report', 'Expenses', 'Inventory',
   'Settings',
@@ -33,6 +33,9 @@ const EXTRA_ACTIONS = {
     { key: 'cancel', label: 'Cancel Orders' },
   ],
   Payments: [
+    { key: 'kpi', label: 'View Revenue KPIs' },
+  ],
+  'Abandoned Carts': [
     { key: 'kpi', label: 'View Revenue KPIs' },
   ],
 };

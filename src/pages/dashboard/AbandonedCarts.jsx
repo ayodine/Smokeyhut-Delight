@@ -124,7 +124,10 @@ function AbandonedCartsContent() {
   const { userRole, userPermissions } = useAuth();
   const { showToast } = useToast();
   const isAdmin = userRole === 'Admin';
-  const canViewKpi = isAdmin || (userPermissions || []).includes('Orders:view') || (userPermissions || []).includes('Payments:kpi');
+  const isManager = userRole === 'Manager';
+  const canViewKpi = isAdmin || isManager || (userPermissions || []).includes('Abandoned Carts:kpi') || (userPermissions || []).includes('Payments:kpi') || (userPermissions || []).includes('Orders:view');
+  const canManage = isAdmin || isManager || (userPermissions || []).includes('Abandoned Carts:manage');
+  const canDelete = isAdmin || isManager || (userPermissions || []).includes('Abandoned Carts:delete');
 
   const [stats, setStats] = useState({
     total_sessions: 0,
@@ -230,6 +233,10 @@ function AbandonedCartsContent() {
   }, [fetchData]);
 
   const executeDelete = async () => {
+    if (!canDelete) {
+      showToast('Permission Denied', 'You do not have permission to delete cart records.', 'error');
+      return;
+    }
     if (!deletingSession) return;
     setIsDeleting(true);
     try {
@@ -268,6 +275,10 @@ function AbandonedCartsContent() {
 
   const handleToggleRecovered = async (session, e) => {
     e?.stopPropagation();
+    if (!canManage) {
+      showToast('Permission Denied', 'You do not have permission to modify cart recovery status.', 'error');
+      return;
+    }
     const newStatus = !session.recovered;
     setTogglingId(session.session_id);
     try {
@@ -875,22 +886,24 @@ function AbandonedCartsContent() {
                           </button>
 
                           {/* Delete Cart */}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeletingSession(record);
-                            }}
-                            title="Delete Abandoned Cart"
-                            style={{
-                              padding: '7px 9px', borderRadius: 8,
-                              background: '#fef2f2', color: '#dc2626', border: '1px solid #fee2e2',
-                              fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer',
-                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                              transition: 'all 0.15s'
-                            }}
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          {canDelete && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeletingSession(record);
+                              }}
+                              title="Delete Abandoned Cart"
+                              style={{
+                                padding: '7px 9px', borderRadius: 8,
+                                background: '#fef2f2', color: '#dc2626', border: '1px solid #fee2e2',
+                                fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer',
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                transition: 'all 0.15s'
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1090,31 +1103,35 @@ function AbandonedCartsContent() {
             </div>
 
             {/* Modal Actions */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-              <button
-                onClick={() => setDeletingSession(selectedSession)}
-                style={{
-                  padding: '9px 16px', borderRadius: 10,
-                  border: '1px solid #fee2e2', background: '#fef2f2',
-                  color: '#dc2626', fontWeight: 800, fontSize: '0.84rem',
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6
-                }}
-              >
-                <Trash2 size={14} /> Delete
-              </button>
-
-              <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ display: 'flex', justifyContent: canDelete ? 'space-between' : 'flex-end', alignItems: 'center', gap: 10 }}>
+              {canDelete && (
                 <button
-                  onClick={(e) => handleToggleRecovered(selectedSession, e)}
+                  onClick={() => setDeletingSession(selectedSession)}
                   style={{
                     padding: '9px 16px', borderRadius: 10,
-                    border: '1px solid var(--border-subtle)', background: selectedSession.recovered ? '#f1f5f9' : '#dcfce7',
-                    color: selectedSession.recovered ? '#64748b' : '#15803d',
-                    fontWeight: 800, fontSize: '0.84rem', cursor: 'pointer'
+                    border: '1px solid #fee2e2', background: '#fef2f2',
+                    color: '#dc2626', fontWeight: 800, fontSize: '0.84rem',
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6
                   }}
                 >
-                  {selectedSession.recovered ? 'Mark as Unrecovered' : 'Mark as Recovered'}
+                  <Trash2 size={14} /> Delete
                 </button>
+              )}
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                {canManage && (
+                  <button
+                    onClick={(e) => handleToggleRecovered(selectedSession, e)}
+                    style={{
+                      padding: '9px 16px', borderRadius: 10,
+                      border: '1px solid var(--border-subtle)', background: selectedSession.recovered ? '#f1f5f9' : '#dcfce7',
+                      color: selectedSession.recovered ? '#64748b' : '#15803d',
+                      fontWeight: 800, fontSize: '0.84rem', cursor: 'pointer'
+                    }}
+                  >
+                    {selectedSession.recovered ? 'Mark as Unrecovered' : 'Mark as Recovered'}
+                  </button>
+                )}
                 <button
                   onClick={() => setSelectedSession(null)}
                   style={{
