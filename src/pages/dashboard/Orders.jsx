@@ -229,6 +229,8 @@ export default function Orders() {
   const [storeList, setStoreList] = useState([]);
   const [areas, setAreas] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [tableLoading, setTableLoading] = useState(false);
+  const isFirstMount = useRef(true);
   const [filter, setFilter] = useState('all');
   const [period, setPeriod] = useState('month');
   const [search, setSearch] = useState('');
@@ -527,91 +529,104 @@ export default function Orders() {
     const isDateFilterIncomplete = dateFilter && dateFilter.start && !dateFilter.end;
     if (isDateFilterIncomplete) return;
 
-    fetchData();
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+      fetchData(true);
+    } else {
+      fetchData(false);
+    }
   }, [selectedStore, period, dateFilter, page, filter, sourceFilter, sortKey, sortDir, debouncedSearch]);
 
-  async function fetchData() {
-    setLoading(true);
-    const storeFilter = selectedStore && selectedStore !== 'all' ? selectedStore : null;
-    const { start, end } = getPeriodParams(period, dateFilter);
-    const p_start = start || null;
-    const p_end = end || null;
-    const p_store_id = storeFilter ? Number(storeFilter) : null;
+  async function fetchData(isInitial = false) {
+    if (isInitial) {
+      setLoading(true);
+    } else {
+      setTableLoading(true);
+    }
+    try {
+      const storeFilter = selectedStore && selectedStore !== 'all' ? selectedStore : null;
+      const { start, end } = getPeriodParams(period, dateFilter);
+      const p_start = start || null;
+      const p_end = end || null;
+      const p_store_id = storeFilter ? Number(storeFilter) : null;
 
-    const getBaseCountQuery = () => {
-      let q = supabase.from('orders').select('id', { count: 'exact', head: true }).is('deleted_at', null)
-        .neq('status', 'pending_payment'); // keep source pills consistent with the default (unpaid-excluded) list
+      const getBaseCountQuery = () => {
+        let q = supabase.from('orders').select('id', { count: 'exact', head: true }).is('deleted_at', null)
+          .neq('status', 'pending_payment'); // keep source pills consistent with the default (unpaid-excluded) list
+        if (storeFilter) q = q.or(`store_id.eq.${storeFilter},store_id.is.null`);
+        if (p_start) q = q.gte('created_at', p_start);
+        if (p_end) q = q.lte('created_at', p_end);
+        return q;
+      };
+
+      const [countsRes, storefrontRes, whatsappRes, rescheduledRes, productsRes, storesRes, zonesRes] = await Promise.all([
+        supabase.rpc('get_orders_status_counts', { p_store_id, p_start, p_end }),
+        getBaseCountQuery().eq('channel', 'storefront'),
+        getBaseCountQuery().eq('channel', 'whatsapp'),
+        getBaseCountQuery().or('delivery_status.eq.Rescheduled,notes.ilike.%[Rescheduled]%'),
+        supabase.from('products').select('id, name, price').order('name'),
+        supabase.from('stores').select('id, name').eq('is_active', true).order('id'),
+        fetchFlatAreas(supabase),
+      ]);
+
+      if (countsRes.data) {
+        setStatusCounts({
+          ...countsRes.data,
+          rescheduled: rescheduledRes.count || 0
+        });
+      }
+      setSourceCounts({
+        storefront: storefrontRes.count || 0,
+        whatsapp: whatsappRes.count || 0
+      });
+
+      let q = supabase.from('orders').select('*, order_items(*)', { count: 'exact' }).is('deleted_at', null);
       if (storeFilter) q = q.or(`store_id.eq.${storeFilter},store_id.is.null`);
       if (p_start) q = q.gte('created_at', p_start);
       if (p_end) q = q.lte('created_at', p_end);
-      return q;
-    };
+      if (filter === 'rescheduled') {
+        q = q.or('delivery_status.eq.Rescheduled,notes.ilike.%[Rescheduled]%');
+      } else if (filter !== 'all') {
+        q = q.eq('status', filter);
+      } else {
+        q = q.neq('status', 'pending_payment'); // hide unpaid Paystack orders from the default view
+      }
+      if (sourceFilter !== 'all') q = q.eq('channel', sourceFilter);
 
-    const [countsRes, storefrontRes, whatsappRes, rescheduledRes, productsRes, storesRes, zonesRes] = await Promise.all([
-      supabase.rpc('get_orders_status_counts', { p_store_id, p_start, p_end }),
-      getBaseCountQuery().eq('channel', 'storefront'),
-      getBaseCountQuery().eq('channel', 'whatsapp'),
-      getBaseCountQuery().or('delivery_status.eq.Rescheduled,notes.ilike.%[Rescheduled]%'),
-      supabase.from('products').select('id, name, price').order('name'),
-      supabase.from('stores').select('id, name').eq('is_active', true).order('id'),
-      fetchFlatAreas(supabase),
-    ]);
+      if (debouncedSearch.trim()) {
+        const searchVal = debouncedSearch.trim();
+        q = q.or(`id.ilike.%${searchVal}%,customer_name.ilike.%${searchVal}%,customer_phone.ilike.%${searchVal}%`);
+      }
 
-    if (countsRes.data) {
-      setStatusCounts({
-        ...countsRes.data,
-        rescheduled: rescheduledRes.count || 0
-      });
+      q = q.order(sortKey === 'items' ? 'created_at' : sortKey, { ascending: sortDir === 'asc' });
+      q = q.range((page - 1) * PER_PAGE, page * PER_PAGE - 1);
+
+      const { data, count, error } = await q;
+      if (!error && data) {
+        setOrders(data);
+        setTotalCount(count || 0);
+      } else {
+        console.error('[Orders] Error loading paginated orders:', error);
+        setOrders([]);
+        setTotalCount(0);
+      }
+
+      if (productsRes.data) setProducts(productsRes.data);
+      if (storesRes.data) {
+        setStoreList(storesRes.data);
+        if (storesRes.data.length > 0) setNewOrder(f => ({ ...f, store: String(storesRes.data[0].id) }));
+      }
+      setAreas(zonesRes);
+    } finally {
+      if (isInitial) setLoading(false);
+      setTableLoading(false);
     }
-    setSourceCounts({
-      storefront: storefrontRes.count || 0,
-      whatsapp: whatsappRes.count || 0
-    });
-
-    let q = supabase.from('orders').select('*, order_items(*)', { count: 'exact' }).is('deleted_at', null);
-    if (storeFilter) q = q.or(`store_id.eq.${storeFilter},store_id.is.null`);
-    if (p_start) q = q.gte('created_at', p_start);
-    if (p_end) q = q.lte('created_at', p_end);
-    if (filter === 'rescheduled') {
-      q = q.or('delivery_status.eq.Rescheduled,notes.ilike.%[Rescheduled]%');
-    } else if (filter !== 'all') {
-      q = q.eq('status', filter);
-    } else {
-      q = q.neq('status', 'pending_payment'); // hide unpaid Paystack orders from the default view
-    }
-    if (sourceFilter !== 'all') q = q.eq('channel', sourceFilter);
-
-    if (debouncedSearch.trim()) {
-      const searchVal = debouncedSearch.trim();
-      q = q.or(`id.ilike.%${searchVal}%,customer_name.ilike.%${searchVal}%,customer_phone.ilike.%${searchVal}%`);
-    }
-
-    q = q.order(sortKey === 'items' ? 'created_at' : sortKey, { ascending: sortDir === 'asc' });
-    q = q.range((page - 1) * PER_PAGE, page * PER_PAGE - 1);
-
-    const { data, count, error } = await q;
-    if (!error && data) {
-      setOrders(data);
-      setTotalCount(count || 0);
-    } else {
-      console.error('[Orders] Error loading paginated orders:', error);
-      setOrders([]);
-      setTotalCount(0);
-    }
-
-    if (productsRes.data) setProducts(productsRes.data);
-    if (storesRes.data) {
-      setStoreList(storesRes.data);
-      if (storesRes.data.length > 0) setNewOrder(f => ({ ...f, store: String(storesRes.data[0].id) }));
-    }
-    setAreas(zonesRes);
-    setLoading(false);
   }
 
   const updateStatus = async (id, newStatus) => {
     await supabase.from('orders').update({ status: newStatus }).eq('id', id);
     setOrders(prev => prev.map(o => o.id === id ? { ...o, status: newStatus } : o));
-    await fetchData();
+    await fetchData(false);
   };
 
   const updateStatusWithReason = async (ids, status, reason) => {
@@ -1105,68 +1120,125 @@ export default function Orders() {
         </div>
       </div>
 
-      {/* Filter & Search Bar Row */}
+      {/* KPI Cards - 5 columns in single block */}
+      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 14, marginBottom: 20 }}>
+        <div className="kpi-card yellow" style={{ padding: '18px 16px' }}>
+          <div className="kpi-icon"><Clock size={24} /></div>
+          <div className="kpi-value">{statusCounts.pending || 0}</div>
+          <div className="kpi-label">Pending</div>
+          <div className="kpi-change down">Awaiting action</div>
+        </div>
+        <div className="kpi-card blue" style={{ padding: '18px 16px' }}>
+          <div className="kpi-icon"><RefreshCw size={24} /></div>
+          <div className="kpi-value">{statusCounts.processing || 0}</div>
+          <div className="kpi-label">Processing</div>
+          <div className="kpi-change up">Being prepared</div>
+        </div>
+        <div className="kpi-card purple" style={{ padding: '18px 16px' }}>
+          <div className="kpi-icon"><Truck size={24} /></div>
+          <div className="kpi-value">{statusCounts.shipped || 0}</div>
+          <div className="kpi-label">Shipped</div>
+          <div className="kpi-change up">On the way</div>
+        </div>
+        <div className="kpi-card green" style={{ padding: '18px 16px' }}>
+          <div className="kpi-icon"><CheckCircle size={24} /></div>
+          <div className="kpi-value">{statusCounts.delivered || 0}</div>
+          <div className="kpi-label">Delivered</div>
+          <div className="kpi-change up">Completed</div>
+        </div>
+        <div className="kpi-card red" style={{ padding: '18px 16px' }}>
+          <div className="kpi-icon"><XCircle size={24} /></div>
+          <div className="kpi-value">{statusCounts.cancelled || 0}</div>
+          <div className="kpi-label">Cancelled</div>
+          <div className="kpi-change down">{(statusCounts.cancelled || 0) > 0 ? 'Review needed' : 'None this period'}</div>
+        </div>
+      </div>
+
+      {/* Controls Row: Date/Period, Sources, Search */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        flexWrap: 'wrap', gap: 12, marginBottom: 20
+        flexWrap: 'wrap', gap: 12, marginBottom: 12
       }}>
-        {/* Date & Period Controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          {/* Period Dropdown */}
-          <div style={{ width: 140 }}>
-            <CustomSelect
-              value={period}
-              onChange={(e) => {
-                setPeriod(e.target.value);
-                setDateFilter({ start: null, end: null });
+          {/* Date, Period & Sources Controls in matching dash-filters pill container */}
+          <div className="dash-filters" style={{ margin: 0, padding: '4px 6px', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            {/* Sources Dropdown */}
+            <div style={{ minWidth: 175 }}>
+              <CustomSelect
+                value={sourceFilter}
+                onChange={(e) => setSourceFilter(e.target.value)}
+                options={[
+                  { value: 'all', label: `All Sources (${statusCounts.all || 0})` },
+                  { value: 'storefront', label: `Website (${sourceCounts.storefront || 0})` },
+                  { value: 'whatsapp', label: `WhatsApp (${sourceCounts.whatsapp || 0})` }
+                ]}
+              />
+            </div>
+
+            {/* Period Dropdown */}
+            <div style={{ width: 135 }}>
+              <CustomSelect
+                value={period}
+                onChange={(e) => {
+                  setPeriod(e.target.value);
+                  setDateFilter({ start: null, end: null });
+                }}
+                options={PERIODS}
+              />
+            </div>
+
+            {/* Custom Date Range Picker */}
+            <DashCalendar
+              range={true}
+              value={dateFilter}
+              onChange={v => {
+                setDateFilter(v);
+                if (v && (v.start || v.end)) setPeriod('all');
               }}
-              options={PERIODS}
+              placeholder="Filter date range"
             />
+
+            {((dateFilter && (dateFilter.start || dateFilter.end)) || (period && period !== 'month') || (sourceFilter !== 'all')) && (
+              <button
+                onClick={() => {
+                  setDateFilter({ start: null, end: null });
+                  setPeriod('month');
+                  setSourceFilter('all');
+                }}
+                className="dash-filter-btn"
+                style={{ padding: '6px 14px', fontSize: '0.78rem' }}
+              >
+                Reset
+              </button>
+            )}
           </div>
-
-          {/* Custom Date Range Picker */}
-          <DashCalendar
-            range={true}
-            value={dateFilter}
-            onChange={v => {
-              setDateFilter(v);
-              if (v && (v.start || v.end)) setPeriod('all');
-            }}
-            placeholder="Filter date range"
-          />
-
-          {((dateFilter && (dateFilter.start || dateFilter.end)) || (period && period !== 'month')) && (
-            <button
-              onClick={() => {
-                setDateFilter({ start: null, end: null });
-                setPeriod('month');
-              }}
-              style={{
-                background: 'none', border: 'none', fontSize: '0.78rem',
-                color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 600, padding: '4px 6px'
-              }}
-            >
-              Reset
-            </button>
-          )}
         </div>
 
-        {/* Instant Search Bar */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 260, flex: '1', maxWidth: 360 }}>
-          <div style={{ position: 'relative', width: '100%' }}>
-            <Search size={15} color="var(--text-muted)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+        {/* Search Bar & Button in matching dash-filters pill container */}
+        <div className="dash-filters" style={{ margin: 0, padding: '4px 6px', display: 'flex', alignItems: 'center', minWidth: 280, maxWidth: 380, flex: 1, gap: 4 }}>
+          <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center' }}>
+            <Search size={14} color="var(--text-muted)" style={{ position: 'absolute', left: 10, pointerEvents: 'none' }} />
             <input
-              className="dash-search"
               placeholder="Search orders, phone, ID..."
               value={search}
               onChange={e => {
                 setSearch(e.target.value);
-                setDebouncedSearch(e.target.value);
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  setDebouncedSearch(search);
+                }
               }}
               style={{
-                width: '100%', padding: '9px 32px 9px 36px',
-                borderRadius: 10, border: '1.5px solid var(--border-subtle)',
-                background: 'var(--white)', fontSize: '0.84rem', outline: 'none',
+                width: '100%',
+                padding: '6px 28px 6px 30px',
+                borderRadius: 20,
+                border: 'none',
+                background: 'transparent',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                color: 'var(--text)',
+                outline: 'none',
                 boxSizing: 'border-box'
               }}
             />
@@ -1177,9 +1249,16 @@ export default function Orders() {
                   setDebouncedSearch('');
                 }}
                 style={{
-                  position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
-                  background: 'none', border: 'none', color: 'var(--text-muted)',
-                  cursor: 'pointer', padding: 2, fontSize: '0.85rem'
+                  position: 'absolute',
+                  right: 4,
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: 2,
+                  fontSize: '0.8rem',
+                  display: 'flex',
+                  alignItems: 'center'
                 }}
                 title="Clear search"
               >
@@ -1187,44 +1266,27 @@ export default function Orders() {
               </button>
             )}
           </div>
+          <button
+            className="dash-filter-btn active"
+            onClick={() => setDebouncedSearch(search)}
+            disabled={tableLoading}
+            style={{
+              padding: '6px 16px',
+              fontSize: '0.8rem',
+              flexShrink: 0,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6
+            }}
+          >
+            {tableLoading && <Loader2 size={12} className="spin" />}
+            Search
+          </button>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="kpi-grid" style={{ marginBottom: 20 }}>
-        <div className="kpi-card yellow">
-          <div className="kpi-icon"><Clock size={24} /></div>
-          <div className="kpi-value">{statusCounts.pending || 0}</div>
-          <div className="kpi-label">Pending</div>
-          <div className="kpi-change down">Awaiting action</div>
-        </div>
-        <div className="kpi-card blue">
-          <div className="kpi-icon"><RefreshCw size={24} /></div>
-          <div className="kpi-value">{statusCounts.processing || 0}</div>
-          <div className="kpi-label">Processing</div>
-          <div className="kpi-change up">Being prepared</div>
-        </div>
-        <div className="kpi-card purple">
-          <div className="kpi-icon"><Truck size={24} /></div>
-          <div className="kpi-value">{statusCounts.shipped || 0}</div>
-          <div className="kpi-label">Shipped</div>
-          <div className="kpi-change up">On the way</div>
-        </div>
-        <div className="kpi-card green">
-          <div className="kpi-icon"><CheckCircle size={24} /></div>
-          <div className="kpi-value">{statusCounts.delivered || 0}</div>
-          <div className="kpi-label">Delivered</div>
-          <div className="kpi-change up">Completed</div>
-        </div>
-        <div className="kpi-card red">
-          <div className="kpi-icon"><XCircle size={24} /></div>
-          <div className="kpi-value">{statusCounts.cancelled || 0}</div>
-          <div className="kpi-label">Cancelled</div>
-          <div className="kpi-change down">{(statusCounts.cancelled || 0) > 0 ? 'Review needed' : 'None this period'}</div>
-        </div>
-      </div>
-
-      <div className="dash-filters">
+      {/* Status Filters */}
+      <div className="dash-filters" style={{ marginBottom: 16 }}>
         {statuses.map(s => (
           <button key={s} className={`dash-filter-btn${filter === s ? ' active' : ''}`} onClick={() => setFilter(s)}>
             {s === 'all' ? `All (${statusCounts.all || 0})`
@@ -1234,15 +1296,25 @@ export default function Orders() {
           </button>
         ))}
       </div>
-      <div className="dash-filters" style={{ marginTop: 8 }}>
-        {[['all', 'All Sources'], ['storefront', 'Website'], ['whatsapp', 'WhatsApp']].map(([val, label]) => (
-          <button key={val} className={`dash-filter-btn${sourceFilter === val ? ' active' : ''}`} onClick={() => setSourceFilter(val)}>
-            {label}{val === 'all' ? ` (${statusCounts.all || 0})` : ` (${sourceCounts[val] || 0})`}
-          </button>
-        ))}
-      </div>
 
-      <div className="dash-card">
+      <div className="dash-card" style={{ position: 'relative', overflow: 'hidden' }}>
+        {/* Inline table loading overlay */}
+        {tableLoading && (
+          <div style={{
+            position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.7)',
+            zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            backdropFilter: 'blur(2px)', minHeight: 220
+          }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8, background: '#fff',
+              padding: '10px 22px', borderRadius: 24, boxShadow: '0 8px 24px rgba(0,0,0,0.10)',
+              fontSize: '0.84rem', fontWeight: 700, color: 'var(--text)'
+            }}>
+              <Loader2 size={16} className="spin" color="var(--red)" />
+              Fetching orders...
+            </div>
+          </div>
+        )}
         <div style={{ overflowX: 'auto' }}>
           <table className="dash-table">
             <thead><tr>

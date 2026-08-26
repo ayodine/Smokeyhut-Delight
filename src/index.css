@@ -936,6 +936,33 @@ section { padding: 80px 20px; }
 .dash-filter-btn.active, .dash-filter-btn:hover { 
   background: var(--white); color: var(--red); box-shadow: 0 2px 10px rgba(0,0,0,0.08); 
 }
+.dash-filters .custom-select-trigger {
+  padding: 8px 30px 8px 16px;
+  border-radius: 24px;
+  border: none;
+  background: var(--white);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 800;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.dash-filters .custom-select-trigger:hover,
+.dash-filters .custom-select-trigger.open {
+  background: var(--white);
+  color: var(--red);
+}
+.dash-filters .dash-calendar-trigger {
+  padding: 8px 16px;
+  border-radius: 24px;
+  border: none;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+.dash-filters .dash-calendar-trigger:hover {
+  background: var(--white);
+  color: var(--red);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+}
 
 /* ── DASH DRAWER ── */
 .dash-drawer-overlay {
