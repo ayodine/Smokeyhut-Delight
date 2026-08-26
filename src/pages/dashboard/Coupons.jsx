@@ -53,17 +53,22 @@ export default function Coupons() {
 
   const save = async () => {
     if (!form.code.trim()) { showToast('Required', 'Coupon code is required', 'error'); return; }
-    if (!form.value || isNaN(Number(form.value)) || Number(form.value) <= 0) {
-      showToast('Required', 'Enter a valid discount value', 'error'); return;
-    }
-    if (form.type === 'percent' && Number(form.value) > 100) {
-      showToast('Invalid', 'Percentage discount cannot exceed 100%', 'error'); return;
+    let finalValue = form.value;
+    if (form.type === 'free_guinea_fowl') {
+      finalValue = 0;
+    } else {
+      if (!finalValue || isNaN(Number(finalValue)) || Number(finalValue) <= 0) {
+        showToast('Required', 'Enter a valid discount value', 'error'); return;
+      }
+      if (form.type === 'percent' && Number(finalValue) > 100) {
+        showToast('Invalid', 'Percentage discount cannot exceed 100%', 'error'); return;
+      }
     }
 
     const payload = {
       code: form.code.trim().toUpperCase(),
       type: form.type,
-      value: Number(form.value),
+      value: Number(finalValue),
       min_order_amount: form.min_order_amount ? Number(form.min_order_amount) : null,
       max_uses: form.max_uses ? Number(form.max_uses) : null,
       expires_at: form.expires_at || null,
@@ -143,14 +148,17 @@ export default function Coupons() {
                   onChange={set('type')} 
                   options={[
                     { value: 'percent', label: 'Percentage (%)' },
-                    { value: 'fixed', label: 'Fixed Amount (₦)' }
+                    { value: 'fixed', label: 'Fixed Amount (₦)' },
+                    { value: 'free_guinea_fowl', label: 'Free Guinea Fowl' }
                   ]} 
                 />
               </div>
-              <div className="form-group">
-                <label>Value * {form.type === 'percent' ? '(%)' : '(₦)'}</label>
-                <input type="number" min="0" value={form.value} onChange={set('value')} placeholder={form.type === 'percent' ? '10' : '500'} />
-              </div>
+              {form.type !== 'free_guinea_fowl' && (
+                <div className="form-group">
+                  <label>Value * {form.type === 'percent' ? '(%)' : '(₦)'}</label>
+                  <input type="number" min="0" value={form.value} onChange={set('value')} placeholder={form.type === 'percent' ? '10' : '500'} />
+                </div>
+              )}
               <div className="form-group">
                 <label>Min Order Amount (₦)</label>
                 <input type="number" min="0" value={form.min_order_amount} onChange={set('min_order_amount')} placeholder="Optional" />
@@ -210,7 +218,7 @@ export default function Coupons() {
               {/* Discount */}
               <div style={{ flexShrink: 0 }}>
                 <span style={{ fontWeight: 800, fontSize: '1.1rem', color: 'var(--red)' }}>
-                  {c.type === 'percent' ? `${c.value}% off` : `${fmt(c.value)} off`}
+                  {c.type === 'percent' ? `${c.value}% off` : c.type === 'free_guinea_fowl' ? '1 Free Guinea Fowl' : `${fmt(c.value)} off`}
                 </span>
               </div>
 

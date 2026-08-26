@@ -182,9 +182,9 @@ export default function Checkout() {
     if (data.min_order_amount && total < data.min_order_amount) {
       setCouponError(`Minimum order of ${fmt(data.min_order_amount)} required for this coupon`); return;
     }
-    const discount = data.type === 'percent'
+    const discount = data.type === 'free_guinea_fowl' ? 0 : (data.type === 'percent'
       ? Math.round((total + deliveryFee) * (data.value / 100))
-      : data.value;
+      : data.value);
     setAppliedCoupon({ id: data.id, code: data.code, type: data.type, value: data.value, discount: Math.min(discount, total + deliveryFee) });
   };
 
@@ -308,6 +308,9 @@ export default function Checkout() {
     if (!validateForm()) return;
 
     const itemsSnapshot = [...items];
+    if (appliedCoupon?.type === 'free_guinea_fowl') {
+      itemsSnapshot.push({ id: null, name: 'Free Guinea Fowl (Promo)', price: 0, qty: 1 });
+    }
     const amountSnapshot = amountToPayNow;
     setProcessing(true);
 
@@ -380,6 +383,9 @@ export default function Checkout() {
     if (!validateForm()) return;
 
     const itemsSnapshot = [...items];
+    if (appliedCoupon?.type === 'free_guinea_fowl') {
+      itemsSnapshot.push({ id: null, name: 'Free Guinea Fowl (Promo)', price: 0, qty: 1 });
+    }
     setProcessing(true);
 
     const stockFailures = await checkStock(itemsSnapshot);
@@ -736,7 +742,9 @@ export default function Checkout() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Tag size={15} color="#16a34a" />
                   <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#16a34a' }}>{appliedCoupon.code}</span>
-                  <span style={{ fontSize: '0.82rem', color: '#555' }}>−{fmt(couponDiscount)}</span>
+                  <span style={{ fontSize: '0.82rem', color: '#555' }}>
+                    {appliedCoupon.type === 'free_guinea_fowl' ? '1 Free Guinea Fowl' : `−${fmt(couponDiscount)}`}
+                  </span>
                 </div>
                 <button onClick={removeCoupon} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888', display: 'flex', padding: 2 }}><X size={16} /></button>
               </div>
@@ -765,7 +773,7 @@ export default function Checkout() {
           <div style={{ padding: '14px 16px' }}>
             {[
               ['Subtotal', fmt(total)],
-              couponDiscount > 0 ? [`Discount (${appliedCoupon?.code})`, `−${fmt(couponDiscount)}`] : null,
+              appliedCoupon ? (appliedCoupon.type === 'free_guinea_fowl' ? [`Promo (${appliedCoupon.code})`, '1 Free Guinea Fowl'] : (couponDiscount > 0 ? [`Discount (${appliedCoupon.code})`, `−${fmt(couponDiscount)}`] : null)) : null,
               !isPickup && promoApplied ? ['Delivery Promo', deliveryFee === 0 ? 'Free' : fmt(deliveryFee)] : (!isPickup && deliveryFee > 0 ? ['Delivery Fee', fmt(deliveryFee)] : null),
               ['VAT', fmt(VAT)],
             ].filter(Boolean).map(([label, value]) => (

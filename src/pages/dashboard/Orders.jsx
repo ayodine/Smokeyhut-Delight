@@ -167,7 +167,7 @@ function generateInvoice(order) {
 
   <div class="row"><span>Subtotal</span><span>₦${subtotal.toLocaleString()}</span></div>
   <div class="row"><span>Delivery Fee</span><span>${deliveryFee > 0 ? '₦' + deliveryFee.toLocaleString() : 'Free'}</span></div>
-  ${couponDiscount > 0 ? `<div class="row" style="color:#16a34a"><span>Discount (${order.coupon_code})</span><span>−₦${couponDiscount.toLocaleString()}</span></div>` : ''}
+  ${order.coupon_code ? `<div class="row" style="color:#16a34a"><span>Promo (${order.coupon_code})</span><span>${couponDiscount > 0 ? `−₦${couponDiscount.toLocaleString()}` : 'Free Item'}</span></div>` : ''}
   ${notes ? `<div style="font-size:9px;color:#555;margin:2mm 0">Notes: ${notes}</div>` : ''}
   <div class="row total"><span>TOTAL PAID</span><span>₦${Number(order.total).toLocaleString()}</span></div>
 
@@ -1417,8 +1417,8 @@ export default function Orders() {
                     )}
                     {sel.coupon_code && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', color: '#16a34a' }}>
-                        <span>Discount ({sel.coupon_code}):</span>
-                        <strong>−{fmt(sel.coupon_discount || 0)}</strong>
+                        <span>Promo ({sel.coupon_code}):</span>
+                        <strong>{(sel.coupon_discount || 0) > 0 ? `−${fmt(sel.coupon_discount)}` : 'Free Item'}</strong>
                       </div>
                     )}
                     <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0' }}></div>
