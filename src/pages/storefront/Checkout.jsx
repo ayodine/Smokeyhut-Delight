@@ -10,6 +10,7 @@ import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher
 import { fetchDeliveryPromo, getPromoDeliveryFee, getQualifyingGuineaFowlQty } from '../../lib/deliveryPromo';
 import { validateEmail, applyEmailSuggestion } from '../../lib/emailValidation';
 import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
+import { checkCustomerAlreadyUsedCoupon } from '../../lib/couponValidator';
 import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Search, MapPin, Tag, X, Copy, Banknote, Send, ClipboardList, Utensils, AlertTriangle, Clock, Sparkles, Lightbulb, Gift } from 'lucide-react';
 
 const SUPABASE_URL        = import.meta.env.VITE_SUPABASE_URL;
@@ -168,6 +169,16 @@ export default function Checkout() {
     if (!code) return;
     setCouponError('');
     setCouponLoading(true);
+
+    if (form.phone || form.email) {
+      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(code, form.phone, form.email);
+      if (alreadyUsed) {
+        setCouponLoading(false);
+        setCouponError('You have already used this coupon code on a previous order');
+        return;
+      }
+    }
+
     const { data, error } = await publicSupabase
       .from('coupons')
       .select('id,code,type,value,expires_at,max_uses,uses,min_order_amount')
@@ -219,6 +230,14 @@ export default function Checkout() {
 
   const handleContactBlur = (field) => {
     setTouched(t => ({ ...t, [field]: true }));
+    if (appliedCoupon?.code && (form.phone || form.email)) {
+      checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email).then(used => {
+        if (used) {
+          removeCoupon();
+          setCouponError('You have already used this coupon code on a previous order');
+        }
+      });
+    }
     if (captureContact) {
       const customerName = `${form.firstName} ${form.lastName}`.trim();
       const pickupStore = stores.find(s => s.id === selectedStoreId);
@@ -307,6 +326,15 @@ export default function Checkout() {
     }
     if (!validateForm()) return;
 
+    if (appliedCoupon?.code) {
+      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email);
+      if (alreadyUsed) {
+        showToast('Coupon already used', 'You have already used this coupon code on a previous order.', 'error');
+        removeCoupon();
+        return;
+      }
+    }
+
     const itemsSnapshot = [...items];
     if (appliedCoupon?.type === 'free_guinea_fowl') {
       itemsSnapshot.push({ id: null, name: 'Free Guinea Fowl (Promo)', price: 0, qty: 1 });
@@ -381,6 +409,15 @@ export default function Checkout() {
       return;
     }
     if (!validateForm()) return;
+
+    if (appliedCoupon?.code) {
+      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email);
+      if (alreadyUsed) {
+        showToast('Coupon already used', 'You have already used this coupon code on a previous order.', 'error');
+        removeCoupon();
+        return;
+      }
+    }
 
     const itemsSnapshot = [...items];
     if (appliedCoupon?.type === 'free_guinea_fowl') {

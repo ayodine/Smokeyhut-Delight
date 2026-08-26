@@ -11,6 +11,7 @@ import { profileToPrefill } from '../../lib/customerProfile';
 import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher';
 import { fetchDeliveryPromo, getPromoDeliveryFee, getQualifyingGuineaFowlQty } from '../../lib/deliveryPromo';
 import { validateEmail, applyEmailSuggestion } from '../../lib/emailValidation';
+import { checkCustomerAlreadyUsedCoupon } from '../../lib/couponValidator';
 import {
   ShoppingCart, X, Truck, Store as StoreIcon, Loader2, MapPin,
   MessageCircle, Banknote, Plus, Minus, Trash2, Tag, Copy, CheckCircle,
@@ -126,6 +127,16 @@ export default function MenuPage() {
     if (!code) return;
     setCouponError('');
     setCouponLoading(true);
+
+    if (form.phone || form.email) {
+      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(code, form.phone, form.email);
+      if (alreadyUsed) {
+        setCouponLoading(false);
+        setCouponError('You have already used this coupon code on a previous order');
+        return;
+      }
+    }
+
     const { data, error } = await publicSupabase
       .from('coupons')
       .select('id,code,type,value,expires_at,max_uses,uses,min_order_amount')
@@ -264,6 +275,15 @@ export default function MenuPage() {
   const handleBankTransfer = async () => {
     if (!validateForm()) return;
 
+    if (appliedCoupon?.code) {
+      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email);
+      if (alreadyUsed) {
+        showToast('Coupon already used', 'You have already used this coupon code on a previous order.', 'error');
+        removeCoupon();
+        return;
+      }
+    }
+
     const itemsSnapshot = items.map(i => ({ ...i }));
     const amountSnapshot = amountToPayNow;
     setProcessing(true);
@@ -340,6 +360,15 @@ export default function MenuPage() {
 
   const handlePaystack = async () => {
     if (!validateForm()) return;
+
+    if (appliedCoupon?.code) {
+      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email);
+      if (alreadyUsed) {
+        showToast('Coupon already used', 'You have already used this coupon code on a previous order.', 'error');
+        removeCoupon();
+        return;
+      }
+    }
 
     const itemsSnapshot = items.map(i => ({ ...i }));
     setProcessing(true);
