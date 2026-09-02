@@ -4,7 +4,7 @@ import { useToast } from '../../context/ToastContext';
 import {
   Flame, Plus, Trash2, Edit2, X, Minus,
   Users, Clock, RefreshCw, Eye, Search, Gift, Loader2, Sparkles, Check, ArrowRight,
-  ShoppingBag, Tag, DollarSign, Layers, Zap, Info
+  ShoppingBag, Tag, DollarSign, Layers, Zap, Info, Truck
 } from 'lucide-react';
 import { SkelList, SkelTable } from '../../components/Skeleton';
 import CustomSelect from '../../components/CustomSelect';
@@ -957,34 +957,40 @@ export default function PromoOffers() {
                     </label>
                     <div style={{ display: 'flex', gap: 8 }}>
                       {[
-                        { value: 'free_product', label: '🎁 Menu Product', desc: 'A physical item from the menu' },
-                        { value: 'free_delivery', label: '🚚 Free Delivery', desc: 'Customer gets free delivery' },
-                      ].map(opt => (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          onClick={() => setForm(prev => ({
-                            ...prev,
-                            reward_type: opt.value,
-                            ...(opt.value === 'free_delivery' ? {
-                              reward_product_id: '',
-                              reward_product_name: 'Free Delivery',
-                              reward_qty: '1',
-                            } : {
-                              reward_product_name: prev.reward_product_name === 'Free Delivery' ? '' : prev.reward_product_name,
-                            }),
-                          }))}
-                          style={{
-                            flex: 1, padding: '10px 12px', borderRadius: 9, border: 'none', cursor: 'pointer',
-                            textAlign: 'left', transition: 'all 0.15s',
-                            background: form.reward_type === opt.value ? 'rgba(192,32,31,0.06)' : 'var(--black)',
-                            outline: form.reward_type === opt.value ? '2px solid var(--red)' : '1.5px solid var(--border-subtle)',
-                          }}
-                        >
-                          <div style={{ fontSize: '0.84rem', fontWeight: 800, color: form.reward_type === opt.value ? 'var(--red)' : 'var(--text)' }}>{opt.label}</div>
-                          <div style={{ fontSize: '0.71rem', color: 'var(--text-muted)', marginTop: 2 }}>{opt.desc}</div>
-                        </button>
-                      ))}
+                        { value: 'free_product', Icon: Gift, label: 'Menu Product', desc: 'A physical item from the menu' },
+                        { value: 'free_delivery', Icon: Truck, label: 'Free Delivery', desc: 'Customer gets free delivery' },
+                      ].map(({ value, Icon, label, desc }) => {
+                        const active = form.reward_type === value;
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setForm(prev => ({
+                              ...prev,
+                              reward_type: value,
+                              ...(value === 'free_delivery' ? {
+                                reward_product_id: '',
+                                reward_product_name: 'Free Delivery',
+                                reward_qty: '1',
+                              } : {
+                                reward_product_name: prev.reward_product_name === 'Free Delivery' ? '' : prev.reward_product_name,
+                              }),
+                            }))}
+                            style={{
+                              flex: 1, padding: '10px 12px', borderRadius: 9, border: 'none', cursor: 'pointer',
+                              textAlign: 'left', transition: 'all 0.15s',
+                              background: active ? 'rgba(192,32,31,0.06)' : 'var(--black)',
+                              outline: active ? '2px solid var(--red)' : '1.5px solid var(--border-subtle)',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                              <Icon size={14} color={active ? 'var(--red)' : 'var(--text-muted)'} />
+                              <span style={{ fontSize: '0.84rem', fontWeight: 800, color: active ? 'var(--red)' : 'var(--text)' }}>{label}</span>
+                            </div>
+                            <div style={{ fontSize: '0.71rem', color: 'var(--text-muted)' }}>{desc}</div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -1015,7 +1021,9 @@ export default function PromoOffers() {
                   {/* Free Delivery confirmation banner */}
                   {form.reward_type === 'free_delivery' && (
                     <div style={{ background: 'rgba(22,163,74,0.07)', border: '1.5px solid rgba(22,163,74,0.25)', borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span style={{ fontSize: '1.4rem', flexShrink: 0 }}>🚚</span>
+                      <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(22,163,74,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Truck size={18} color="#16a34a" />
+                      </div>
                       <div>
                         <div style={{ fontWeight: 800, fontSize: '0.84rem', color: '#15803d' }}>Free Delivery Selected</div>
                         <div style={{ fontSize: '0.73rem', color: '#166534', marginTop: 2 }}>Qualifying customers will have their delivery fee waived automatically at checkout.</div>
