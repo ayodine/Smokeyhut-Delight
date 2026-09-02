@@ -5,7 +5,7 @@ import { useToast } from '../../context/ToastContext';
 import { getProducts } from '../../lib/productsCache';
 import ProductCard from '../../components/ProductCard';
 import PromoProgressBanner from '../../components/PromoProgressBanner';
-import { ShoppingCart, Trash2, Plus, Minus, ArrowRight, Utensils, Clock, Gift, Truck } from 'lucide-react';
+import { ShoppingCart, Trash2, Plus, Minus, ArrowRight, Utensils, Clock, Gift } from 'lucide-react';
 import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
 
 const fmt = (n) => '₦' + Number(n).toLocaleString();
@@ -126,44 +126,26 @@ export default function Cart() {
 
           {/* Render Unlocked Free Promo Reward Item */}
           {promoRewardItem && (
-            promoRewardItem.is_free_delivery ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px', background: '#f0fdf4', borderTop: '1px dashed #86efac' }}>
-                <div style={{ width: 52, height: 52, borderRadius: 12, overflow: 'hidden', background: '#dcfce7', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Truck size={24} color="#16a34a" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px', background: 'rgba(34, 197, 94, 0.05)', borderTop: '1px dashed rgba(34, 197, 94, 0.3)' }}>
+              <div style={{ position: 'relative', flexShrink: 0 }}>
+                <div style={{ width: 64, height: 64, borderRadius: 12, overflow: 'hidden', background: '#dcfce7', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Gift size={28} color="#16a34a" />
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#15803d' }}>Free Delivery Unlocked</span>
-                    <span style={{ background: '#16a34a', color: '#fff', fontSize: '0.65rem', fontWeight: 900, padding: '2px 6px', borderRadius: 4 }}>FREE</span>
-                  </div>
-                  <div style={{ fontSize: '0.78rem', color: '#166534', marginTop: 2 }}>100% free delivery fee applied at checkout</div>
-                </div>
-                <div style={{ fontWeight: 900, fontSize: '0.95rem', color: '#16a34a', flexShrink: 0 }}>
-                  ₦0
-                </div>
+                <span style={{ position: 'absolute', top: -6, right: -6, background: '#16a34a', color: '#fff', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 900 }}>
+                  {promoRewardItem.qty}
+                </span>
               </div>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px', background: 'rgba(34, 197, 94, 0.05)', borderTop: '1px dashed rgba(34, 197, 94, 0.3)' }}>
-                <div style={{ position: 'relative', flexShrink: 0 }}>
-                  <div style={{ width: 64, height: 64, borderRadius: 12, overflow: 'hidden', background: '#dcfce7', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Gift size={28} color="#16a34a" />
-                  </div>
-                  <span style={{ position: 'absolute', top: -6, right: -6, background: '#16a34a', color: '#fff', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 900 }}>
-                    {promoRewardItem.qty}
-                  </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#15803d' }}>{promoRewardItem.name}</span>
+                  <span style={{ background: '#16a34a', color: '#fff', fontSize: '0.65rem', fontWeight: 900, padding: '2px 6px', borderRadius: 4 }}>FREE PROMO GIFT</span>
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#15803d' }}>{promoRewardItem.name}</span>
-                    <span style={{ background: '#16a34a', color: '#fff', fontSize: '0.65rem', fontWeight: 900, padding: '2px 6px', borderRadius: 4 }}>FREE PROMO GIFT</span>
-                  </div>
-                  <div style={{ fontSize: '0.78rem', color: '#166534', marginTop: 2 }}>Daily promotion reward (₦0)</div>
-                </div>
-                <div style={{ fontWeight: 900, fontSize: '0.95rem', color: '#16a34a', flexShrink: 0 }}>
-                  ₦0
-                </div>
+                <div style={{ fontSize: '0.78rem', color: '#166534', marginTop: 2 }}>Daily promotion reward (₦0)</div>
               </div>
-            )
+              <div style={{ fontWeight: 900, fontSize: '0.95rem', color: '#16a34a', flexShrink: 0 }}>
+                ₦0
+              </div>
+            </div>
           )}
         </div>
 
@@ -182,8 +164,7 @@ export default function Cart() {
             {promoRewardItem && (
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: '0.85rem', color: '#16a34a', fontWeight: 700 }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  {promoRewardItem.is_free_delivery ? <Truck size={13} color="#16a34a" /> : <Gift size={13} color="#16a34a" />}
-                  {promoRewardItem.is_free_delivery ? 'Free Delivery Promo' : `${promoRewardItem.name} × ${promoRewardItem.qty}`}
+                  <Gift size={13} color="#16a34a" /> {promoRewardItem.name} × {promoRewardItem.qty}
                 </span>
                 <span>FREE (₦0)</span>
               </div>

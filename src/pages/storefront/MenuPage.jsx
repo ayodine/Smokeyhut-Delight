@@ -229,12 +229,12 @@ export default function MenuPage() {
 
   const isPickup        = deliveryType === 'pickup';
   const allFreeShipping = items.length > 0 && items.every(i => i.free_shipping === true);
+  const promoFreeDelivery = !isPickup && promoRewardItem?.is_free_delivery === true;
   const promoFee        = !isPickup && selectedMatch
     ? getPromoDeliveryFee(deliveryPromo, items, selectedMatch.area?.name || '', selectedMatch.zone?.price)
     : null;
   const promoApplied    = promoFee !== null && !allFreeShipping;
-  const isPromoFreeDelivery = !isPickup && promoRewardItem?.is_free_delivery;
-  const deliveryFee     = isPickup ? 0 : (allFreeShipping || isPromoFreeDelivery ? 0 : (promoApplied ? promoFee : (selectedMatch?.zone?.price ?? 0)));
+  const deliveryFee     = isPickup ? 0 : (allFreeShipping || promoFreeDelivery ? 0 : (promoApplied ? promoFee : (selectedMatch?.zone?.price ?? 0)));
   const couponDiscount  = appliedCoupon?.discount ?? 0;
   const amountToPayNow  = Math.max(0, total + deliveryFee - couponDiscount) + VAT;
 
@@ -259,7 +259,7 @@ export default function MenuPage() {
       coupon_discount:  couponDiscount,
       promo_id:         promoRewardItem?.promo_id || null,
       status:           'pending',
-      notes:            (promoApplied ? '[via WhatsApp Menu] [Delivery Promo]' : '[via WhatsApp Menu]') + (promoRewardItem ? (promoRewardItem.is_free_delivery ? ' [Promo: Free Delivery]' : ` [Promo: ${promoRewardItem.name}]`) : '') + (form.notes ? '\n' + form.notes : ''),
+      notes:            (promoApplied ? '[via WhatsApp Menu] [Delivery Promo]' : '[via WhatsApp Menu]') + (promoRewardItem ? ` [Promo: ${promoRewardItem.name}]` : '') + (form.notes ? '\n' + form.notes : ''),
     };
   };
 
@@ -764,7 +764,7 @@ export default function MenuPage() {
                     </div>
                   </div>
                 ))}
-                {promoRewardItem && !promoRewardItem.is_free_delivery && (
+                {promoRewardItem && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: 'rgba(34, 197, 94, 0.05)', borderTop: '1px dashed rgba(34, 197, 94, 0.3)' }}>
                     <div style={{ position: 'relative', flexShrink: 0 }}>
                       <div style={{ width: 56, height: 56, borderRadius: 12, overflow: 'hidden', background: '#dcfce7', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1018,8 +1018,9 @@ export default function MenuPage() {
                 {[
                   ['Subtotal', fmt(total)],
                   promoRewardItem && !promoRewardItem.is_free_delivery ? [`Promo Gift (${promoRewardItem.name})`, 'FREE (₦0)'] : null,
+                  promoRewardItem?.is_free_delivery ? [`Promo (${promoRewardItem.name})`, 'FREE'] : null,
                   couponDiscount > 0 ? [`Discount (${appliedCoupon?.code})`, `−${fmt(couponDiscount)}`] : null,
-                  !isPickup && isPromoFreeDelivery ? ['Delivery Fee', 'FREE (₦0 Promo)'] : (!isPickup && promoApplied ? ['Delivery Promo', deliveryFee === 0 ? 'Free' : fmt(deliveryFee)] : (!isPickup && deliveryFee > 0 ? ['Delivery Fee', fmt(deliveryFee)] : null)),
+                  !isPickup && (promoApplied || promoFreeDelivery) ? ['Delivery Promo', deliveryFee === 0 ? 'Free' : fmt(deliveryFee)] : (!isPickup && deliveryFee > 0 ? ['Delivery Fee', fmt(deliveryFee)] : null),
                   ['VAT', fmt(VAT)],
                 ].filter(Boolean).map(([label, value]) => (
                   <div key={label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: '0.85rem' }}>

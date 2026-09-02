@@ -173,12 +173,12 @@ export default function Checkout() {
   const VAT = 200;
   const isPickup = deliveryType === 'pickup';
   const allFreeShipping = items.length > 0 && items.every(i => i.free_shipping === true);
+  const promoFreeDelivery = !isPickup && promoRewardItem?.is_free_delivery === true;
   const promoFee = !isPickup && selectedMatch
     ? getPromoDeliveryFee(deliveryPromo, items, selectedMatch.area?.name || '', selectedMatch.zone.price)
     : null;
   const promoApplied = promoFee !== null && !allFreeShipping;
-  const isPromoFreeDelivery = !isPickup && promoRewardItem?.is_free_delivery;
-  const deliveryFee = isPickup ? 0 : (allFreeShipping || isPromoFreeDelivery ? 0 : (promoApplied ? promoFee : (selectedMatch?.zone.price ?? 0)));
+  const deliveryFee = isPickup ? 0 : (allFreeShipping || promoFreeDelivery ? 0 : (promoApplied ? promoFee : (selectedMatch?.zone.price ?? 0)));
   const couponDiscount = appliedCoupon?.discount ?? 0;
   const amountToPayNow = Math.max(0, total + deliveryFee - couponDiscount) + VAT;
 
@@ -191,67 +191,30 @@ export default function Checkout() {
     if (form.phone || form.email) {
       const alreadyUsed = await checkCustomerAlreadyUsedCoupon(code, form.phone, form.email);
       if (alreadyUsed) {
-        setCouponError('You have already used this coupon code on a previous order.');
         setCouponLoading(false);
+        setCouponError('You have already used this coupon code on a previous order');
         return;
       }
     }
 
-    try {
-      const { data, error } = await publicSupabase
-        .from('coupons')
-        .select('*')
-        .eq('code', code)
-        .eq('is_active', true)
-        .single();
-
-      if (error || !data) {
-        setCouponError('Invalid or expired coupon code');
-        setCouponLoading(false);
-        return;
-      }
-
-      const now = new Date();
-      if (data.start_date && new Date(data.start_date) > now) {
-        setCouponError('Coupon is not active yet');
-        setCouponLoading(false);
-        return;
-      }
-      if (data.end_date && new Date(data.end_date) < now) {
-        setCouponError('Coupon has expired');
-        setCouponLoading(false);
-        return;
-      }
-      if (data.usage_limit && data.used_count >= data.usage_limit) {
-        setCouponError('Coupon usage limit reached');
-        setCouponLoading(false);
-        return;
-      }
-      if (data.min_order_amount && total < data.min_order_amount) {
-        setCouponError(`Minimum order amount of ${fmt(data.min_order_amount)} required`);
-        setCouponLoading(false);
-        return;
-      }
-
-      let discount = 0;
-      if (data.type === 'percent') {
-        discount = Math.round((total * data.value) / 100);
-      } else if (data.type === 'fixed') {
-        discount = Math.min(total, data.value);
-      } else if (data.type === 'free_shipping') {
-        discount = isPickup ? 0 : (selectedMatch?.zone.price ?? 0);
-      } else if (data.type === 'free_guinea_fowl') {
-        discount = 0; // Handled as free line item, not cash discount
-      }
-
-      setAppliedCoupon({ id: data.id, code: data.code, type: data.type, value: data.value, discount });
-      showToast('Coupon Applied!', `${data.code} applied successfully`, 'success');
-      setCouponCode('');
-    } catch {
-      setCouponError('Failed to validate coupon');
-    } finally {
-      setCouponLoading(false);
+    const { data, error } = await publicSupabase
+      .from('coupons')
+      .select('id,code,type,value,expires_at,max_uses,uses,min_order_amount')
+      .eq('code', code)
+      .eq('is_active', true)
+      .maybeSingle();
+    setCouponLoading(false);
+    if (error || !data) { setCouponError('Invalid or expired coupon code'); return; }
+    const now = new Date();
+    if (data.expires_at && new Date(data.expires_at) < now) { setCouponError('This coupon has expired'); return; }
+    if (data.max_uses !== null && data.uses >= data.max_uses) { setCouponError('This coupon has reached its usage limit'); return; }
+    if (data.min_order_amount && total < data.min_order_amount) {
+      setCouponError(`Minimum order of ${fmt(data.min_order_amount)} required for this coupon`); return;
     }
+    const discount = data.type === 'free_guinea_fowl' ? 0 : (data.type === 'percent'
+      ? Math.round((total + deliveryFee) * (data.value / 100))
+      : data.value);
+    setAppliedCoupon({ id: data.id, code: data.code, type: data.type, value: data.value, discount: Math.min(discount, total + deliveryFee) });
   };
 
   const removeCoupon = () => {
@@ -371,7 +334,7 @@ export default function Checkout() {
 
 
 
-  const checkStock = async (itemsSnapshot) => {
+  const checkStock = async (_itemsSnapshot) => {
     return null;
   };
 
@@ -616,7 +579,7 @@ export default function Checkout() {
           ))}
 
           {/* Render Unlocked Free Promo Reward Item */}
-          {promoRewardItem && !promoRewardItem.is_free_delivery && (
+          {promoRewardItem && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: 'rgba(34, 197, 94, 0.05)', borderTop: '1px dashed rgba(34, 197, 94, 0.3)' }}>
               <div style={{ position: 'relative', flexShrink: 0 }}>
                 <div style={{ width: 52, height: 52, borderRadius: 10, overflow: 'hidden', background: '#dcfce7', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -864,8 +827,9 @@ export default function Checkout() {
             {[
               ['Subtotal', fmt(total)],
               promoRewardItem && !promoRewardItem.is_free_delivery ? [`Promo Gift (${promoRewardItem.name})`, 'FREE (₦0)'] : null,
+              promoRewardItem?.is_free_delivery ? [`Promo (${promoRewardItem.name})`, 'FREE'] : null,
               appliedCoupon ? (appliedCoupon.type === 'free_guinea_fowl' ? [`Promo (${appliedCoupon.code})`, '1 Free Guinea Fowl'] : (couponDiscount > 0 ? [`Discount (${appliedCoupon.code})`, `−${fmt(couponDiscount)}`] : null)) : null,
-              !isPickup && isPromoFreeDelivery ? ['Delivery Fee', 'FREE (₦0 Promo)'] : (!isPickup && promoApplied ? ['Delivery Promo', deliveryFee === 0 ? 'Free' : fmt(deliveryFee)] : (!isPickup && deliveryFee > 0 ? ['Delivery Fee', fmt(deliveryFee)] : null)),
+              !isPickup && (promoApplied || promoFreeDelivery) ? ['Delivery Promo', deliveryFee === 0 ? 'Free' : fmt(deliveryFee)] : (!isPickup && deliveryFee > 0 ? ['Delivery Fee', fmt(deliveryFee)] : null),
               ['VAT', fmt(VAT)],
             ].filter(Boolean).map(([label, value]) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: '0.85rem' }}>
