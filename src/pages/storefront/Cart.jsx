@@ -4,22 +4,20 @@ import { useCart } from '../../context/CartContext';
 import { useToast } from '../../context/ToastContext';
 import { getProducts } from '../../lib/productsCache';
 import ProductCard from '../../components/ProductCard';
-import { ShoppingCart, Trash2, Plus, Minus, ArrowRight, Utensils, Gift, Sparkles, Clock } from 'lucide-react';
+import PromoProgressBanner from '../../components/PromoProgressBanner';
+import { ShoppingCart, Trash2, Plus, Minus, ArrowRight, Utensils, Clock, Gift } from 'lucide-react';
 import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
-import { fetchDeliveryPromo, getQualifyingGuineaFowlQty } from '../../lib/deliveryPromo';
-import { publicSupabase } from '../../lib/supabase';
 
 const fmt = (n) => '₦' + Number(n).toLocaleString();
 
 export default function Cart() {
-  const { items, updateQty, removeItem, total, itemCount } = useCart();
+  const { items, updateQty, removeItem, total, itemCount, promoRewardItem } = useCart();
   const { showToast } = useToast();
 
+
   const [products, setProducts] = React.useState([]);
-  const [deliveryPromo, setDeliveryPromo] = React.useState(null);
   React.useEffect(() => {
     getProducts().then(({ products: p }) => setProducts(p));
-    fetchDeliveryPromo(publicSupabase).then(setDeliveryPromo);
   }, []);
 
   const cartIds = items.map(i => i.id);
@@ -68,6 +66,11 @@ export default function Cart() {
           <Link to="/menu" style={{ fontSize: '0.8rem', fontWeight: 700, color: '#c0201f', textDecoration: 'none' }}>+ Add more</Link>
         </div>
 
+        {/* Promo Progress / Reward Banner */}
+        <div style={{ marginBottom: 14 }}>
+          <PromoProgressBanner variant="full" />
+        </div>
+
         {/* Cart Items Card */}
         <div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 14 }}>
           {anyItemPastCutoff(items) && (
@@ -78,7 +81,7 @@ export default function Cart() {
           {items.map((item, idx) => {
             const hasImage = item.image && item.image.startsWith('http');
             return (
-              <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px', borderBottom: idx < items.length - 1 ? '1px solid #f5f5f5' : 'none' }}>
+              <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px', borderBottom: (idx < items.length - 1 || promoRewardItem) ? '1px solid #f5f5f5' : 'none' }}>
                 {/* Thumbnail + qty badge */}
                 <div style={{ position: 'relative', flexShrink: 0 }}>
                   <div style={{ width: 64, height: 64, borderRadius: 12, overflow: 'hidden', background: '#f5f5f7', border: '1px solid #e5e5e5' }}>
@@ -120,43 +123,31 @@ export default function Cart() {
               </div>
             );
           })}
-        </div>
 
-        {/* Promotional Upsell Banner for Guinea Fowl */}
-        {(() => {
-          const gfQty = getQualifyingGuineaFowlQty(items, deliveryPromo);
-          if (gfQty === 1) {
-            return (
-              <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 14, padding: '12px 16px', marginBottom: 14, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                <Gift size={18} color="#92400e" style={{ flexShrink: 0, marginTop: 1 }} />
-                <div style={{ fontSize: '0.85rem', color: '#92400e', fontWeight: 600, lineHeight: 1.45 }}>
-                  <strong>You're 2 Guinea Fowls away from discounted delivery!</strong> Add 2 more Guinea Fowls to qualify for this special promotion.
+          {/* Render Unlocked Free Promo Reward Item */}
+          {promoRewardItem && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px', background: 'rgba(34, 197, 94, 0.05)', borderTop: '1px dashed rgba(34, 197, 94, 0.3)' }}>
+              <div style={{ position: 'relative', flexShrink: 0 }}>
+                <div style={{ width: 64, height: 64, borderRadius: 12, overflow: 'hidden', background: '#dcfce7', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Gift size={28} color="#16a34a" />
                 </div>
+                <span style={{ position: 'absolute', top: -6, right: -6, background: '#16a34a', color: '#fff', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 900 }}>
+                  {promoRewardItem.qty}
+                </span>
               </div>
-            );
-          }
-          if (gfQty === 2) {
-            return (
-              <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 14, padding: '12px 16px', marginBottom: 14, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                <Gift size={18} color="#92400e" style={{ flexShrink: 0, marginTop: 1 }} />
-                <div style={{ fontSize: '0.85rem', color: '#92400e', fontWeight: 600, lineHeight: 1.45 }}>
-                  <strong>You're just 1 Guinea Fowl away from discounted delivery!</strong> Add 1 more Guinea Fowl to qualify for this special promotion.
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#15803d' }}>{promoRewardItem.name}</span>
+                  <span style={{ background: '#16a34a', color: '#fff', fontSize: '0.65rem', fontWeight: 900, padding: '2px 6px', borderRadius: 4 }}>FREE PROMO GIFT</span>
                 </div>
+                <div style={{ fontSize: '0.78rem', color: '#166534', marginTop: 2 }}>Daily promotion reward (₦0)</div>
               </div>
-            );
-          }
-          if (gfQty >= 3) {
-            return (
-              <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 14, padding: '12px 16px', marginBottom: 14, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                <Sparkles size={18} color="#166534" style={{ flexShrink: 0, marginTop: 1 }} />
-                <div style={{ fontSize: '0.85rem', color: '#166534', fontWeight: 600, lineHeight: 1.45 }}>
-                  <strong>Delivery Discount Unlocked!</strong> You've added 3+ Guinea Fowls and your delivery discount has been automatically applied.
-                </div>
+              <div style={{ fontWeight: 900, fontSize: '0.95rem', color: '#16a34a', flexShrink: 0 }}>
+                ₦0
               </div>
-            );
-          }
-          return null;
-        })()}
+            </div>
+          )}
+        </div>
 
         {/* Order Summary Card */}
         <div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 14 }}>
@@ -170,11 +161,20 @@ export default function Cart() {
                 <span style={{ fontWeight: 600, color: '#111' }}>{fmt(item.price * item.qty)}</span>
               </div>
             ))}
+            {promoRewardItem && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: '0.85rem', color: '#16a34a', fontWeight: 700 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <Gift size={13} color="#16a34a" /> {promoRewardItem.name} × {promoRewardItem.qty}
+                </span>
+                <span>FREE (₦0)</span>
+              </div>
+            )}
             <div style={{ height: 1, background: '#f0f0f0', margin: '12px 0' }} />
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5, fontSize: '0.85rem' }}>
               <span style={{ color: '#888' }}>Subtotal</span>
               <span style={{ fontWeight: 700, color: '#111' }}>{fmt(total)}</span>
             </div>
+
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5, fontSize: '0.85rem' }}>
               <span style={{ color: '#888' }}>VAT</span>
               <span style={{ fontWeight: 700, color: '#111' }}>{fmt(VAT)}</span>

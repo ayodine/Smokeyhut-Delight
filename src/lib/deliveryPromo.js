@@ -72,6 +72,7 @@ export function getQualifyingGuineaFowlQty(cartItems, promo) {
 }
 
 export function getPromoDeliveryFee(promo, cartItems, areaName, normalPrice) {
+  if (!promo?.enabled) return null;
   if (!Array.isArray(cartItems) || cartItems.length === 0) return null;
 
   // Qualification requires 3 or more qualifying Guinea Fowl birds

@@ -1,32 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { X, Clock, Truck, ShieldCheck, PhoneCall, AlertTriangle, CheckCircle2, MapPin } from 'lucide-react';
+import React from 'react';
+import { X, Clock, Truck, ShieldCheck, PhoneCall, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
-export default function OrderingGuidePopup() {
-  const [isOpen, setIsOpen] = useState(false);
-
-  useEffect(() => {
-    // Check if the user has already seen the popup this session
-    const hasSeen = sessionStorage.getItem('smokeyhut_popup_seen');
-    if (!hasSeen) {
-      const timer = setTimeout(() => {
-        setIsOpen(true);
-      }, 1000); // 1-second delay
-      return () => clearTimeout(timer);
-    }
-  }, []);
-
-  const handleClose = () => {
-    setIsOpen(false);
-    sessionStorage.setItem('smokeyhut_popup_seen', 'true');
-  };
-
+export default function CheckoutDisclaimerModal({ isOpen, onAgree, onClose }) {
   if (!isOpen) return null;
 
   return (
     <>
       {/* Backdrop */}
       <div
-        onClick={handleClose}
+        onClick={onClose || onAgree}
         style={{
           position: 'fixed',
           inset: 0,
@@ -41,14 +23,14 @@ export default function OrderingGuidePopup() {
       <div
         role="dialog"
         aria-modal="true"
-        aria-labelledby="ordering-guide-title"
+        aria-labelledby="disclaimer-modal-title"
         style={{
           position: 'fixed',
           top: '50%',
           left: '50%',
           transform: 'translate(-50%, -50%)',
           width: '92%',
-          maxWidth: 500,
+          maxWidth: 480,
           maxHeight: '90vh',
           overflowY: 'auto',
           background: '#fff',
@@ -62,28 +44,30 @@ export default function OrderingGuidePopup() {
         }}
       >
         {/* Close icon button */}
-        <button
-          onClick={handleClose}
-          aria-label="Close"
-          style={{
-            position: 'absolute',
-            top: 18,
-            right: 18,
-            background: '#f5f5f7',
-            border: 'none',
-            borderRadius: '50%',
-            width: 32,
-            height: 32,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            color: '#666',
-            transition: 'background 0.15s',
-          }}
-        >
-          <X size={18} />
-        </button>
+        {onClose && (
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              position: 'absolute',
+              top: 18,
+              right: 18,
+              background: '#f5f5f7',
+              border: 'none',
+              borderRadius: '50%',
+              width: 32,
+              height: 32,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color: '#666',
+              transition: 'background 0.15s',
+            }}
+          >
+            <X size={18} />
+          </button>
+        )}
 
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: 20 }}>
@@ -116,7 +100,7 @@ export default function OrderingGuidePopup() {
             Important Ordering Notice
           </span>
           <h2
-            id="ordering-guide-title"
+            id="disclaimer-modal-title"
             style={{
               margin: 0,
               fontSize: '1.35rem',
@@ -134,14 +118,14 @@ export default function OrderingGuidePopup() {
 
         {/* Policy list */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 22 }}>
-          {/* Opening hours & schedule */}
+          {/* Policy 1 */}
           <div
             style={{
               display: 'flex',
               gap: 12,
               alignItems: 'flex-start',
               padding: '12px 14px',
-              borderRadius: 14,
+              borderRadius: 12,
               background: '#f9fafb',
               border: '1px solid #f3f4f6',
             }}
@@ -157,14 +141,14 @@ export default function OrderingGuidePopup() {
             </div>
           </div>
 
-          {/* Active phone & 10-min waiting */}
+          {/* Policy 2 */}
           <div
             style={{
               display: 'flex',
               gap: 12,
               alignItems: 'flex-start',
               padding: '12px 14px',
-              borderRadius: 14,
+              borderRadius: 12,
               background: '#f9fafb',
               border: '1px solid #f3f4f6',
             }}
@@ -180,14 +164,14 @@ export default function OrderingGuidePopup() {
             </div>
           </div>
 
-          {/* Accurate address & standard recipes */}
+          {/* Policy 3 */}
           <div
             style={{
               display: 'flex',
               gap: 12,
               alignItems: 'flex-start',
               padding: '12px 14px',
-              borderRadius: 14,
+              borderRadius: 12,
               background: '#f9fafb',
               border: '1px solid #f3f4f6',
             }}
@@ -203,14 +187,14 @@ export default function OrderingGuidePopup() {
             </div>
           </div>
 
-          {/* Package check */}
+          {/* Policy 4 */}
           <div
             style={{
               display: 'flex',
               gap: 12,
               alignItems: 'flex-start',
               padding: '12px 14px',
-              borderRadius: 14,
+              borderRadius: 12,
               background: '#f9fafb',
               border: '1px solid #f3f4f6',
             }}
@@ -225,35 +209,12 @@ export default function OrderingGuidePopup() {
               </div>
             </div>
           </div>
-
-          {/* Extended locations */}
-          <div
-            style={{
-              display: 'flex',
-              gap: 12,
-              alignItems: 'flex-start',
-              padding: '12px 14px',
-              borderRadius: 14,
-              background: '#f9fafb',
-              border: '1px solid #f3f4f6',
-            }}
-          >
-            <MapPin size={18} color="#c0201f" style={{ flexShrink: 0, marginTop: 2 }} />
-            <div>
-              <div style={{ fontWeight: 800, fontSize: '0.85rem', color: '#111', marginBottom: 2 }}>
-                Extended Locations
-              </div>
-              <div style={{ fontSize: '0.79rem', color: '#4b5563', lineHeight: 1.45 }}>
-                Deliveries to Lasu, Ayobo, Alagbado, Akesan, Ojo, Akute, Alagbole, Ijegun, and Ibeju-Lekki may take up to 24 hours.
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Confirm Button */}
         <button
           type="button"
-          onClick={handleClose}
+          onClick={onAgree}
           style={{
             width: '100%',
             padding: '16px',

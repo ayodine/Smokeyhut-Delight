@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import OrderingGuidePopup from '../../components/OrderingGuidePopup';
 import ProductCard from '../../components/ProductCard';
+import CheckoutDisclaimerModal from '../../components/CheckoutDisclaimerModal';
 import { getProducts } from '../../lib/productsCache';
 import { useCart } from '../../context/CartContext';
 import { useToast } from '../../context/ToastContext';
@@ -9,13 +10,14 @@ import { publicSupabase, customerSupabase } from '../../lib/supabase';
 import { useCustomerAuth } from '../../context/CustomerAuthContext';
 import { profileToPrefill } from '../../lib/customerProfile';
 import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher';
-import { fetchDeliveryPromo, getPromoDeliveryFee, getQualifyingGuineaFowlQty } from '../../lib/deliveryPromo';
-import { validateEmail, applyEmailSuggestion } from '../../lib/emailValidation';
+import { fetchDeliveryPromo, getPromoDeliveryFee } from '../../lib/deliveryPromo';
+import { validateEmail } from '../../lib/emailValidation';
 import { checkCustomerAlreadyUsedCoupon } from '../../lib/couponValidator';
+import PromoProgressBanner from '../../components/PromoProgressBanner';
 import {
   ShoppingCart, X, Truck, Store as StoreIcon, Loader2, MapPin,
   MessageCircle, Banknote, Plus, Minus, Trash2, Tag, Copy, CheckCircle,
-  Utensils, PackageSearch, Send, ClipboardList, Gift, Sparkles, AlertTriangle, Lightbulb,
+  Utensils, PackageSearch, Send, ClipboardList, AlertTriangle, Lightbulb, Gift, Flame
 } from 'lucide-react';
 
 const SUPABASE_URL        = import.meta.env.VITE_SUPABASE_URL;
@@ -52,7 +54,7 @@ async function notify(type, order) {
 }
 
 export default function MenuPage() {
-  const { items, removeItem, updateQty, clearCart, total, itemCount } = useCart();
+  const { items, updateQty, clearCart, total, itemCount, promoRewardItem } = useCart();
   const { showToast } = useToast();
   const { settings } = useSettings();
 
@@ -68,6 +70,21 @@ export default function MenuPage() {
   const [checkoutOpen, setCheckoutOpen]   = useState(false);
   const [successData, setSuccessData]     = useState(null); // { orderId, method }
   const [trackingOpen, setTrackingOpen]   = useState(false);
+  const [showDisclaimerModal, setShowDisclaimerModal] = useState(false);
+
+  useEffect(() => {
+    if (checkoutOpen) {
+      const hasAgreed = sessionStorage.getItem('smokeyhut_checkout_disclaimer_agreed');
+      if (!hasAgreed) {
+        setShowDisclaimerModal(true);
+      }
+    }
+  }, [checkoutOpen]);
+
+  const handleAgreeDisclaimer = () => {
+    sessionStorage.setItem('smokeyhut_checkout_disclaimer_agreed', 'true');
+    setShowDisclaimerModal(false);
+  };
 
   // Delivery
   const [deliveryType, setDeliveryType] = useState('delivery');
@@ -219,7 +236,6 @@ export default function MenuPage() {
   const deliveryFee     = isPickup ? 0 : (allFreeShipping ? 0 : (promoApplied ? promoFee : (selectedMatch?.zone?.price ?? 0)));
   const couponDiscount  = appliedCoupon?.discount ?? 0;
   const amountToPayNow  = Math.max(0, total + deliveryFee - couponDiscount) + VAT;
-  const grandTotal      = Math.max(0, total + deliveryFee - couponDiscount) + VAT;
 
   const buildOrderPayload = (method) => {
     const customerName  = `${form.firstName} ${form.lastName}`.trim();
@@ -240,8 +256,9 @@ export default function MenuPage() {
       delivery_fee:     deliveryFee,
       coupon_code:      appliedCoupon?.code || null,
       coupon_discount:  couponDiscount,
+      promo_id:         promoRewardItem?.promo_id || null,
       status:           'pending',
-      notes:            (promoApplied ? '[via WhatsApp Menu] [Delivery Promo]' : '[via WhatsApp Menu]') + (form.notes ? '\n' + form.notes : ''),
+      notes:            (promoApplied ? '[via WhatsApp Menu] [Delivery Promo]' : '[via WhatsApp Menu]') + (promoRewardItem ? ` [Promo: ${promoRewardItem.name}]` : '') + (form.notes ? '\n' + form.notes : ''),
     };
   };
 
@@ -285,6 +302,11 @@ export default function MenuPage() {
     }
 
     const itemsSnapshot = items.map(i => ({ ...i }));
+    if (promoRewardItem) {
+      itemsSnapshot.push({ id: promoRewardItem.productId || null, name: promoRewardItem.name, price: 0, qty: promoRewardItem.qty, is_promo_reward: true });
+    } else if (appliedCoupon?.type === 'free_guinea_fowl') {
+      itemsSnapshot.push({ id: null, name: 'Free Guinea Fowl (Promo)', price: 0, qty: 1 });
+    }
     const amountSnapshot = amountToPayNow;
     setProcessing(true);
     let orderId;
@@ -371,6 +393,11 @@ export default function MenuPage() {
     }
 
     const itemsSnapshot = items.map(i => ({ ...i }));
+    if (promoRewardItem) {
+      itemsSnapshot.push({ id: promoRewardItem.productId || null, name: promoRewardItem.name, price: 0, qty: promoRewardItem.qty, is_promo_reward: true });
+    } else if (appliedCoupon?.type === 'free_guinea_fowl') {
+      itemsSnapshot.push({ id: null, name: 'Free Guinea Fowl (Promo)', price: 0, qty: 1 });
+    }
     setProcessing(true);
 
     try {
@@ -457,9 +484,14 @@ export default function MenuPage() {
 
       <section style={{ padding: 'clamp(32px, 8vw, 60px) 0' }}>
         <div className="container">
-          <div style={{ textAlign: 'center', marginBottom: 36 }}>
+          <div style={{ textAlign: 'center', marginBottom: 24 }}>
             <h1 style={{ fontWeight: 900, fontSize: 'clamp(1.8rem, 5vw, 2.8rem)', color: '#111', marginBottom: 12, letterSpacing: '-0.02em' }}>The Smokeyhut Menu</h1>
             <p style={{ color: '#666', fontSize: '0.95rem', maxWidth: 500, margin: '0 auto', lineHeight: 1.6 }}>Every item freshly prepared with premium ingredients. Order now.</p>
+          </div>
+
+          {/* Promo Hero Banner */}
+          <div style={{ maxWidth: 680, margin: '0 auto 28px' }}>
+            <PromoProgressBanner variant="full" />
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 40, gap: 20 }}>
@@ -701,7 +733,7 @@ export default function MenuPage() {
             ) : (
               <div>
                 {items.map((item, idx) => (
-                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: idx < items.length - 1 ? '1px solid #f5f5f5' : 'none' }}>
+                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: (idx < items.length - 1 || promoRewardItem) ? '1px solid #f5f5f5' : 'none' }}>
                     <div style={{ position: 'relative', flexShrink: 0 }}>
                       <div style={{ width: 56, height: 56, borderRadius: 12, overflow: 'hidden', background: '#f5f5f7', border: '1px solid #e5e5e5' }}>
                         {item.image
@@ -731,45 +763,32 @@ export default function MenuPage() {
                     </div>
                   </div>
                 ))}
+                {promoRewardItem && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: 'rgba(34, 197, 94, 0.05)', borderTop: '1px dashed rgba(34, 197, 94, 0.3)' }}>
+                    <div style={{ position: 'relative', flexShrink: 0 }}>
+                      <div style={{ width: 56, height: 56, borderRadius: 12, overflow: 'hidden', background: '#dcfce7', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Gift size={24} color="#16a34a" />
+                      </div>
+                      <span style={{ position: 'absolute', top: -6, right: -6, background: '#16a34a', color: '#fff', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 900 }}>
+                        {promoRewardItem.qty}
+                      </span>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 800, fontSize: '0.88rem', color: '#15803d' }}>{promoRewardItem.name}</span>
+                        <span style={{ background: '#16a34a', color: '#fff', fontSize: '0.62rem', fontWeight: 900, padding: '1px 5px', borderRadius: 4 }}>FREE</span>
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: '#166534', marginTop: 2 }}>Daily promo reward (₦0)</div>
+                    </div>
+                    <div style={{ fontWeight: 900, fontSize: '0.9rem', color: '#16a34a', flexShrink: 0 }}>
+                      ₦0
+                    </div>
+                  </div>
+                )}
+
               </div>
             )}
           </div>
-
-          {/* Promotional Upsell Banner for Guinea Fowl */}
-          {(() => {
-            const gfQty = getQualifyingGuineaFowlQty(items, deliveryPromo);
-            if (gfQty === 1) {
-              return (
-                <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 14, padding: '12px 14px', margin: '0 14px 12px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  <Gift size={18} color="#92400e" style={{ flexShrink: 0, marginTop: 1 }} />
-                  <div style={{ fontSize: '0.83rem', color: '#92400e', fontWeight: 600, lineHeight: 1.45 }}>
-                    <strong>You're 2 Guinea Fowls away from discounted delivery!</strong> Add 2 more Guinea Fowls to qualify for this special promotion.
-                  </div>
-                </div>
-              );
-            }
-            if (gfQty === 2) {
-              return (
-                <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 14, padding: '12px 14px', margin: '0 14px 12px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  <Gift size={18} color="#92400e" style={{ flexShrink: 0, marginTop: 1 }} />
-                  <div style={{ fontSize: '0.83rem', color: '#92400e', fontWeight: 600, lineHeight: 1.45 }}>
-                    <strong>You're just 1 Guinea Fowl away from discounted delivery!</strong> Add 1 more Guinea Fowl to qualify for this special promotion.
-                  </div>
-                </div>
-              );
-            }
-            if (gfQty >= 3) {
-              return (
-                <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 14, padding: '12px 14px', margin: '0 14px 12px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  <Sparkles size={18} color="#166534" style={{ flexShrink: 0, marginTop: 1 }} />
-                  <div style={{ fontSize: '0.83rem', color: '#166534', fontWeight: 600, lineHeight: 1.45 }}>
-                    <strong>Delivery Discount Unlocked!</strong> You've added 3+ Guinea Fowls and your delivery discount has been automatically applied.
-                  </div>
-                </div>
-              );
-            }
-            return null;
-          })()}
 
           {items.length > 0 && (<>
 
@@ -1222,32 +1241,11 @@ export default function MenuPage() {
         </div>
       </div>
 
-
+      <CheckoutDisclaimerModal
+        isOpen={showDisclaimerModal}
+        onAgree={handleAgreeDisclaimer}
+        onClose={() => setShowDisclaimerModal(false)}
+      />
     </>
-  );
-}
-
-function DisclaimerModal({ isOpen, onAgree }) {
-  if (!isOpen) return null;
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div style={{ background: '#fff', borderRadius: 20, padding: 24, maxWidth: 400, width: '100%', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-          <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#fffbeb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <AlertTriangle size={24} color="#92400e" />
-          </div>
-          <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#92400e' }}>Delivery Fee Notice</h3>
-        </div>
-        <p style={{ fontSize: '0.9rem', color: '#555', lineHeight: 1.6, marginBottom: 24 }}>
-          Please review your delivery details before placing your order.
-        </p>
-        <button
-          onClick={onAgree}
-          style={{ width: '100%', padding: 14, borderRadius: 12, background: 'var(--red)', color: '#fff', border: 'none', fontWeight: 800, fontSize: '1rem', cursor: 'pointer' }}
-        >
-          I Agree
-        </button>
-      </div>
-    </div>
   );
 }

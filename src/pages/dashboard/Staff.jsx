@@ -17,10 +17,11 @@ const ROLE_INFO = {
 
 const GRANTABLE_PAGES = [
   'Overview', 'Orders', 'Abandoned Carts', 'Shipping', 'Payments',
-  'Stores', 'Products', 'Customers', 'Zones', 'Coupons',
+  'Stores', 'Products', 'Customers', 'Zones', 'Coupons', 'Promo Offers',
   'Sales Report', 'Expenses', 'Inventory',
   'Settings',
 ];
+
 
 const ACTIONS = ['view', 'manage', 'delete'];
 const ACTION_LABELS = { view: 'View', manage: 'Manage', delete: 'Delete' };

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import ProductCard from '../../components/ProductCard';
+import PromoProgressBanner from '../../components/PromoProgressBanner';
 import OrderingGuidePopup from '../../components/OrderingGuidePopup';
 import { Clock, Flame, ShoppingCart, Leaf, Truck, Award, Store, Camera } from 'lucide-react';
 import { getProducts } from '../../lib/productsCache';
@@ -31,52 +32,54 @@ function Countdown() {
       }
 
       const diff = Math.max(0, target - lagosNow);
-      setTime({
-        h: String(Math.floor(diff / 3600000)).padStart(2, '0'),
-        m: String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0'),
-        s: String(Math.floor((diff % 60000) / 1000)).padStart(2, '0'),
-      });
+      const h = String(Math.floor(diff / 3600000)).padStart(2, '0');
+      const m = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
+      const s = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
+      setTime({ h, m, s });
     };
+
     tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
   }, []);
 
   return (
-    <section className="status-band">
-      <div className="status-band-inner">
+    <section className="store-status-bar">
+      <div className="store-status-inner">
 
-        {/* LEFT — status + timer */}
+        {/* LEFT — open/closed pill + countdown */}
         <div className="status-left">
-          <div className={`status-pill ${isOpen ? 'open' : 'closed'}`}>
-            <span className="status-dot" />
-            {isOpen ? 'Store is Open' : 'Store is Closed'}
+          <div className="status-header">
+            <span className={`live-dot ${isOpen ? 'dot-open' : 'dot-closed'}`} />
+            <span className="status-badge-text">
+              {isOpen ? "We're Smoking Right Now" : 'Store Closed — Opens Tomorrow'}
+            </span>
           </div>
 
-          <p className="status-headline">
-            {isOpen ? 'Closes in' : 'Opens in'}
+          <p className="status-timer-label">
+            {isOpen ? 'Order before we close for same-day delivery:' : 'Ordering opens in:'}
           </p>
 
-          <div className="timer-row">
-            <div className="timer-block">
-              <span className="timer-num">{time.h}</span>
-              <span className="timer-unit">hrs</span>
+          <div className="countdown-digits">
+            <div className="digit-box">
+              <span className="digit-num">{time.h}</span>
+              <span className="digit-label">HOURS</span>
             </div>
-            <span className="timer-sep">:</span>
-            <div className="timer-block">
-              <span className="timer-num">{time.m}</span>
-              <span className="timer-unit">min</span>
+            <span className="digit-sep">:</span>
+            <div className="digit-box">
+              <span className="digit-num">{time.m}</span>
+              <span className="digit-label">MINS</span>
             </div>
-            <span className="timer-sep">:</span>
-            <div className="timer-block">
-              <span className="timer-num">{time.s}</span>
-              <span className="timer-unit">sec</span>
+            <span className="digit-sep">:</span>
+            <div className="digit-box">
+              <span className="digit-num">{time.s}</span>
+              <span className="digit-label">SECS</span>
             </div>
           </div>
 
-          <p className="status-tagline">
+          <p className="status-delivery-note">
             {isOpen
-              ? <><Flame size={13} style={{ display:'inline', marginRight:5, verticalAlign:'middle' }} />Order now — hot &amp; smoky until {isSunday ? '5:00 pm' : '6:00 pm'}</>
+              ? <><Truck size={13} style={{ display:'inline', marginRight:5, verticalAlign:'middle' }} />Same-day delivery across Lagos. Order now!</>
               : <><Truck size={13} style={{ display:'inline', marginRight:5, verticalAlign:'middle' }} />{isSunday ? 'Ordering opens at 10:00 am on Sundays' : 'Ordering opens daily at 11:00 am'}</>
             }
           </p>
@@ -141,7 +144,7 @@ export default function Home() {
   const [bestsellers, setBestsellers] = useState([]);
 
   useEffect(() => {
-    getProducts().then(({ products }) => setBestsellers(products.slice(0, 4)));
+    getProducts().then(({ products }) => setBestsellers(products.slice(0, 6)));
   }, []);
 
   return (
@@ -181,9 +184,15 @@ export default function Home() {
             <h2 className="section-title">Order <span>Your Favourites</span></h2>
             <p className="section-sub">Our most-loved dishes, grilled fresh and ready for you today.</p>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+
+          {/* Promo Progress Banner */}
+          <div style={{ maxWidth: 680, margin: '0 auto 32px' }}>
+            <PromoProgressBanner variant="full" />
+          </div>
+
+          <div className="premium-grid">
             {bestsellers.map(p => (
-              <ProductCard key={p.id} product={{...p, desc: p.short_desc, category: p.category_id}} variant="shopify" />
+              <ProductCard key={p.id} product={{...p, desc: p.short_desc, category_id: p.category_id, category: p.category_id}} variant="shopify" />
             ))}
             {bestsellers.length === 0 && <div style={{gridColumn:'1/-1', textAlign:'center', color:'var(--text-muted)'}}>Loading menu...</div>}
           </div>
@@ -198,15 +207,15 @@ export default function Home() {
         <div className="container">
           <div className="section-header">
             <div className="section-tag">Why Choose Us</div>
-            <h2 className="section-title">Good Food, <span>Good Mood</span></h2>
-            <p className="section-sub">Every bird is hand selected, seasoned with secret spices, and grilled over real firewood.</p>
+            <h2 className="section-title">The Smokeyhut <span>Difference</span></h2>
+            <p className="section-sub">We don't do shortcuts. Fire, wood, and time.</p>
           </div>
           <div className="features-grid">
             {features.map((f, i) => {
               const Icon = f.icon;
               return (
                 <div key={i} className="feature-card">
-                  <span className="feature-icon"><Icon size={32} /></span>
+                  <div className="feature-icon"><Icon size={24} color="#c0201f" /></div>
                   <div className="feature-title">{f.title}</div>
                   <div className="feature-desc">{f.desc}</div>
                 </div>
@@ -216,23 +225,25 @@ export default function Home() {
         </div>
       </section>
 
-
-      {/* TESTIMONIALS */}
-      <section>
+      {/* REVIEWS */}
+      <section className="reviews-section">
         <div className="container">
-          <div className="section-header center">
-            <div className="section-tag">Reviews</div>
-            <h2 className="section-title">What Our <span>Customers Say</span></h2>
-            <p className="section-sub">Real reviews from people who love what we do.</p>
+          <div className="section-header">
+            <div className="section-tag">Social Proof</div>
+            <h2 className="section-title">What <span>Lagos Is Saying</span></h2>
+            <p className="section-sub">Real reviews from our community across Lagos.</p>
           </div>
-          <div className="testimonials-grid">
+          <div className="reviews-grid">
             {testimonials.map((t, i) => (
-              <div key={i} className="testimonial-card">
-                <div className="testimonial-stars">★★★★★</div>
-                <p className="testimonial-text">{t.text}</p>
-                <div className="testimonial-author">
-                  <div className="t-avatar" style={{ background: t.color }}>{t.initial}</div>
-                  <div><div className="t-name">{t.name}</div><div className="t-sub">{t.loc}, Lagos</div></div>
+              <div key={i} className="review-card">
+                <div className="review-stars">★★★★★</div>
+                <p className="review-text">{t.text}</p>
+                <div className="review-author">
+                  <div className="author-avatar" style={{ background: t.color }}>{t.initial}</div>
+                  <div>
+                    <div className="author-name">{t.name}</div>
+                    <div className="author-loc">{t.loc}</div>
+                  </div>
                 </div>
               </div>
             ))}
@@ -240,17 +251,33 @@ export default function Home() {
         </div>
       </section>
 
+      {/* INSTAGRAM BANNER */}
+      <section className="insta-banner">
+        <div className="container" style={{ textAlign: 'center' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.08)', padding: '6px 16px', borderRadius: 20, marginBottom: 16 }}>
+            <Camera size={16} color="#c0201f" />
+            <span style={{ fontSize: '0.82rem', color: '#ccc', fontWeight: 600 }}>Join our 57K+ community</span>
+          </div>
+          <h2 style={{ fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', fontWeight: 900, color: '#fff', marginBottom: 12 }}>Follow Us on Instagram</h2>
+          <p style={{ color: '#aaa', fontSize: '1rem', maxWidth: 460, margin: '0 auto 24px', lineHeight: 1.6 }}>Daily behind-the-scenes, smoking videos, customer reactions & exclusive discount codes.</p>
+          <a href="https://instagram.com/smokeyhut" target="_blank" rel="noopener noreferrer" className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            @smokeyhut on Instagram →
+          </a>
+        </div>
+      </section>
+
       {/* CTA */}
-      <div className="cta-band">
+      <section className="cta-section">
         <div className="container">
-          <h2>Ready to Taste the <span style={{ color: '#F5C518' }}>Best Guineafowl</span> in Lagos?</h2>
-          <p>Order now for same-day delivery. Freshly grilled, firewood-smoked, delivered hot.</p>
-          <div style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <Link to="/shop" className="btn-primary" style={{ background: '#fff', color: '#C0201F', display: 'flex', alignItems: 'center', gap: 6 }}><ShoppingCart size={18} /> Order Now</Link>
-            <a href="https://www.instagram.com/smokeyhut_delight/" target="_blank" rel="noopener noreferrer" className="btn-secondary" style={{ borderColor: 'rgba(255,255,255,0.4)', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}><Camera size={18} /> Follow Us</a>
+          <div className="cta-inner">
+            <div className="cta-content">
+              <h2>Craving That Smoky Flavour?</h2>
+              <p>Order online now. Freshly grilled, packed with flavour, delivered hot to your door anywhere in Lagos.</p>
+              <Link to="/shop" className="btn-primary">Order Online Today →</Link>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

@@ -1,19 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { useCart } from '../context/CartContext';
 import { useNavigate } from 'react-router-dom';
-import { ShoppingCart, Trash2, Gift, Sparkles, Clock } from 'lucide-react';
+import { ShoppingCart, Trash2, Clock, Gift } from 'lucide-react';
 import { anyItemPastCutoff } from '../lib/deliveryCutoff';
-import { fetchDeliveryPromo, getQualifyingGuineaFowlQty } from '../lib/deliveryPromo';
-import { publicSupabase } from '../lib/supabase';
+import PromoProgressBanner from './PromoProgressBanner';
 
 export default function CartSidebar({ isOpen, onClose }) {
-  const { items, updateQty, removeItem, total, itemCount } = useCart();
+  const { items, updateQty, removeItem, total, itemCount, promoRewardItem } = useCart();
   const navigate = useNavigate();
-  const [deliveryPromo, setDeliveryPromo] = useState(null);
-
-  useEffect(() => {
-    fetchDeliveryPromo(publicSupabase).then(setDeliveryPromo);
-  }, []);
 
   const fmt = (n) => '₦' + Number(n).toLocaleString();
 
@@ -25,69 +19,73 @@ export default function CartSidebar({ isOpen, onClose }) {
           <h3>Your Cart ({itemCount})</h3>
           <button className="cart-close" onClick={onClose}>✕</button>
         </div>
+        {items.length > 0 && (
+          <div style={{ padding: '0 16px 12px' }}>
+            <PromoProgressBanner variant="compact" />
+          </div>
+        )}
         <div className="cart-items">
+
           {items.length === 0 ? (
             <div className="cart-empty">
               <span className="e-icon" style={{ display: 'block', marginBottom: 12 }}><ShoppingCart size={48} color="var(--text-muted)" /></span>
               <p>Your cart is empty</p>
               <p style={{ fontSize: '0.82rem', marginTop: 6 }}>Add some smoky goodness!</p>
             </div>
-          ) : items.map(item => (
-            <div key={item.id} className="cart-item">
-              <div className="cart-item-emoji" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                {item.image ? (
-                  <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : (
-                  <div style={{ width: '100%', height: '100%', background: 'var(--black3)' }} />
-                )}
-              </div>
-              <div className="cart-item-info">
-                <div className="cart-item-name">{item.name}</div>
-                <div className="cart-item-price">{fmt(item.price * item.qty)}</div>
-                <div className="cart-qty">
-                  <button className="qty-btn" onClick={() => updateQty(item.id, item.qty - 1)}>−</button>
-                  <span className="qty-num">{item.qty}</span>
-                  <button className="qty-btn" onClick={() => updateQty(item.id, item.qty + 1)}>+</button>
+          ) : (
+            <>
+              {items.map(item => (
+                <div key={item.id} className="cart-item">
+                  <div className="cart-item-emoji" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                    {item.image ? (
+                      <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', background: 'var(--black3)' }} />
+                    )}
+                  </div>
+                  <div className="cart-item-info">
+                    <div className="cart-item-name">{item.name}</div>
+                    <div className="cart-item-price">{fmt(item.price * item.qty)}</div>
+                    <div className="cart-qty">
+                      <button className="qty-btn" onClick={() => updateQty(item.id, item.qty - 1)}>−</button>
+                      <span className="qty-num">{item.qty}</span>
+                      <button className="qty-btn" onClick={() => updateQty(item.id, item.qty + 1)}>+</button>
+                    </div>
+                  </div>
+                  <button className="cart-remove" onClick={() => removeItem(item.id)}><Trash2 size={18} color="var(--text-muted)" /></button>
                 </div>
-              </div>
-              <button className="cart-remove" onClick={() => removeItem(item.id)}><Trash2 size={18} color="var(--text-muted)" /></button>
-            </div>
-          ))}
+              ))}
+
+              {promoRewardItem && (
+                <div className="cart-item" style={{ background: 'rgba(34, 197, 94, 0.08)', borderRadius: 10, border: '1px dashed #22c55e', padding: '10px 12px', marginTop: 8 }}>
+                  <div className="cart-item-emoji" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#16a34a', color: '#fff', borderRadius: 8, width: 44, height: 44, flexShrink: 0 }}>
+                    <Gift size={22} />
+                  </div>
+                  <div className="cart-item-info" style={{ flex: 1 }}>
+                    <div className="cart-item-name" style={{ color: '#15803d', fontWeight: 800, fontSize: '0.88rem' }}>{promoRewardItem.name}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                      <span style={{ fontSize: '0.68rem', fontWeight: 900, background: '#16a34a', color: '#fff', padding: '1px 6px', borderRadius: 4 }}>FREE PROMO REWARD</span>
+                      <span className="cart-item-price" style={{ color: '#15803d', fontWeight: 800 }}>₦0</span>
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: '#166534', marginTop: 2 }}>Qty: {promoRewardItem.qty}</div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
         {items.length > 0 && (
           <div className="cart-footer">
-            {(() => {
-              const gfQty = getQualifyingGuineaFowlQty(items, deliveryPromo);
-              if (gfQty === 1) {
-                return (
-                  <div style={{ fontSize: '0.8rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 12px', marginBottom: 12, lineHeight: 1.4, fontWeight: 600, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                    <Gift size={16} color="#92400e" style={{ flexShrink: 0, marginTop: 2 }} />
-                    <div><strong>You're 2 Guinea Fowls away from discounted delivery!</strong> Add 2 more Guinea Fowls to qualify for this special promotion.</div>
-                  </div>
-                );
-              }
-              if (gfQty === 2) {
-                return (
-                  <div style={{ fontSize: '0.8rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 12px', marginBottom: 12, lineHeight: 1.4, fontWeight: 600, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                    <Gift size={16} color="#92400e" style={{ flexShrink: 0, marginTop: 2 }} />
-                    <div><strong>You're just 1 Guinea Fowl away from discounted delivery!</strong> Add 1 more Guinea Fowl to qualify for this special promotion.</div>
-                  </div>
-                );
-              }
-              if (gfQty >= 3) {
-                return (
-                  <div style={{ fontSize: '0.8rem', color: '#166534', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 12px', marginBottom: 12, lineHeight: 1.4, fontWeight: 600, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                    <Sparkles size={16} color="#166534" style={{ flexShrink: 0, marginTop: 2 }} />
-                    <div><strong>Delivery Discount Unlocked!</strong> You've added 3+ Guinea Fowls and your delivery discount is automatically applied.</div>
-                  </div>
-                );
-              }
-              return null;
-            })()}
             <div className="cart-subtotal">
               <span>Subtotal</span>
               <span>{fmt(total)}</span>
             </div>
+            {promoRewardItem && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#15803d', fontWeight: 700, margin: '4px 0 8px' }}>
+                <span>Promo Gift Applied</span>
+                <span>FREE (₦0)</span>
+              </div>
+            )}
             {anyItemPastCutoff(items) && (
               <div style={{ fontSize: '0.78rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 10px', marginBottom: 8, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Clock size={14} color="#92400e" style={{ flexShrink: 0 }} /> Some items have passed today's cutoff and will be delivered tomorrow.

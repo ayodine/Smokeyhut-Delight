@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react';
 import { useCartTracker } from '../hooks/useCartTracker';
+import { publicSupabase } from '../lib/supabase';
+import { fetchActivePromos, findBestCartPromo } from '../lib/promoOffers';
 
 const CartContext = createContext(null);
 
@@ -14,6 +16,46 @@ export function CartProvider({ children }) {
     }
   });
 
+  const [activePromos, setActivePromos] = useState([]);
+  const [promosLoading, setPromosLoading] = useState(true);
+
+  const loadPromos = useCallback(async () => {
+    try {
+      const data = await fetchActivePromos(publicSupabase);
+      setActivePromos(data || []);
+    } catch {
+      setActivePromos([]);
+    } finally {
+      setPromosLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPromos();
+
+    // Auto-refresh when tab gains focus
+    const onFocus = () => loadPromos();
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('visibilitychange', onFocus);
+
+    // Realtime listener for live promo updates
+    const channel = publicSupabase
+      .channel('promo-offers-live-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'promo_offers' }, () => {
+        loadPromos();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'promo_redemptions' }, () => {
+        loadPromos();
+      })
+      .subscribe();
+
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('visibilitychange', onFocus);
+      publicSupabase.removeChannel(channel);
+    };
+  }, [loadPromos]);
+
   const {
     sessionId,
     trackCartChange,
@@ -24,6 +66,15 @@ export function CartProvider({ children }) {
 
   const total = useMemo(() => items.reduce((sum, i) => sum + i.price * i.qty, 0), [items]);
   const itemCount = useMemo(() => items.reduce((sum, i) => sum + i.qty, 0), [items]);
+
+  // Evaluated promo based on current cart
+  const bestPromoMatch = useMemo(() => {
+    return findBestCartPromo(activePromos, items);
+  }, [activePromos, items]);
+
+  const promoOffer = bestPromoMatch?.promo || null;
+  const promoEvaluation = bestPromoMatch?.evaluation || null;
+  const promoRewardItem = promoEvaluation?.qualifies ? promoEvaluation.rewardItem : null;
 
   useEffect(() => {
     try {
@@ -68,26 +119,49 @@ export function CartProvider({ children }) {
   const value = useMemo(
     () => ({
       items,
+      itemCount,
+      total,
       addItem,
       removeItem,
       updateQty,
       clearCart,
-      total,
-      itemCount,
-      cartSessionId: sessionId,
+      sessionId,
       promoteStage,
       captureContact,
       markConverted,
+      activePromos,
+      promosLoading,
+      promoOffer,
+      promoEvaluation,
+      promoRewardItem,
+      refreshPromos: loadPromos,
     }),
-    [items, addItem, removeItem, updateQty, clearCart, total, itemCount, sessionId, promoteStage, captureContact, markConverted]
+    [
+      items,
+      itemCount,
+      total,
+      addItem,
+      removeItem,
+      updateQty,
+      clearCart,
+      sessionId,
+      promoteStage,
+      captureContact,
+      markConverted,
+      activePromos,
+      promosLoading,
+      promoOffer,
+      promoEvaluation,
+      promoRewardItem,
+      loadPromos,
+    ]
   );
 
-  return (
-    <CartContext.Provider value={value}>
-      {children}
-    </CartContext.Provider>
-  );
+  return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }
 
-export const useCart = () => useContext(CartContext);
-
+export function useCart() {
+  const ctx = useContext(CartContext);
+  if (!ctx) throw new Error('useCart must be used inside CartProvider');
+  return ctx;
+}

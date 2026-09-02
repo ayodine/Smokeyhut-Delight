@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useCart } from '../context/CartContext';
 import { useToast } from '../context/ToastContext';
 import { Drumstick, Plus, ShoppingBag, Clock } from 'lucide-react';
 import { getCutoffState } from '../lib/deliveryCutoff';
+import SameDayCutoffModal from './SameDayCutoffModal';
 
 const fmt = (n) => '₦' + Number(n).toLocaleString();
 
@@ -13,9 +14,22 @@ const fmt = (n) => '₦' + Number(n).toLocaleString();
 function ProductCard({ product, variant }) {
   const { addItem, items: cartItems } = useCart();
   const { showToast } = useToast();
+  const [showCutoffModal, setShowCutoffModal] = useState(false);
+
+  const cutoff = getCutoffState(product);
 
   const handleAdd = (e) => {
-    e.stopPropagation();
+    if (e && e.stopPropagation) e.stopPropagation();
+    if (cutoff.hasCutoff) {
+      setShowCutoffModal(true);
+      return;
+    }
+    addItem(product);
+    showToast(`${product.name} added!`, 'Check your cart', 'success');
+  };
+
+  const handleConfirmCutoff = () => {
+    setShowCutoffModal(false);
     addItem(product);
     showToast(`${product.name} added!`, 'Check your cart', 'success');
   };
@@ -28,11 +42,11 @@ function ProductCard({ product, variant }) {
     ? Math.round((1 - Number(product.price) / Number(product.compare_price)) * 100)
     : 0;
   const isOutOfStock = false;
-  const cutoff = getCutoffState(product);
 
   /* ── Shopify-style white card (matches reference UI) ── */
   if (variant === 'shopify') {
     return (
+      <>
       <div style={{
         background: 'transparent',
         borderRadius: 0,
@@ -105,12 +119,20 @@ function ProductCard({ product, variant }) {
           </button>
         </div>
       </div>
+      <SameDayCutoffModal
+        isOpen={showCutoffModal}
+        product={product}
+        onConfirm={handleConfirmCutoff}
+        onClose={() => setShowCutoffModal(false)}
+      />
+      </>
     );
   }
 
   /* ── Compact 2-col menu card (WhatsApp /menu) ── */
   if (variant === 'menu') {
     return (
+      <>
       <div className="product-card" style={isOutOfStock ? { opacity: 0.65, filter: 'grayscale(0.3)' } : {}}>
         {(product.badge || hasDiscount || isOutOfStock) && (
           <div className="product-badges">
@@ -151,11 +173,19 @@ function ProductCard({ product, variant }) {
           </div>
         </div>
       </div>
+      <SameDayCutoffModal
+        isOpen={showCutoffModal}
+        product={product}
+        onConfirm={handleConfirmCutoff}
+        onClose={() => setShowCutoffModal(false)}
+      />
+      </>
     );
   }
 
   /* ── Default themed card (home, etc.) ── */
   return (
+    <>
     <div className="product-card" style={isOutOfStock ? { opacity: 0.65, filter: 'grayscale(0.3)' } : {}}>
       {(product.badge || hasDiscount || isOutOfStock) && (
         <div className="product-badges">
@@ -196,6 +226,13 @@ function ProductCard({ product, variant }) {
         </div>
       </div>
     </div>
+    <SameDayCutoffModal
+      isOpen={showCutoffModal}
+      product={product}
+      onConfirm={handleConfirmCutoff}
+      onClose={() => setShowCutoffModal(false)}
+    />
+    </>
   );
 }
 

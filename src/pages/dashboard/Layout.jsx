@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import {
   BarChart2, Package, Truck, CreditCard, Store, ShoppingBag, ShoppingCart, Users,
-  Settings, LogOut, Globe, Menu, UserCog, MapPin, Tag,
+  Settings, LogOut, Globe, Menu, UserCog, MapPin, Tag, Flame,
   DollarSign, TrendingUp, Receipt, Archive, ChevronDown, Boxes,
   ChevronLeft, ChevronRight, Shield, Briefcase, Bike, User
 } from 'lucide-react';
@@ -48,10 +48,12 @@ const allNavItems = [
   {
     type: 'group', icon: Users, label: 'Customers & Promos', roles: ['Admin', 'Manager', 'Staff'],
     children: [
-      { to: '/admin/customers', icon: Users, label: 'Customers', roles: ['Admin', 'Manager', 'Staff'] },
-      { to: '/admin/coupons',   icon: Tag,   label: 'Coupons',   roles: ['Admin', 'Manager', 'Staff'] },
+      { to: '/admin/customers', icon: Users, label: 'Customers',    roles: ['Admin', 'Manager', 'Staff'] },
+      { to: '/admin/coupons',   icon: Tag,   label: 'Coupons',      roles: ['Admin', 'Manager', 'Staff'] },
+      { to: '/admin/promos',    icon: Flame, label: 'Promo Offers', roles: ['Admin', 'Manager', 'Staff'] },
     ],
   },
+
 
   // 5. Finance & Analytics
   {

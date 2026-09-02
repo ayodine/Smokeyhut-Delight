@@ -8,7 +8,7 @@ import AccountMenu from './AccountMenu';
 export default function Navbar({ onCartOpen }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [tickerVisible, setTickerVisible] = useState(true);
-  const { itemCount } = useCart();
+  const { itemCount, promoOffer } = useCart();
   const { settings } = useSettings();
   const location = useLocation();
 
@@ -21,7 +21,9 @@ export default function Navbar({ onCartOpen }) {
     { to: '/store-rules', label: 'Store Rules' },
   ];
 
-  const tickerItems = settings.tickerItems || [];
+  const promoTicker = promoOffer?.banner_message ? [promoOffer.banner_message] : [];
+  const tickerItems = [...promoTicker, ...(settings.tickerItems || [])];
+
 
   return (
     <>

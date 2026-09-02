@@ -49,6 +49,7 @@ const Staff         = lazy(() => import('./pages/dashboard/Staff'));
 const Settings      = lazy(() => import('./pages/dashboard/Settings'));
 const DeliveryZones = lazy(() => import('./pages/dashboard/DeliveryZones'));
 const Coupons       = lazy(() => import('./pages/dashboard/Coupons'));
+const PromoOffers   = lazy(() => import('./pages/dashboard/PromoOffers'));
 const SalesReport   = lazy(() => import('./pages/dashboard/finance/SalesReport'));
 const Expenses      = lazy(() => import('./pages/dashboard/finance/Expenses'));
 const Inventory     = lazy(() => import('./pages/dashboard/finance/Inventory'));
@@ -313,6 +314,7 @@ export default function App() {
                   <Route path="staff" element={<Suspense fallback={null}><Staff /></Suspense>} />
                   <Route path="zones" element={<Suspense fallback={null}><DeliveryZones /></Suspense>} />
                   <Route path="coupons" element={<Suspense fallback={null}><Coupons /></Suspense>} />
+                  <Route path="promos" element={<Suspense fallback={null}><PromoOffers /></Suspense>} />
                   <Route path="finance/sales" element={<Suspense fallback={null}><SalesReport /></Suspense>} />
                   <Route path="finance/expenses" element={<Suspense fallback={null}><Expenses /></Suspense>} />
                   <Route path="finance/inventory" element={<Suspense fallback={null}><Inventory /></Suspense>} />
