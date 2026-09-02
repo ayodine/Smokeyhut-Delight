@@ -125,41 +125,60 @@ export function evaluateCartPromo(promo, cartItems) {
   const qualifies = currentQty >= requiredQty && !isQuotaExhausted;
 
   let rewardItem = null;
-  if (qualifies && promo.reward_type === 'free_product') {
-    rewardItem = {
-      id: promo.reward_product_id ? `promo-${promo.reward_product_id}` : `promo-reward-${promo.id}`,
-      productId: promo.reward_product_id || null,
-      name: promo.reward_product_name || 'Free Guinea Fowl (Daily Promo Reward)',
-      price: 0,
-      qty: Number(promo.reward_qty) || 1,
-      is_promo_reward: true,
-      promo_id: promo.id,
-    };
+  const isFreeDelivery = promo.reward_type === 'free_delivery';
+
+  if (qualifies) {
+    if (isFreeDelivery) {
+      rewardItem = {
+        id: `promo-free-delivery-${promo.id}`,
+        productId: null,
+        name: promo.reward_product_name || 'Free Delivery',
+        price: 0,
+        qty: 1,
+        is_promo_reward: true,
+        is_free_delivery: true,
+        promo_id: promo.id,
+      };
+    } else if (promo.reward_type === 'free_product') {
+      rewardItem = {
+        id: promo.reward_product_id ? `promo-${promo.reward_product_id}` : `promo-reward-${promo.id}`,
+        productId: promo.reward_product_id || null,
+        name: promo.reward_product_name || 'Free Guinea Fowl (Daily Promo Reward)',
+        price: 0,
+        qty: Number(promo.reward_qty) || 1,
+        is_promo_reward: true,
+        is_free_delivery: false,
+        promo_id: promo.id,
+      };
+    }
   }
 
-  const rewardName = promo.reward_product_name || 'Free Guinea Fowl';
+  const rewardName = promo.reward_product_name || (isFreeDelivery ? 'Free Delivery' : 'Free Guinea Fowl');
   const rewardQty = Number(promo.reward_qty) || 1;
+  const rewardLabel = isFreeDelivery ? rewardName : `${rewardQty}× ${rewardName}`;
   let statusMessage = '';
 
   if (isQuotaExhausted) {
     statusMessage = "Today's daily promo limit has been reached.";
   } else if (qualifies) {
-    statusMessage = `Promo Unlocked: ${rewardQty}× ${rewardName} added to your order!`;
+    statusMessage = isFreeDelivery
+      ? `🎉 Promo Unlocked: You get FREE DELIVERY on this order!`
+      : `🎁 Promo Unlocked: ${rewardLabel} added to your order!`;
   } else if (currentQty > 0) {
     if (isMinAmount) {
-      statusMessage = `Spend ₦${remainingQtyNeeded.toLocaleString()} more to get ${rewardQty}× ${rewardName} FREE!`;
+      statusMessage = `Spend ₦${remainingQtyNeeded.toLocaleString()} more to get ${rewardLabel}!`;
     } else if (promo.qualifying_type === 'guinea_fowl_birds') {
-      statusMessage = `Add ${remainingQtyNeeded} more Guinea Fowl${remainingQtyNeeded > 1 ? 's' : ''} to get ${rewardQty}× ${rewardName} FREE!`;
+      statusMessage = `Add ${remainingQtyNeeded} more Guinea Fowl${remainingQtyNeeded > 1 ? 's' : ''} to get ${rewardLabel}!`;
     } else {
-      statusMessage = `Add ${remainingQtyNeeded} more item${remainingQtyNeeded > 1 ? 's' : ''} to get ${rewardQty}× ${rewardName} FREE!`;
+      statusMessage = `Add ${remainingQtyNeeded} more item${remainingQtyNeeded > 1 ? 's' : ''} to get ${rewardLabel}!`;
     }
   } else {
     if (isMinAmount) {
-      statusMessage = `Spend ₦${requiredQty.toLocaleString()} or more and get ${rewardQty}× ${rewardName} FREE!`;
+      statusMessage = `Spend ₦${requiredQty.toLocaleString()} or more and get ${rewardLabel}!`;
     } else if (promo.qualifying_type === 'guinea_fowl_birds') {
-      statusMessage = `Order ${requiredQty} or more Guinea Fowls and get ${rewardQty}× ${rewardName} FREE!`;
+      statusMessage = `Order ${requiredQty} or more Guinea Fowls and get ${rewardLabel}!`;
     } else {
-      statusMessage = `Buy ${requiredQty} qualifying items and get ${rewardQty}× ${rewardName} FREE!`;
+      statusMessage = `Buy ${requiredQty} qualifying items and get ${rewardLabel}!`;
     }
   }
 

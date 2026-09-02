@@ -1,6 +1,6 @@
 import React from 'react';
 import { useCart } from '../context/CartContext';
-import { Gift, CheckCircle2, Flame, Zap } from 'lucide-react';
+import { Gift, CheckCircle2, Flame, Zap, Truck } from 'lucide-react';
 
 export default function PromoProgressBanner({ variant = 'full', style = {} }) {
   const { promoOffer, promoEvaluation, promoRewardItem } = useCart();
@@ -17,10 +17,12 @@ export default function PromoProgressBanner({ variant = 'full', style = {} }) {
     remainingToday,
   } = promoEvaluation;
 
+  const isFreeDelivery = promoOffer.reward_type === 'free_delivery' || promoRewardItem?.is_free_delivery;
   const isMinAmount = promoOffer.qualifying_type === 'min_amount';
   const isBirdCount = promoOffer.qualifying_type === 'guinea_fowl_birds';
-  const rewardName = promoOffer.reward_product_name || 'Free Guinea Fowl';
+  const rewardName = promoOffer.reward_product_name || (isFreeDelivery ? 'Free Delivery' : 'Free Guinea Fowl');
   const rewardQty = Number(promoOffer.reward_qty) || 1;
+  const rewardLabel = isFreeDelivery ? 'FREE DELIVERY' : `${rewardQty}× FREE ${rewardName}`;
 
   const progressText = isMinAmount
     ? `₦${Number(currentQty || 0).toLocaleString()} / ₦${Number(requiredQty || 0).toLocaleString()}`
@@ -46,8 +48,8 @@ export default function PromoProgressBanner({ variant = 'full', style = {} }) {
     if (variant === 'compact') {
       return (
         <div className="promo-banner promo-banner--unlocked-compact" style={style}>
-          <Gift size={14} color="#16a34a" />
-          <span>{rewardQty}× {rewardName} unlocked!</span>
+          {isFreeDelivery ? <Truck size={14} color="#16a34a" /> : <Gift size={14} color="#16a34a" />}
+          <span>{isFreeDelivery ? 'Free Delivery unlocked!' : `${rewardQty}× ${rewardName} unlocked!`}</span>
           <span className="promo-badge promo-badge--green">FREE</span>
         </div>
       );
@@ -57,7 +59,7 @@ export default function PromoProgressBanner({ variant = 'full', style = {} }) {
       <div className="promo-banner promo-banner--unlocked" style={style}>
         <div className="promo-banner__unlocked-left">
           <div className="promo-banner__icon promo-banner__icon--green">
-            <Gift size={20} />
+            {isFreeDelivery ? <Truck size={20} /> : <Gift size={20} />}
           </div>
           <div>
             <div className="promo-banner__title promo-banner__title--green">
@@ -65,7 +67,11 @@ export default function PromoProgressBanner({ variant = 'full', style = {} }) {
               <span className="promo-badge promo-badge--green">FREE</span>
             </div>
             <p className="promo-banner__sub promo-banner__sub--green">
-              <strong>{rewardQty}× {rewardName}</strong> automatically added to your order!
+              {isFreeDelivery ? (
+                <><strong>100% Free Delivery</strong> applied to your order at checkout!</>
+              ) : (
+                <><strong>{rewardQty}× {rewardName}</strong> automatically added to your order!</>
+              )}
             </p>
           </div>
         </div>
@@ -85,8 +91,8 @@ export default function PromoProgressBanner({ variant = 'full', style = {} }) {
           </span>
           <span className="promo-banner__compact-cta">
             {isMinAmount
-              ? `₦${remainingQtyNeeded.toLocaleString()} more → FREE ${rewardName}`
-              : `${remainingQtyNeeded} more ${isBirdCount ? 'bird' : 'item'}${remainingQtyNeeded > 1 ? 's' : ''} → FREE ${rewardName}`
+              ? `₦${remainingQtyNeeded.toLocaleString()} more → ${rewardLabel}`
+              : `${remainingQtyNeeded} more ${isBirdCount ? 'bird' : 'item'}${remainingQtyNeeded > 1 ? 's' : ''} → ${rewardLabel}`
             }
           </span>
         </div>
@@ -120,8 +126,8 @@ export default function PromoProgressBanner({ variant = 'full', style = {} }) {
           </div>
         </div>
         <div className="promo-banner__reward-chip">
-          <Gift size={13} />
-          <span>{rewardQty}× FREE {rewardName}</span>
+          {isFreeDelivery ? <Truck size={13} /> : <Gift size={13} />}
+          <span>{rewardLabel}</span>
         </div>
       </div>
 
@@ -129,12 +135,12 @@ export default function PromoProgressBanner({ variant = 'full', style = {} }) {
       <p className="promo-banner__desc">
         {currentQty === 0
           ? (isMinAmount
-              ? `Spend ₦${requiredQty.toLocaleString()}+ and get ${rewardQty} FREE ${rewardName}!`
-              : `Order ${requiredQty}+ ${isBirdCount ? 'Guinea Fowls' : 'qualifying items'} → get ${rewardQty} FREE ${rewardName}!`
+              ? `Spend ₦${requiredQty.toLocaleString()}+ and get ${rewardLabel}!`
+              : `Order ${requiredQty}+ ${isBirdCount ? 'Guinea Fowls' : 'qualifying items'} → get ${rewardLabel}!`
             )
           : (isMinAmount
-              ? `Spend ₦${needMore.toLocaleString()} more to unlock your free reward!`
-              : `${needMore} more ${isBirdCount ? 'Guinea Fowl' : 'item'}${needMore > 1 ? 's' : ''} away from a FREE ${rewardName}!`
+              ? `Spend ₦${needMore.toLocaleString()} more to unlock ${rewardLabel}!`
+              : `${needMore} more ${isBirdCount ? 'Guinea Fowl' : 'item'}${needMore > 1 ? 's' : ''} away from ${rewardLabel}!`
             )
         }
       </p>

@@ -109,6 +109,7 @@ describe('promoOffers - evaluateCartPromo', () => {
       price: 0,
       qty: 1,
       is_promo_reward: true,
+      is_free_delivery: false,
       promo_id: 'promo-123',
     });
     expect(evalResult.statusMessage).toContain('Promo Unlocked');
@@ -133,6 +134,35 @@ describe('promoOffers - evaluateCartPromo', () => {
     expect(evalResult.currentQty).toBe(16000);
     expect(evalResult.requiredQty).toBe(20000);
     expect(evalResult.remainingQtyNeeded).toBe(4000);
+  });
+
+  it('evaluates free_delivery reward promo properly when qualified', () => {
+    const deliveryPromo = {
+      id: 'promo-delivery-1',
+      title: 'Free Delivery Special',
+      qualifying_type: 'guinea_fowl_birds',
+      min_qualifying_qty: 3,
+      reward_type: 'free_delivery',
+      reward_product_name: 'Free Delivery',
+      reward_qty: 1,
+      daily_quota: 25,
+      remaining_today: 20,
+    };
+    const cart = [{ name: 'Triple Delight Combo', qty: 1 }]; // 3 birds
+    const evalResult = evaluateCartPromo(deliveryPromo, cart);
+
+    expect(evalResult.qualifies).toBe(true);
+    expect(evalResult.rewardItem).toEqual({
+      id: 'promo-free-delivery-promo-delivery-1',
+      productId: null,
+      name: 'Free Delivery',
+      price: 0,
+      qty: 1,
+      is_promo_reward: true,
+      is_free_delivery: true,
+      promo_id: 'promo-delivery-1',
+    });
+    expect(evalResult.statusMessage).toContain('FREE DELIVERY');
   });
 
   it('does not qualify when daily quota is exhausted', () => {

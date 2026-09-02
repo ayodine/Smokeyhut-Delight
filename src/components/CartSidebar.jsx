@@ -1,7 +1,7 @@
 import React from 'react';
 import { useCart } from '../context/CartContext';
 import { useNavigate } from 'react-router-dom';
-import { ShoppingCart, Trash2, Clock, Gift } from 'lucide-react';
+import { ShoppingCart, Trash2, Clock, Gift, Truck } from 'lucide-react';
 import { anyItemPastCutoff } from '../lib/deliveryCutoff';
 import PromoProgressBanner from './PromoProgressBanner';
 
@@ -19,12 +19,8 @@ export default function CartSidebar({ isOpen, onClose }) {
           <h3>Your Cart ({itemCount})</h3>
           <button className="cart-close" onClick={onClose}>✕</button>
         </div>
-        {items.length > 0 && (
-          <div style={{ padding: '0 16px 12px' }}>
-            <PromoProgressBanner variant="compact" />
-          </div>
-        )}
         <div className="cart-items">
+          <PromoProgressBanner variant="compact" style={{ margin: '8px 12px 14px' }} />
 
           {items.length === 0 ? (
             <div className="cart-empty">
@@ -57,19 +53,35 @@ export default function CartSidebar({ isOpen, onClose }) {
               ))}
 
               {promoRewardItem && (
-                <div className="cart-item" style={{ background: 'rgba(34, 197, 94, 0.08)', borderRadius: 10, border: '1px dashed #22c55e', padding: '10px 12px', marginTop: 8 }}>
-                  <div className="cart-item-emoji" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#16a34a', color: '#fff', borderRadius: 8, width: 44, height: 44, flexShrink: 0 }}>
-                    <Gift size={22} />
-                  </div>
-                  <div className="cart-item-info" style={{ flex: 1 }}>
-                    <div className="cart-item-name" style={{ color: '#15803d', fontWeight: 800, fontSize: '0.88rem' }}>{promoRewardItem.name}</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                      <span style={{ fontSize: '0.68rem', fontWeight: 900, background: '#16a34a', color: '#fff', padding: '1px 6px', borderRadius: 4 }}>FREE PROMO REWARD</span>
-                      <span className="cart-item-price" style={{ color: '#15803d', fontWeight: 800 }}>₦0</span>
+                promoRewardItem.is_free_delivery ? (
+                  <div className="cart-item" style={{ background: '#f0fdf4', borderRadius: 10, border: '1px dashed #22c55e', padding: '10px 12px', marginTop: 8 }}>
+                    <div className="cart-item-emoji" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#16a34a', color: '#fff', borderRadius: 8, width: 44, height: 44, flexShrink: 0 }}>
+                      <Truck size={22} />
                     </div>
-                    <div style={{ fontSize: '0.72rem', color: '#166534', marginTop: 2 }}>Qty: {promoRewardItem.qty}</div>
+                    <div className="cart-item-info" style={{ flex: 1 }}>
+                      <div className="cart-item-name" style={{ color: '#15803d', fontWeight: 800, fontSize: '0.88rem' }}>Free Delivery</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                        <span style={{ fontSize: '0.68rem', fontWeight: 900, background: '#16a34a', color: '#fff', padding: '1px 6px', borderRadius: 4 }}>FREE SHIPPING</span>
+                        <span className="cart-item-price" style={{ color: '#15803d', fontWeight: 800 }}>₦0</span>
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#166534', marginTop: 2 }}>Applied automatically at checkout</div>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="cart-item" style={{ background: 'rgba(34, 197, 94, 0.08)', borderRadius: 10, border: '1px dashed #22c55e', padding: '10px 12px', marginTop: 8 }}>
+                    <div className="cart-item-emoji" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#16a34a', color: '#fff', borderRadius: 8, width: 44, height: 44, flexShrink: 0 }}>
+                      <Gift size={22} />
+                    </div>
+                    <div className="cart-item-info" style={{ flex: 1 }}>
+                      <div className="cart-item-name" style={{ color: '#15803d', fontWeight: 800, fontSize: '0.88rem' }}>{promoRewardItem.name}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                        <span style={{ fontSize: '0.68rem', fontWeight: 900, background: '#16a34a', color: '#fff', padding: '1px 6px', borderRadius: 4 }}>FREE PROMO REWARD</span>
+                        <span className="cart-item-price" style={{ color: '#15803d', fontWeight: 800 }}>₦0</span>
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#166534', marginTop: 2 }}>Qty: {promoRewardItem.qty}</div>
+                    </div>
+                  </div>
+                )
               )}
             </>
           )}
@@ -82,7 +94,7 @@ export default function CartSidebar({ isOpen, onClose }) {
             </div>
             {promoRewardItem && (
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#15803d', fontWeight: 700, margin: '4px 0 8px' }}>
-                <span>Promo Gift Applied</span>
+                <span>{promoRewardItem.is_free_delivery ? '🚚 Free Delivery Promo' : 'Promo Gift Applied'}</span>
                 <span>FREE (₦0)</span>
               </div>
             )}

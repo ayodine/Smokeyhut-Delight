@@ -4,7 +4,7 @@ import { useToast } from '../../context/ToastContext';
 import {
   Flame, Plus, Trash2, Edit2, X, Minus,
   Users, Clock, RefreshCw, Eye, Search, Gift, Loader2, Sparkles, Check, ArrowRight,
-  ShoppingBag, Tag, DollarSign, Layers, Zap, Info
+  ShoppingBag, Tag, DollarSign, Layers, Zap, Info, Truck
 } from 'lucide-react';
 import { SkelList, SkelTable } from '../../components/Skeleton';
 import CustomSelect from '../../components/CustomSelect';
@@ -232,9 +232,11 @@ export default function PromoOffers() {
         description: 'Order 3+ Guinea Fowls today and get 1 FREE!',
         badge_text: 'Daily Special',
         banner_message: 'Order 3+ Guinea Fowls today and get 1 FREE!',
+        offer_type: 'buy_x_get_y_free',
         qualifying_type: 'guinea_fowl_birds',
         min_qualifying_qty: '3',
         min_order_amount: '',
+        reward_type: 'free_product',
         reward_product_id: gfProduct ? String(gfProduct.id) : '',
         reward_product_name: gfProduct ? gfProduct.name : 'Free Guinea Fowl',
         reward_qty: '1',
@@ -250,11 +252,53 @@ export default function PromoOffers() {
         description: 'Spend ₦20,000 or more and get a free special item!',
         badge_text: 'Spend & Save',
         banner_message: 'Orders over ₦20,000 get a special FREE gift today!',
+        offer_type: 'daily_gift',
         qualifying_type: 'min_amount',
         min_qualifying_qty: '1',
         min_order_amount: '20000',
+        reward_type: 'free_product',
         reward_product_id: gfProduct ? String(gfProduct.id) : '',
         reward_product_name: 'Free Special Side',
+        reward_qty: '1',
+        daily_quota: '30',
+        per_customer_daily_limit: '1',
+        auto_apply: true,
+        is_active: true
+      });
+    } else if (type === 'free_delivery_3') {
+      setForm({
+        ...EMPTY_PROMO_FORM,
+        title: 'Buy 3+ Birds: Free Delivery',
+        description: 'Order 3 or more Guinea Fowls and enjoy 100% Free Delivery!',
+        badge_text: 'Free Delivery',
+        banner_message: '🚚 Buy 3+ Guinea Fowls today and get FREE DELIVERY!',
+        offer_type: 'buy_x_get_y_free',
+        qualifying_type: 'guinea_fowl_birds',
+        min_qualifying_qty: '3',
+        min_order_amount: '',
+        reward_type: 'free_delivery',
+        reward_product_id: '',
+        reward_product_name: 'Free Delivery',
+        reward_qty: '1',
+        daily_quota: '25',
+        per_customer_daily_limit: '1',
+        auto_apply: true,
+        is_active: true
+      });
+    } else if (type === 'free_delivery_25k') {
+      setForm({
+        ...EMPTY_PROMO_FORM,
+        title: 'Orders over ₦25,000: Free Delivery',
+        description: 'Spend ₦25,000 or more and get 100% Free Delivery on your order!',
+        badge_text: 'Free Shipping',
+        banner_message: '🚚 Orders over ₦25,000 qualify for FREE DELIVERY today!',
+        offer_type: 'daily_gift',
+        qualifying_type: 'min_amount',
+        min_qualifying_qty: '1',
+        min_order_amount: '25000',
+        reward_type: 'free_delivery',
+        reward_product_id: '',
+        reward_product_name: 'Free Delivery',
         reward_qty: '1',
         daily_quota: '30',
         per_customer_daily_limit: '1',
@@ -603,10 +647,23 @@ export default function PromoOffers() {
 
                       {/* Reward */}
                       <td style={{ verticalAlign: 'top' }}>
-                        <div style={{ fontWeight: 800, color: 'var(--text)', fontSize: '0.88rem' }}>
-                          {p.reward_qty}× {p.reward_product_name || 'Free Item'}
-                        </div>
-                        <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 2 }}>Free (₦0 at checkout)</div>
+                        {p.reward_type === 'free_delivery' ? (
+                          <>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                              <span style={{ fontWeight: 800, color: '#16a34a', fontSize: '0.88rem' }}>
+                                🚚 {p.reward_product_name || 'Free Delivery'}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '0.74rem', color: '#15803d', marginTop: 2, fontWeight: 600 }}>100% Free Shipping (₦0)</div>
+                          </>
+                        ) : (
+                          <>
+                            <div style={{ fontWeight: 800, color: 'var(--text)', fontSize: '0.88rem' }}>
+                              {p.reward_qty}× {p.reward_product_name || 'Free Item'}
+                            </div>
+                            <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 2 }}>Free (₦0 at checkout)</div>
+                          </>
+                        )}
                       </td>
 
                       {/* Quota */}
@@ -720,8 +777,8 @@ export default function PromoOffers() {
                     </td>
 
                     <td>
-                      <span style={{ fontWeight: 700, color: 'var(--text)', fontSize: '0.86rem' }}>
-                        {r.reward_details?.reward_product_name || '1 Free Guinea Fowl'}
+                      <span style={{ fontWeight: 700, color: r.reward_details?.reward_type === 'free_delivery' ? '#16a34a' : 'var(--text)', fontSize: '0.86rem' }}>
+                        {r.reward_details?.reward_type === 'free_delivery' ? '🚚 Free Delivery' : (r.reward_details?.reward_product_name || '1 Free Item')}
                       </span>
                     </td>
 
@@ -794,9 +851,9 @@ export default function PromoOffers() {
                       onClick={() => applyPreset('guinea_fowl_3')}
                       style={{
                         padding: '6px 12px', borderRadius: 6, fontSize: '0.78rem', fontWeight: 700,
-                        background: form.qualifying_type === 'guinea_fowl_birds' && form.min_qualifying_qty === '3' ? 'var(--red)' : 'var(--white)',
-                        color: form.qualifying_type === 'guinea_fowl_birds' && form.min_qualifying_qty === '3' ? '#fff' : 'var(--text)',
-                        border: form.qualifying_type === 'guinea_fowl_birds' && form.min_qualifying_qty === '3' ? '1px solid var(--red)' : '1px solid var(--border-subtle)',
+                        background: form.qualifying_type === 'guinea_fowl_birds' && form.reward_type === 'free_product' && form.min_qualifying_qty === '3' ? 'var(--red)' : 'var(--white)',
+                        color: form.qualifying_type === 'guinea_fowl_birds' && form.reward_type === 'free_product' && form.min_qualifying_qty === '3' ? '#fff' : 'var(--text)',
+                        border: form.qualifying_type === 'guinea_fowl_birds' && form.reward_type === 'free_product' && form.min_qualifying_qty === '3' ? '1px solid var(--red)' : '1px solid var(--border-subtle)',
                         cursor: 'pointer'
                       }}
                     >
@@ -804,16 +861,42 @@ export default function PromoOffers() {
                     </button>
                     <button
                       type="button"
+                      onClick={() => applyPreset('free_delivery_3')}
+                      style={{
+                        padding: '6px 12px', borderRadius: 6, fontSize: '0.78rem', fontWeight: 700,
+                        background: form.qualifying_type === 'guinea_fowl_birds' && form.reward_type === 'free_delivery' ? '#16a34a' : 'var(--white)',
+                        color: form.qualifying_type === 'guinea_fowl_birds' && form.reward_type === 'free_delivery' ? '#fff' : 'var(--text)',
+                        border: form.qualifying_type === 'guinea_fowl_birds' && form.reward_type === 'free_delivery' ? '1px solid #16a34a' : '1px solid var(--border-subtle)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      🚚 Buy 3+ Birds → Free Delivery
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => applyPreset('spend_20k')}
                       style={{
                         padding: '6px 12px', borderRadius: 6, fontSize: '0.78rem', fontWeight: 700,
-                        background: form.qualifying_type === 'min_amount' ? 'var(--red)' : 'var(--white)',
-                        color: form.qualifying_type === 'min_amount' ? '#fff' : 'var(--text)',
-                        border: form.qualifying_type === 'min_amount' ? '1px solid var(--red)' : '1px solid var(--border-subtle)',
+                        background: form.qualifying_type === 'min_amount' && form.reward_type === 'free_product' ? 'var(--red)' : 'var(--white)',
+                        color: form.qualifying_type === 'min_amount' && form.reward_type === 'free_product' ? '#fff' : 'var(--text)',
+                        border: form.qualifying_type === 'min_amount' && form.reward_type === 'free_product' ? '1px solid var(--red)' : '1px solid var(--border-subtle)',
                         cursor: 'pointer'
                       }}
                     >
                       Spend ₦20,000+ → Free Gift
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyPreset('free_delivery_25k')}
+                      style={{
+                        padding: '6px 12px', borderRadius: 6, fontSize: '0.78rem', fontWeight: 700,
+                        background: form.qualifying_type === 'min_amount' && form.reward_type === 'free_delivery' ? '#16a34a' : 'var(--white)',
+                        color: form.qualifying_type === 'min_amount' && form.reward_type === 'free_delivery' ? '#fff' : 'var(--text)',
+                        border: form.qualifying_type === 'min_amount' && form.reward_type === 'free_delivery' ? '1px solid #16a34a' : '1px solid var(--border-subtle)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      🚚 Spend ₦25k+ → Free Delivery
                     </button>
                   </div>
                 </div>
@@ -949,50 +1032,132 @@ export default function PromoOffers() {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div>
-                    <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 4 }}>
-                      Choose Menu Product (Reward Gift)
-                    </label>
-                    <CustomSelect
-                      value={form.reward_product_id}
-                      onChange={(e) => {
-                        const selProd = products.find(p => String(p.id) === String(e.target.value));
-                        setForm(prev => ({
-                          ...prev,
-                          reward_product_id: e.target.value,
-                          reward_product_name: selProd ? `Free ${selProd.name} (Daily Promo Reward)` : prev.reward_product_name
-                        }));
+                  {/* Reward Type Toggle Selector */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => setForm(p => ({
+                        ...p,
+                        reward_type: 'free_product',
+                        reward_product_name: p.reward_product_name === 'Free Delivery' ? 'Free Guinea Fowl (Daily Promo Reward)' : p.reward_product_name
+                      }))}
+                      style={{
+                        padding: '10px 12px', borderRadius: 8, fontSize: '0.82rem', fontWeight: 800, cursor: 'pointer',
+                        background: form.reward_type === 'free_product' ? 'rgba(192,32,31,0.06)' : 'var(--black)',
+                        color: form.reward_type === 'free_product' ? 'var(--red)' : 'var(--text)',
+                        border: form.reward_type === 'free_product' ? '2px solid var(--red)' : '1.5px solid var(--border-subtle)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all 0.15s'
                       }}
-                      options={[
-                        { value: '', label: '-- Custom Named Free Item --' },
-                        ...products.map(p => ({ value: String(p.id), label: `${p.name} (${fmt(p.price)})` }))
-                      ]}
-                    />
+                    >
+                      <Gift size={15} /> Free Product / Item
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setForm(p => ({
+                        ...p,
+                        reward_type: 'free_delivery',
+                        reward_product_id: '',
+                        reward_product_name: 'Free Delivery',
+                        reward_qty: '1'
+                      }))}
+                      style={{
+                        padding: '10px 12px', borderRadius: 8, fontSize: '0.82rem', fontWeight: 800, cursor: 'pointer',
+                        background: form.reward_type === 'free_delivery' ? '#ecfdf5' : 'var(--black)',
+                        color: form.reward_type === 'free_delivery' ? '#16a34a' : 'var(--text)',
+                        border: form.reward_type === 'free_delivery' ? '2px solid #16a34a' : '1.5px solid var(--border-subtle)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all 0.15s'
+                      }}
+                    >
+                      <Truck size={15} /> Free Delivery
+                    </button>
                   </div>
 
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                    <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 4 }}>
-                        Display Name on Invoice
-                      </label>
-                      <input
-                        value={form.reward_product_name}
-                        onChange={setField('reward_product_name')}
-                        placeholder="e.g. Free Guinea Fowl"
-                        style={{ width: '100%', padding: '8px 10px', fontSize: '0.84rem', background: 'var(--white)', border: '1px solid var(--border-subtle)', borderRadius: 6 }}
-                      />
+                  {form.reward_type === 'free_delivery' ? (
+                    <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 10, padding: '14px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+                        <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#dcfce7', color: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <Truck size={18} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.86rem', fontWeight: 800, color: '#166534' }}>100% Free Delivery Reward</div>
+                          <div style={{ fontSize: '0.74rem', color: '#15803d', marginTop: 2, lineHeight: 1.4 }}>
+                            When customer meets the promo criteria, the delivery fee at checkout will automatically be waived to <strong>₦0 (FREE)</strong>.
+                          </div>
+                        </div>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.76rem', fontWeight: 700, color: '#166534', display: 'block', marginBottom: 4 }}>
+                          Reward Label / Display Name on Invoice
+                        </label>
+                        <input
+                          value={form.reward_product_name}
+                          onChange={setField('reward_product_name')}
+                          placeholder="e.g. Free Delivery"
+                          style={{ width: '100%', padding: '9px 12px', fontSize: '0.85rem', background: '#fff', border: '1.5px solid #86efac', borderRadius: 8, color: '#14532d', fontWeight: 700, outline: 'none' }}
+                        />
+                      </div>
                     </div>
+                  ) : (
+                    <>
+                      <div>
+                        <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 4 }}>
+                          Choose Menu Product (Reward Gift)
+                        </label>
+                        <CustomSelect
+                          value={form.reward_product_id}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === 'free_delivery') {
+                              setForm(prev => ({
+                                ...prev,
+                                reward_type: 'free_delivery',
+                                reward_product_id: '',
+                                reward_product_name: 'Free Delivery',
+                                reward_qty: '1'
+                              }));
+                              return;
+                            }
+                            const selProd = products.find(p => String(p.id) === String(val));
+                            setForm(prev => ({
+                              ...prev,
+                              reward_type: 'free_product',
+                              reward_product_id: val,
+                              reward_product_name: selProd ? `Free ${selProd.name} (Daily Promo Reward)` : prev.reward_product_name
+                            }));
+                          }}
+                          options={[
+                            { value: 'free_delivery', label: '🚚 Free Delivery (100% Free Shipping Reward)' },
+                            { value: '', label: '-- Custom Named Free Item --' },
+                            ...products.map(p => ({ value: String(p.id), label: `${p.name} (${fmt(p.price)})` }))
+                          ]}
+                        />
+                      </div>
 
-                    <div>
-                      <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 4 }}>
-                        Gift Qty
-                      </label>
-                      <StepperInput
-                        value={form.reward_qty}
-                        onChange={(v) => setForm(p => ({ ...p, reward_qty: String(v) }))}
-                      />
-                    </div>
-                  </div>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 4 }}>
+                            Display Name on Invoice
+                          </label>
+                          <input
+                            value={form.reward_product_name}
+                            onChange={setField('reward_product_name')}
+                            placeholder="e.g. Free Guinea Fowl"
+                            style={{ width: '100%', padding: '8px 10px', fontSize: '0.84rem', background: 'var(--white)', border: '1px solid var(--border-subtle)', borderRadius: 6 }}
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 4 }}>
+                            Gift Qty
+                          </label>
+                          <StepperInput
+                            value={form.reward_qty}
+                            onChange={(v) => setForm(p => ({ ...p, reward_qty: String(v) }))}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -1075,7 +1240,7 @@ export default function PromoOffers() {
                         {form.banner_message || 'Customer ticker announcement goes here'}
                       </div>
                       <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text)' }}>
-                        Gift: {form.reward_qty || 1}× {form.reward_product_name || 'Free Item'} (₦0)
+                        Gift: {form.reward_type === 'free_delivery' ? `🚚 ${form.reward_product_name || 'Free Delivery'} (₦0 Fee)` : `${form.reward_qty || 1}× ${form.reward_product_name || 'Free Item'} (₦0)`}
                       </div>
                     </div>
                   </div>
