@@ -10,7 +10,7 @@ import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher
 import { fetchDeliveryPromo, getPromoDeliveryFee } from '../../lib/deliveryPromo';
 import { validateEmail } from '../../lib/emailValidation';
 import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
-import { checkCustomerAlreadyUsedCoupon } from '../../lib/couponValidator';
+import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon } from '../../lib/couponValidator';
 import CheckoutDisclaimerModal from '../../components/CheckoutDisclaimerModal';
 import PromoProgressBanner from '../../components/PromoProgressBanner';
 import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Search, MapPin, Tag, X, Copy, Banknote, Send, ClipboardList, Utensils, AlertTriangle, Clock, Lightbulb, Gift } from 'lucide-react';
@@ -188,8 +188,22 @@ export default function Checkout() {
     setCouponError('');
     setCouponLoading(true);
 
+    const customerInfo = {
+      name: `${form.firstName} ${form.lastName}`.trim(),
+      phone: form.phone,
+      email: form.email,
+      address: form.address,
+    };
+
+    const eligibility = isCustomerEligibleForCoupon(code, customerInfo);
+    if (!eligibility.eligible) {
+      setCouponLoading(false);
+      setCouponError(eligibility.error);
+      return;
+    }
+
     if (form.phone || form.email) {
-      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(code, form.phone, form.email);
+      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(code, form.phone, form.email, eligibility.matchedCustomer);
       if (alreadyUsed) {
         setCouponLoading(false);
         setCouponError('You have already used this coupon code on a previous order');
@@ -248,13 +262,25 @@ export default function Checkout() {
 
   const handleContactBlur = (field) => {
     setTouched(t => ({ ...t, [field]: true }));
-    if (appliedCoupon?.code && (form.phone || form.email)) {
-      checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email).then(used => {
-        if (used) {
-          removeCoupon();
-          setCouponError('You have already used this coupon code on a previous order');
-        }
-      });
+    if (appliedCoupon?.code) {
+      const customerInfo = {
+        name: `${form.firstName} ${form.lastName}`.trim(),
+        phone: form.phone,
+        email: form.email,
+        address: form.address,
+      };
+      const eligibility = isCustomerEligibleForCoupon(appliedCoupon.code, customerInfo);
+      if (!eligibility.eligible) {
+        removeCoupon();
+        setCouponError(eligibility.error);
+      } else if (form.phone || form.email) {
+        checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email, eligibility.matchedCustomer).then(used => {
+          if (used) {
+            removeCoupon();
+            setCouponError('You have already used this coupon code on a previous order');
+          }
+        });
+      }
     }
     if (captureContact) {
       const customerName = `${form.firstName} ${form.lastName}`.trim();
@@ -346,7 +372,19 @@ export default function Checkout() {
     if (!validateForm()) return;
 
     if (appliedCoupon?.code) {
-      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email);
+      const customerInfo = {
+        name: `${form.firstName} ${form.lastName}`.trim(),
+        phone: form.phone,
+        email: form.email,
+        address: form.address,
+      };
+      const eligibility = isCustomerEligibleForCoupon(appliedCoupon.code, customerInfo);
+      if (!eligibility.eligible) {
+        showToast('Invalid Coupon', eligibility.error, 'error');
+        removeCoupon();
+        return;
+      }
+      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email, eligibility.matchedCustomer);
       if (alreadyUsed) {
         showToast('Coupon already used', 'You have already used this coupon code on a previous order.', 'error');
         removeCoupon();
@@ -432,7 +470,19 @@ export default function Checkout() {
     if (!validateForm()) return;
 
     if (appliedCoupon?.code) {
-      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email);
+      const customerInfo = {
+        name: `${form.firstName} ${form.lastName}`.trim(),
+        phone: form.phone,
+        email: form.email,
+        address: form.address,
+      };
+      const eligibility = isCustomerEligibleForCoupon(appliedCoupon.code, customerInfo);
+      if (!eligibility.eligible) {
+        showToast('Invalid Coupon', eligibility.error, 'error');
+        removeCoupon();
+        return;
+      }
+      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email, eligibility.matchedCustomer);
       if (alreadyUsed) {
         showToast('Coupon already used', 'You have already used this coupon code on a previous order.', 'error');
         removeCoupon();
