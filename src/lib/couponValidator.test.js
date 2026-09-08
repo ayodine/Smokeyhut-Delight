@@ -35,6 +35,10 @@ describe('checkCustomerAlreadyUsedCoupon', () => {
   it('allows new customer who has not used coupon before', async () => {
     expect(await checkCustomerAlreadyUsedCoupon('USED30', '08099999999', 'new@test.com')).toBe(false);
   });
+
+  it('temporarily bypasses checkCustomerAlreadyUsedCoupon for SHD-06595 customer', async () => {
+    expect(await checkCustomerAlreadyUsedCoupon('FREEFOWL08', '09168652077', 'alimidaniel64@gmail.com')).toBe(false);
+  });
 });
 
 describe('isCustomerEligibleForCoupon (FREEFOWL08 lock)', () => {
