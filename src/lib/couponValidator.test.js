@@ -59,7 +59,7 @@ describe('isCustomerEligibleForCoupon (FREEFOWL08 lock)', () => {
     expect(res.reason).toBe('not_eligible');
   });
 
-  it('qualifies all 10 target customers by phone (including international/spaced format)', () => {
+  it('qualifies all 21 target customers by phone (including international/spaced format)', () => {
     for (const q of QUALIFIED_FREEFOWL08_CUSTOMERS) {
       // Direct phone
       expect(isCustomerEligibleForCoupon('FREEFOWL08', { phone: q.phone }).eligible).toBe(true);
@@ -69,7 +69,7 @@ describe('isCustomerEligibleForCoupon (FREEFOWL08 lock)', () => {
     }
   });
 
-  it('qualifies all 10 target customers by email (case-insensitive)', () => {
+  it('qualifies all 21 target customers by email (case-insensitive)', () => {
     for (const q of QUALIFIED_FREEFOWL08_CUSTOMERS) {
       expect(isCustomerEligibleForCoupon('FREEFOWL08', { email: q.email.toUpperCase() }).eligible).toBe(true);
     }
@@ -80,11 +80,14 @@ describe('isCustomerEligibleForCoupon (FREEFOWL08 lock)', () => {
     expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Oluwaseun Oguntola' }).eligible).toBe(true);
     expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Kafilat Oyefeso' }).eligible).toBe(true);
     expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Hareez Maye' }).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'dan Daniel' }).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Sunday Oguntoye' }).eligible).toBe(true);
   });
 
   it('qualifies target customer by street address keywords', () => {
     expect(isCustomerEligibleForCoupon('FREEFOWL08', { address: '17b Kingsley Emu Street Lekki Phase 1' }).eligible).toBe(true);
     expect(isCustomerEligibleForCoupon('FREEFOWL08', { address: '9A isaac John Street Ikeja GRA' }).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { address: '7/9 mobolade okoya thomas Vi' }).eligible).toBe(true);
   });
 });
 

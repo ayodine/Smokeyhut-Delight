@@ -73,6 +73,83 @@ export const QUALIFIED_FREEFOWL08_CUSTOMERS = [
     phone: '09044744511',
     email: 'muna.igbinedion@gmail.com',
     address: 'Kingdom Court, 11 Kayode Abraham street, off Ligali Ayorinde road, Victoria island , Victoria Island'
+  },
+  {
+    orderId: 'SHD-06595',
+    name: 'dan Daniel',
+    phone: '09168652077',
+    email: 'alimidaniel64@gmail.com',
+    address: '7/9 mobolade okoya thomas Vi , Victoria Island'
+  },
+  {
+    orderId: 'SHD-06720',
+    name: 'Sunday Oguntoye',
+    phone: '07063805119',
+    email: 'sunnytoye77@yahoo.com',
+    address: 'Plot E49,D close, Sokoloff Street,Banana Island , Ikoyi'
+  },
+  {
+    orderId: 'SHD-06722',
+    name: 'Yemi Sunday',
+    phone: '08027586722',
+    email: 'horlaryemmy77@gmail.com',
+    address: 'Plot 25, Adekunle Banjo Avenue, Magodo Shangisha, Magodo Shangisha'
+  },
+  {
+    orderId: 'SHD-06742',
+    name: 'Valerie Lolomari',
+    phone: '09024823335',
+    email: 'lolomariv@gmail.com',
+    address: 'Mathew Osawemen street, Ologolo , LEKKI'
+  },
+  {
+    orderId: 'SHD-06746',
+    name: 'Ipaye Fatima',
+    phone: '08168457550',
+    email: 'prettytyma2015@gmail.com',
+    address: '57, bola Street by ondo ebute metta east, Ebutemetta'
+  },
+  {
+    orderId: 'SHD-06750',
+    name: 'Elizabella Elizabella',
+    phone: '08024289517',
+    email: 'abiolashokunbi6@gmail.com',
+    address: 'Lsdpc Estate block 11 Ebute Metta , Ebutemetta'
+  },
+  {
+    orderId: 'SHD-06753',
+    name: 'Iphie LuxuryHairs',
+    phone: '08036433441',
+    email: 'ihenacho_ify@yahoo.com',
+    address: 'Store Pickup — Lagos Mainland'
+  },
+  {
+    orderId: 'SHD-06755',
+    name: 'Dera Shallom',
+    phone: '09132833105',
+    email: 'chiderashallom@gmail.com',
+    address: 'HRC estate Harris drive vgc lagos, VGC'
+  },
+  {
+    orderId: 'SHD-06758',
+    name: 'SCHOLASTICA SCHOLASTICA',
+    phone: '08114498668',
+    email: 'nokorafor222@gmail.com',
+    address: 'No 4 Kelly John Street, Infinity estate (milestone hotel) Skido bus stop. Ado ,road Ajah, AJAH'
+  },
+  {
+    orderId: 'SHD-06761',
+    name: 'Oluranti Sadiq',
+    phone: '08060089417',
+    email: 'omobim89@gmail.com',
+    address: '33, Michael Ayegoro, 3rd powerline Okeletu , IKORODU'
+  },
+  {
+    orderId: 'SHD-06763',
+    name: 'Omalicha Adaobi',
+    phone: '08022771081',
+    email: 'a.adaobiumeh@gmail.com',
+    address: 'House 3,Elijah Abina  street, Lakeview phase 2 amuwo odofin , Amuwo Odofin'
   }
 ];
 
