@@ -578,11 +578,8 @@ export default function Coupons() {
               </div>
 
               {/* Meta details */}
-              <div style={{ flex: 1, display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                {c.min_order_amount != null && <span>Min Order: <strong style={{ color: 'var(--text)' }}>{fmt(c.min_order_amount)}</strong></span>}
-                <span>Redeemed: <strong style={{ color: 'var(--text)' }}>{c.uses ?? 0}</strong>{c.max_uses != null ? ` / ${c.max_uses}` : ''}</span>
-                <span>Per Customer: <strong style={{ color: 'var(--text)' }}>{c.max_uses_per_customer || 1}x</strong></span>
-                {c.expires_at && <span>Expires: <strong style={{ color: 'var(--text)' }}>{new Date(c.expires_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}</strong></span>}
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                <span>Redeemed: <strong style={{ color: 'var(--text)', fontWeight: 800 }}>{c.uses ?? 0}</strong>{c.max_uses != null ? ` / ${c.max_uses}` : ''}</span>
               </div>
 
               {/* Action Buttons */}
@@ -1099,8 +1096,8 @@ function CustomerManagerDrawer({ coupon, onClose, canManage }) {
       {/* ── Dashboard Drawer Overlay ── */}
       <div className="dash-drawer-overlay open" onClick={onClose} />
 
-      {/* ── Dashboard Drawer (Standard Right Slide-out Drawer) ── */}
-      <div className="dash-drawer open" style={{ width: 800, maxWidth: '100vw' }}>
+      {/* ── Dashboard Drawer (Standard Right Slide-out Drawer - Extra Wide for Data Tables) ── */}
+      <div className="dash-drawer open" style={{ width: 1120, maxWidth: '95vw' }}>
         {/* Drawer Header */}
         <div className="dash-drawer-header">
           <div>
