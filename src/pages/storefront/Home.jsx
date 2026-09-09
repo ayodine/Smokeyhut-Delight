@@ -44,42 +44,40 @@ function Countdown() {
   }, []);
 
   return (
-    <section className="store-status-bar">
-      <div className="store-status-inner">
+    <section className="status-band">
+      <div className="status-band-inner">
 
-        {/* LEFT — open/closed pill + countdown */}
+        {/* LEFT — status + timer */}
         <div className="status-left">
-          <div className="status-header">
-            <span className={`live-dot ${isOpen ? 'dot-open' : 'dot-closed'}`} />
-            <span className="status-badge-text">
-              {isOpen ? "We're Smoking Right Now" : 'Store Closed — Opens Tomorrow'}
-            </span>
+          <div className={`status-pill ${isOpen ? 'open' : 'closed'}`}>
+            <span className="status-dot" />
+            {isOpen ? 'Store is Open' : 'Store is Closed'}
           </div>
 
-          <p className="status-timer-label">
-            {isOpen ? 'Order before we close for same-day delivery:' : 'Ordering opens in:'}
+          <p className="status-headline">
+            {isOpen ? 'Closes in' : 'Opens in'}
           </p>
 
-          <div className="countdown-digits">
-            <div className="digit-box">
-              <span className="digit-num">{time.h}</span>
-              <span className="digit-label">HOURS</span>
+          <div className="timer-row">
+            <div className="timer-block">
+              <span className="timer-num">{time.h}</span>
+              <span className="timer-unit">hrs</span>
             </div>
-            <span className="digit-sep">:</span>
-            <div className="digit-box">
-              <span className="digit-num">{time.m}</span>
-              <span className="digit-label">MINS</span>
+            <span className="timer-sep">:</span>
+            <div className="timer-block">
+              <span className="timer-num">{time.m}</span>
+              <span className="timer-unit">min</span>
             </div>
-            <span className="digit-sep">:</span>
-            <div className="digit-box">
-              <span className="digit-num">{time.s}</span>
-              <span className="digit-label">SECS</span>
+            <span className="timer-sep">:</span>
+            <div className="timer-block">
+              <span className="timer-num">{time.s}</span>
+              <span className="timer-unit">sec</span>
             </div>
           </div>
 
-          <p className="status-delivery-note">
+          <p className="status-tagline">
             {isOpen
-              ? <><Truck size={13} style={{ display:'inline', marginRight:5, verticalAlign:'middle' }} />Same-day delivery across Lagos. Order now!</>
+              ? <><Flame size={13} style={{ display:'inline', marginRight:5, verticalAlign:'middle' }} />Order now — hot &amp; smoky until {isSunday ? '5:00 pm' : '6:00 pm'}</>
               : <><Truck size={13} style={{ display:'inline', marginRight:5, verticalAlign:'middle' }} />{isSunday ? 'Ordering opens at 10:00 am on Sundays' : 'Ordering opens daily at 11:00 am'}</>
             }
           </p>
@@ -225,25 +223,22 @@ export default function Home() {
         </div>
       </section>
 
-      {/* REVIEWS */}
-      <section className="reviews-section">
+      {/* TESTIMONIALS */}
+      <section>
         <div className="container">
-          <div className="section-header">
-            <div className="section-tag">Social Proof</div>
-            <h2 className="section-title">What <span>Lagos Is Saying</span></h2>
-            <p className="section-sub">Real reviews from our community across Lagos.</p>
+          <div className="section-header center">
+            <div className="section-tag">Reviews</div>
+            <h2 className="section-title">What Our <span>Customers Say</span></h2>
+            <p className="section-sub">Real reviews from people who love what we do.</p>
           </div>
-          <div className="reviews-grid">
+          <div className="testimonials-grid">
             {testimonials.map((t, i) => (
-              <div key={i} className="review-card">
-                <div className="review-stars">★★★★★</div>
-                <p className="review-text">{t.text}</p>
-                <div className="review-author">
-                  <div className="author-avatar" style={{ background: t.color }}>{t.initial}</div>
-                  <div>
-                    <div className="author-name">{t.name}</div>
-                    <div className="author-loc">{t.loc}</div>
-                  </div>
+              <div key={i} className="testimonial-card">
+                <div className="testimonial-stars">★★★★★</div>
+                <p className="testimonial-text">{t.text}</p>
+                <div className="testimonial-author">
+                  <div className="t-avatar" style={{ background: t.color }}>{t.initial}</div>
+                  <div><div className="t-name">{t.name}</div><div className="t-sub">{t.loc}, Lagos</div></div>
                 </div>
               </div>
             ))}
@@ -251,33 +246,17 @@ export default function Home() {
         </div>
       </section>
 
-      {/* INSTAGRAM BANNER */}
-      <section className="insta-banner">
-        <div className="container" style={{ textAlign: 'center' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.08)', padding: '6px 16px', borderRadius: 20, marginBottom: 16 }}>
-            <Camera size={16} color="#c0201f" />
-            <span style={{ fontSize: '0.82rem', color: '#ccc', fontWeight: 600 }}>Join our 57K+ community</span>
-          </div>
-          <h2 style={{ fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', fontWeight: 900, color: '#fff', marginBottom: 12 }}>Follow Us on Instagram</h2>
-          <p style={{ color: '#aaa', fontSize: '1rem', maxWidth: 460, margin: '0 auto 24px', lineHeight: 1.6 }}>Daily behind-the-scenes, smoking videos, customer reactions & exclusive discount codes.</p>
-          <a href="https://instagram.com/smokeyhut" target="_blank" rel="noopener noreferrer" className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            @smokeyhut on Instagram →
-          </a>
-        </div>
-      </section>
-
       {/* CTA */}
-      <section className="cta-section">
+      <div className="cta-band">
         <div className="container">
-          <div className="cta-inner">
-            <div className="cta-content">
-              <h2>Craving That Smoky Flavour?</h2>
-              <p>Order online now. Freshly grilled, packed with flavour, delivered hot to your door anywhere in Lagos.</p>
-              <Link to="/shop" className="btn-primary">Order Online Today →</Link>
-            </div>
+          <h2>Ready to Taste the <span style={{ color: '#F5C518' }}>Best Guineafowl</span> in Lagos?</h2>
+          <p>Order now for same-day delivery. Freshly grilled, firewood-smoked, delivered hot.</p>
+          <div style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <Link to="/shop" className="btn-primary" style={{ background: '#fff', color: '#C0201F', display: 'flex', alignItems: 'center', gap: 6 }}><ShoppingCart size={18} /> Order Now</Link>
+            <a href="https://www.instagram.com/smokeyhut_delight/" target="_blank" rel="noopener noreferrer" className="btn-secondary" style={{ borderColor: 'rgba(255,255,255,0.4)', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}><Camera size={18} /> Follow Us</a>
           </div>
         </div>
-      </section>
+      </div>
     </div>
   );
 }
