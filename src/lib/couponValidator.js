@@ -82,6 +82,20 @@ export const QUALIFIED_FREEFOWL08_CUSTOMERS = [
     address: '7/9 mobolade okoya thomas Vi , Victoria Island'
   },
   {
+    orderId: 'SHD-06617',
+    name: 'Daniel (May Mariam)',
+    phone: '07087316641',
+    email: 'alimidaniel64@gmail.com',
+    address: '7/9 mobolade okoya thomas Vi , Victoria Island'
+  },
+  {
+    orderId: 'SHD-06594',
+    name: 'Daniel (Caster Tunde)',
+    phone: '08159561128',
+    email: 'alimidaniel64@gmail.com',
+    address: '7/9 mobolade okoya thomas Vi , Victoria Island'
+  },
+  {
     orderId: 'SHD-06720',
     name: 'Sunday Oguntoye',
     phone: '07063805119',
@@ -150,6 +164,97 @@ export const QUALIFIED_FREEFOWL08_CUSTOMERS = [
     phone: '08022771081',
     email: 'a.adaobiumeh@gmail.com',
     address: 'House 3,Elijah Abina  street, Lakeview phase 2 amuwo odofin , Amuwo Odofin'
+  },
+  {
+    orderId: 'SHD-06650',
+    name: 'John Asokhia',
+    phone: '08032280483',
+    email: 'johnasokhia@gmail.com',
+    address: ''
+  },
+  {
+    orderId: 'SHD-06780',
+    name: 'Ruth Are',
+    phone: '08131693463',
+    email: 'aleezascott@gmail.com',
+    address: ''
+  },
+  {
+    orderId: 'SHD-06784',
+    name: 'Ifeoma Linda',
+    phone: '08134304570',
+    email: 'ukazuifeoma@gmail.com',
+    address: ''
+  },
+  {
+    orderId: 'SHD-06788',
+    name: 'Tola Odunlami',
+    phone: '08052628751',
+    email: 'odlamt@yahoo.com',
+    address: ''
+  },
+  {
+    orderId: 'SHD-06791',
+    name: 'Owen Aghedo',
+    phone: '08051931423',
+    email: 'owen.aghedo@gmail.com',
+    address: ''
+  },
+  {
+    orderId: 'SHD-06801',
+    name: 'Juanita Udemba',
+    phone: '08023892195',
+    email: 'juanitaudemba@gmail.com',
+    address: ''
+  },
+  {
+    orderId: 'SHD-06824',
+    name: 'Mary Mary',
+    phone: '08120573006',
+    email: 't.fadina@yahoo.com',
+    address: ''
+  },
+  {
+    orderId: 'SHD-06828',
+    name: 'Samuel Oshogia',
+    phone: '08032697050',
+    email: 'temitopeomofare@gmail.com',
+    address: ''
+  },
+  {
+    orderId: 'SHD-06829',
+    name: 'Chiamaka Ihejirika',
+    phone: '08166181871',
+    email: 'perrinaihejirika@gmail.com',
+    address: ''
+  },
+  {
+    orderId: 'SHD-06835',
+    name: 'Emmanuel Oguibe',
+    phone: '07075232680',
+    email: 'favouroguibe21@gmail.com',
+    address: ''
+  },
+  {
+    orderId: 'SHD-06839',
+    name: 'Sunkanmi Ayeni',
+    phone: '07085157363',
+    email: 'tokanmi21@gmail.com',
+    address: ''
+  },
+  {
+    orderId: 'SHD-06840',
+    name: 'Moses Momoh',
+    phone: '08034251967',
+    email: 'kenny4scott@gmail.com',
+    address: ''
+  },
+  {
+    orderId: 'SHD-06849',
+    name: 'Kelvin Kuz£',
+    phone: '08167674690',
+    email: 'danmilitary221@gmail.com',
+    address: ''
   }
 ];
 
@@ -168,6 +273,50 @@ export function normalizePhoneDigits(phone) {
 export function normalizeText(str) {
   if (!str) return '';
   return String(str).toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+let dynamicEligibleCache = {};
+let lastCacheFetchTime = 0;
+
+export async function fetchEligibleCustomersFromDb(code) {
+  const cleanCode = (code || '').trim().toUpperCase();
+  const now = Date.now();
+  if (dynamicEligibleCache[cleanCode] && now - lastCacheFetchTime < 120000) {
+    return dynamicEligibleCache[cleanCode];
+  }
+  try {
+    const { data: coupon } = await publicSupabase
+      .from('coupons')
+      .select('id, is_restricted')
+      .eq('code', cleanCode)
+      .maybeSingle();
+
+    if (!coupon || !coupon.is_restricted) {
+      dynamicEligibleCache[cleanCode] = [];
+      return [];
+    }
+
+    const { data: rows } = await publicSupabase
+      .from('coupon_eligible_customers')
+      .select('customer_name, customer_phone, customer_email, customer_address, max_uses, reference_order_id')
+      .eq('coupon_id', coupon.id);
+
+    if (rows && rows.length > 0) {
+      dynamicEligibleCache[cleanCode] = rows.map(r => ({
+        name: r.customer_name,
+        phone: r.customer_phone,
+        email: r.customer_email,
+        address: r.customer_address,
+        orderId: r.reference_order_id,
+        max_uses: r.max_uses
+      }));
+      lastCacheFetchTime = now;
+    }
+    return dynamicEligibleCache[cleanCode] || [];
+  } catch (err) {
+    console.warn('[CouponValidator] DB fetch eligible customers failed:', err);
+    return [];
+  }
 }
 
 /**
@@ -192,37 +341,49 @@ export function isCustomerEligibleForCoupon(code, customer = {}) {
     return {
       eligible: false,
       reason: 'contact_required',
-      error: 'Please enter your name, phone, or email to apply this coupon'
+      error: 'Please enter your phone number or email to apply this coupon'
     };
   }
 
+  const pool = [...QUALIFIED_FREEFOWL08_CUSTOMERS, ...(dynamicEligibleCache[cleanCode] || [])];
+
   // Find match in qualified customer list
-  const matched = QUALIFIED_FREEFOWL08_CUSTOMERS.find(q => {
+  const matched = pool.find(q => {
+    const qPhoneDigits = normalizePhoneDigits(q.phone || q.customer_phone);
+    const qEmail = normalizeText(q.email || q.customer_email);
+    const qRawName = q.name || q.customer_name;
+    const qName = normalizeText(qRawName);
+    const qAddr = normalizeText(q.address || q.customer_address);
+
     // 1. Phone match (last 10 digits)
-    if (inputPhoneDigits && inputPhoneDigits.length >= 10) {
-      const qPhoneDigits = normalizePhoneDigits(q.phone);
-      if (qPhoneDigits === inputPhoneDigits) return true;
-    }
-
+    const phoneMatches = inputPhoneDigits && qPhoneDigits && inputPhoneDigits.length >= 10 && qPhoneDigits === inputPhoneDigits;
     // 2. Email match (case-insensitive exact)
-    if (inputEmail && q.email) {
-      if (inputEmail === normalizeText(q.email)) return true;
+    const emailMatches = inputEmail && qEmail && inputEmail === qEmail;
+
+    if (phoneMatches || emailMatches) return true;
+
+    // If both phone AND email were supplied, and neither matched this customer, don't falsely match on name
+    if (inputPhoneDigits && inputEmail && !phoneMatches && !emailMatches) {
+      return false;
+    }
+    // If phone was supplied with 10+ digits and did not match, don't falsely match on name
+    if (inputPhoneDigits && inputPhoneDigits.length >= 10 && qPhoneDigits && !phoneMatches) {
+      return false;
     }
 
-    // 3. Name match
-    if (inputName && q.name) {
-      const qName = normalizeText(q.name);
+    // 3. Name match (exact or token match when contact details do not conflict)
+    if (inputName && qName) {
       if (inputName === qName) return true;
-      // Also match if all tokens in qualified name exist in inputName or vice versa
       const qTokens = qName.split(' ').filter(t => t.length > 1);
       const inTokens = inputName.split(' ').filter(t => t.length > 1);
       if (qTokens.length >= 2 && qTokens.every(t => inTokens.includes(t))) return true;
       if (inTokens.length >= 2 && inTokens.every(t => qTokens.includes(t))) return true;
+      // Handle 'dan daniel' matching 'daniel', 'dan', or 'daniel alimi'
+      if (qName.includes('dan daniel') && (inTokens.includes('daniel') || inTokens.includes('dan'))) return true;
     }
 
     // 4. Address match
-    if (inputAddress && q.address) {
-      const qAddr = normalizeText(q.address);
+    if (inputAddress && qAddr) {
       if (inputAddress === qAddr) return true;
       const streetKeywords = qAddr.split(',')[0].replace(/store pickup/g, '').trim();
       if (streetKeywords.length > 8 && (inputAddress.includes(streetKeywords) || (inputAddress.length > 8 && streetKeywords.includes(inputAddress)))) {

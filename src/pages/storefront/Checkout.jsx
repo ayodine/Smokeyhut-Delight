@@ -10,7 +10,7 @@ import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher
 import { fetchDeliveryPromo, getPromoDeliveryFee } from '../../lib/deliveryPromo';
 import { validateEmail } from '../../lib/emailValidation';
 import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
-import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, getLastCouponError } from '../../lib/couponValidator';
+import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, getLastCouponError, fetchEligibleCustomersFromDb } from '../../lib/couponValidator';
 import CheckoutDisclaimerModal from '../../components/CheckoutDisclaimerModal';
 import PromoProgressBanner from '../../components/PromoProgressBanner';
 import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Search, MapPin, Tag, X, Copy, Banknote, Send, ClipboardList, Utensils, AlertTriangle, Clock, Lightbulb, Gift } from 'lucide-react';
@@ -188,6 +188,9 @@ export default function Checkout() {
     setCouponError('');
     setCouponLoading(true);
 
+    // Warm up dynamic whitelist from DB
+    await fetchEligibleCustomersFromDb(code);
+
     const customerInfo = {
       name: `${form.firstName} ${form.lastName}`.trim(),
       phone: form.phone,
@@ -195,11 +198,15 @@ export default function Checkout() {
       address: form.address,
     };
 
-    const eligibility = isCustomerEligibleForCoupon(code, customerInfo);
-    if (!eligibility.eligible) {
-      setCouponLoading(false);
-      setCouponError(eligibility.error);
-      return;
+    const hasAnyContact = (form.phone && form.phone.trim().length >= 10) || (form.email && form.email.trim().length >= 5) || customerInfo.name;
+    let eligibility = { eligible: true };
+    if (hasAnyContact) {
+      eligibility = isCustomerEligibleForCoupon(code, customerInfo);
+      if (!eligibility.eligible && eligibility.reason !== 'contact_required') {
+        setCouponLoading(false);
+        setCouponError(eligibility.error);
+        return;
+      }
     }
 
     if (form.phone || form.email) {
@@ -263,23 +270,28 @@ export default function Checkout() {
   const handleContactBlur = (field) => {
     setTouched(t => ({ ...t, [field]: true }));
     if (appliedCoupon?.code) {
-      const customerInfo = {
-        name: `${form.firstName} ${form.lastName}`.trim(),
-        phone: form.phone,
-        email: form.email,
-        address: form.address,
-      };
-      const eligibility = isCustomerEligibleForCoupon(appliedCoupon.code, customerInfo);
-      if (!eligibility.eligible) {
-        removeCoupon();
-        setCouponError(eligibility.error);
-      } else if (form.phone || form.email) {
-        checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email, eligibility.matchedCustomer).then(used => {
-          if (used) {
-            removeCoupon();
-            setCouponError(getLastCouponError() || 'You have already used this coupon code on a previous order');
-          }
-        });
+      const hasPhone = form.phone && form.phone.trim().length >= 10;
+      const hasEmail = form.email && form.email.trim().length >= 5;
+      if (hasPhone || hasEmail) {
+        const customerInfo = {
+          name: `${form.firstName} ${form.lastName}`.trim(),
+          phone: form.phone,
+          email: form.email,
+          address: form.address,
+        };
+        const eligibility = isCustomerEligibleForCoupon(appliedCoupon.code, customerInfo);
+        // Only strip coupon if customer has entered BOTH phone and email and neither is qualified
+        if (!eligibility.eligible && hasPhone && hasEmail) {
+          removeCoupon();
+          setCouponError(eligibility.error || 'This coupon is valid only for eligible customers');
+        } else if (eligibility.eligible && (hasPhone || hasEmail)) {
+          checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email, eligibility.matchedCustomer).then(used => {
+            if (used) {
+              removeCoupon();
+              setCouponError(getLastCouponError() || 'You have already used this coupon code on a previous order');
+            }
+          });
+        }
       }
     }
     if (captureContact) {

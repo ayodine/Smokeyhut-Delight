@@ -93,5 +93,22 @@ describe('isCustomerEligibleForCoupon (FREEFOWL08 lock)', () => {
     expect(isCustomerEligibleForCoupon('FREEFOWL08', { address: '9A isaac John Street Ikeja GRA' }).eligible).toBe(true);
     expect(isCustomerEligibleForCoupon('FREEFOWL08', { address: '7/9 mobolade okoya thomas Vi' }).eligible).toBe(true);
   });
+
+  it('qualifies customer SHD-06595 (Daniel) across all name and phone variations', () => {
+    // Primary phone from order SHD-06595
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { phone: '09168652077' }).eligible).toBe(true);
+    // Alternate phone 1 (SHD-06617)
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { phone: '07087316641' }).eligible).toBe(true);
+    // Alternate phone 2 (SHD-06594)
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { phone: '08159561128' }).eligible).toBe(true);
+    // Canonical email
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { email: 'alimidaniel64@gmail.com' }).eligible).toBe(true);
+    // Variations of his name
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Daniel' }).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Dan' }).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'dan Daniel' }).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Daniel Alimi' }).eligible).toBe(true);
+  });
 });
+
 

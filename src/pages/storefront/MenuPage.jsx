@@ -12,7 +12,7 @@ import { profileToPrefill } from '../../lib/customerProfile';
 import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher';
 import { fetchDeliveryPromo, getPromoDeliveryFee } from '../../lib/deliveryPromo';
 import { validateEmail } from '../../lib/emailValidation';
-import { checkCustomerAlreadyUsedCoupon } from '../../lib/couponValidator';
+import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, getLastCouponError, fetchEligibleCustomersFromDb } from '../../lib/couponValidator';
 import PromoProgressBanner from '../../components/PromoProgressBanner';
 import {
   ShoppingCart, X, Truck, Store as StoreIcon, Loader2, MapPin,
@@ -145,11 +145,30 @@ export default function MenuPage() {
     setCouponError('');
     setCouponLoading(true);
 
+    await fetchEligibleCustomersFromDb(code);
+
+    const hasAnyContact = (form.phone && form.phone.trim().length >= 10) || (form.email && form.email.trim().length >= 5) || (form.firstName?.trim() || form.lastName?.trim());
+    let eligibility = { eligible: true };
+    if (hasAnyContact) {
+      const customerInfo = {
+        name: `${form.firstName || ''} ${form.lastName || ''}`.trim(),
+        phone: form.phone,
+        email: form.email,
+        address: form.address,
+      };
+      eligibility = isCustomerEligibleForCoupon(code, customerInfo);
+      if (!eligibility.eligible && eligibility.reason !== 'contact_required') {
+        setCouponLoading(false);
+        setCouponError(eligibility.error || 'This coupon is valid only for eligible customers');
+        return;
+      }
+    }
+
     if (form.phone || form.email) {
-      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(code, form.phone, form.email);
+      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(code, form.phone, form.email, eligibility.matchedCustomer);
       if (alreadyUsed) {
         setCouponLoading(false);
-        setCouponError('You have already used this coupon code on a previous order');
+        setCouponError(getLastCouponError() || 'You have already used this coupon code on a previous order');
         return;
       }
     }
@@ -172,9 +191,9 @@ export default function MenuPage() {
       ? getPromoDeliveryFee(deliveryPromo, items, selectedMatch.area?.name || '', selectedMatch.zone?.price)
       : null;
     const deliveryFeeAtApply = isPickup ? 0 : (promoFeeAtApply ?? selectedMatch?.zone?.price ?? 0);
-    const discount = data.type === 'percent'
+    const discount = data.type === 'free_guinea_fowl' ? 0 : (data.type === 'percent'
       ? Math.round((total + deliveryFeeAtApply) * (data.value / 100))
-      : data.value;
+      : data.value);
     setAppliedCoupon({ id: data.id, code: data.code, type: data.type, value: data.value, discount: Math.min(discount, total + deliveryFeeAtApply) });
   };
 
@@ -294,9 +313,21 @@ export default function MenuPage() {
     if (!validateForm()) return;
 
     if (appliedCoupon?.code) {
-      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email);
+      const customerInfo = {
+        name: `${form.firstName} ${form.lastName}`.trim(),
+        phone: form.phone,
+        email: form.email,
+        address: form.address,
+      };
+      const eligibility = isCustomerEligibleForCoupon(appliedCoupon.code, customerInfo);
+      if (!eligibility.eligible) {
+        showToast('Coupon not valid', eligibility.error || 'This coupon is valid only for eligible customers.', 'error');
+        removeCoupon();
+        return;
+      }
+      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email, eligibility.matchedCustomer);
       if (alreadyUsed) {
-        showToast('Coupon already used', 'You have already used this coupon code on a previous order.', 'error');
+        showToast('Coupon not valid', getLastCouponError() || 'You have already used this coupon code on a previous order.', 'error');
         removeCoupon();
         return;
       }
@@ -385,9 +416,21 @@ export default function MenuPage() {
     if (!validateForm()) return;
 
     if (appliedCoupon?.code) {
-      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email);
+      const customerInfo = {
+        name: `${form.firstName} ${form.lastName}`.trim(),
+        phone: form.phone,
+        email: form.email,
+        address: form.address,
+      };
+      const eligibility = isCustomerEligibleForCoupon(appliedCoupon.code, customerInfo);
+      if (!eligibility.eligible) {
+        showToast('Coupon not valid', eligibility.error || 'This coupon is valid only for eligible customers.', 'error');
+        removeCoupon();
+        return;
+      }
+      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email, eligibility.matchedCustomer);
       if (alreadyUsed) {
-        showToast('Coupon already used', 'You have already used this coupon code on a previous order.', 'error');
+        showToast('Coupon not valid', getLastCouponError() || 'You have already used this coupon code on a previous order.', 'error');
         removeCoupon();
         return;
       }
@@ -984,7 +1027,9 @@ export default function MenuPage() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <Tag size={15} color="#16a34a" />
                       <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#16a34a' }}>{appliedCoupon.code}</span>
-                      <span style={{ fontSize: '0.82rem', color: '#555' }}>−{fmt(appliedCoupon.discount)}</span>
+                      <span style={{ fontSize: '0.82rem', color: '#555' }}>
+                        {appliedCoupon.type === 'free_guinea_fowl' ? '1 Free Guinea Fowl' : `−${fmt(appliedCoupon.discount)}`}
+                      </span>
                     </div>
                     <button onClick={removeCoupon} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888', display: 'flex', padding: 2 }}><X size={16} /></button>
                   </div>
@@ -1019,7 +1064,7 @@ export default function MenuPage() {
                   ['Subtotal', fmt(total)],
                   promoRewardItem && !promoRewardItem.is_free_delivery ? [`Promo Gift (${promoRewardItem.name})`, 'FREE (₦0)'] : null,
                   promoRewardItem?.is_free_delivery ? [`Promo (${promoRewardItem.name})`, 'FREE'] : null,
-                  couponDiscount > 0 ? [`Discount (${appliedCoupon?.code})`, `−${fmt(couponDiscount)}`] : null,
+                  appliedCoupon?.type === 'free_guinea_fowl' ? [`Coupon (${appliedCoupon?.code})`, '1 Free Guinea Fowl'] : (couponDiscount > 0 ? [`Discount (${appliedCoupon?.code})`, `−${fmt(couponDiscount)}`] : null),
                   !isPickup && (promoApplied || promoFreeDelivery) ? ['Delivery Promo', deliveryFee === 0 ? 'Free' : fmt(deliveryFee)] : (!isPickup && deliveryFee > 0 ? ['Delivery Fee', fmt(deliveryFee)] : null),
                   ['VAT', fmt(VAT)],
                 ].filter(Boolean).map(([label, value]) => (
