@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../context/ToastContext';
 import {
-  Tag, Plus, Trash2, Edit2, Check, X, ToggleLeft, ToggleRight,
+  Tag, Plus, Trash2, Edit2, Check, X,
   Users, UserPlus, Search, Download, Shield, Sparkles, CheckCircle2,
   Clock, ArrowRight, Upload, Phone, Mail, ExternalLink, Copy, Minus, AlertCircle, ShoppingBag,
   RefreshCw, Zap
@@ -32,6 +32,58 @@ function normalizePhone(p) {
   if (!p) return '';
   const digits = String(p).replace(/\D/g, '');
   return digits.length >= 10 ? digits.slice(-10) : digits;
+}
+
+function Switch({ checked, onChange, disabled = false, size = 'md' }) {
+  const isSm = size === 'sm';
+  const width = isSm ? 38 : 44;
+  const height = isSm ? 22 : 24;
+  const thumbSize = isSm ? 16 : 18;
+  const offset = 3;
+  const translate = checked ? (width - thumbSize - offset) : offset;
+
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (!disabled && onChange) onChange(!checked);
+      }}
+      title={checked ? 'Click to turn off (deactivate)' : 'Click to turn on (activate)'}
+      style={{
+        position: 'relative',
+        display: 'inline-flex',
+        alignItems: 'center',
+        width,
+        height,
+        padding: 0,
+        borderRadius: 999,
+        background: checked ? 'var(--red)' : '#d1d5db',
+        border: 'none',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        transition: 'background-color 0.2s ease',
+        flexShrink: 0,
+        outline: 'none',
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <span
+        style={{
+          display: 'block',
+          width: thumbSize,
+          height: thumbSize,
+          borderRadius: '50%',
+          background: '#ffffff',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.28)',
+          transform: `translateX(${translate}px)`,
+          transition: 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+        }}
+      />
+    </button>
+  );
 }
 
 export default function Coupons() {
@@ -454,15 +506,15 @@ export default function Coupons() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0', borderTop: '1px solid var(--border-subtle)' }}>
-                <input
-                  type="checkbox"
-                  id="is_active"
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderTop: '1px solid var(--border-subtle)' }}>
+                <Switch
                   checked={form.is_active}
-                  onChange={e => setForm(p => ({ ...p, is_active: e.target.checked }))}
-                  style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--red)' }}
+                  onChange={val => setForm(p => ({ ...p, is_active: val }))}
                 />
-                <label htmlFor="is_active" style={{ cursor: 'pointer', fontSize: '0.88rem', fontWeight: 700 }}>
+                <label
+                  onClick={() => setForm(p => ({ ...p, is_active: !p.is_active }))}
+                  style={{ cursor: 'pointer', fontSize: '0.88rem', fontWeight: 700, userSelect: 'none' }}
+                >
                   Active (Coupon can be applied at checkout)
                 </label>
               </div>
@@ -564,17 +616,42 @@ export default function Coupons() {
                   </span>
                 )}
 
-                <span style={{
-                  padding: '4px 10px',
-                  borderRadius: 20,
-                  fontWeight: 800,
-                  fontSize: '0.74rem',
-                  background: c.is_active ? 'rgba(34,197,94,0.12)' : 'rgba(0,0,0,0.06)',
-                  color: c.is_active ? '#16a34a' : 'var(--text-muted)',
-                  border: c.is_active ? '1px solid rgba(34,197,94,0.25)' : '1px solid var(--border-subtle)'
-                }}>
-                  {c.is_active ? 'Active' : 'Inactive'}
-                </span>
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '3px 10px 3px 4px',
+                    borderRadius: 20,
+                    background: c.is_active ? 'rgba(192, 32, 31, 0.08)' : 'rgba(0,0,0,0.04)',
+                    border: `1px solid ${c.is_active ? 'rgba(192, 32, 31, 0.22)' : 'var(--border-subtle)'}`,
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <Switch
+                    size="sm"
+                    checked={c.is_active}
+                    disabled={!canManage}
+                    onChange={() => toggleActive(c)}
+                  />
+                  <span
+                    onClick={(e) => {
+                      if (canManage) {
+                        e.stopPropagation();
+                        toggleActive(c);
+                      }
+                    }}
+                    style={{
+                      fontWeight: 800,
+                      fontSize: '0.74rem',
+                      color: c.is_active ? 'var(--red)' : 'var(--text-muted)',
+                      userSelect: 'none',
+                      cursor: canManage ? 'pointer' : 'default'
+                    }}
+                  >
+                    {c.is_active ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
               </div>
 
               {/* Meta details */}
@@ -623,25 +700,6 @@ export default function Coupons() {
 
                 {canManage && (
                   <>
-                    <button
-                      onClick={() => toggleActive(c)}
-                      title={c.is_active ? 'Deactivate' : 'Activate'}
-                      style={{
-                        height: 38,
-                        width: 38,
-                        background: 'var(--white)',
-                        border: '1px solid var(--border-subtle)',
-                        borderRadius: 8,
-                        cursor: 'pointer',
-                        color: c.is_active ? '#16a34a' : 'var(--text-muted)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transition: 'all 0.15s ease'
-                      }}
-                    >
-                      {c.is_active ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
-                    </button>
                     <button
                       onClick={() => startEdit(c)}
                       title="Edit Coupon Settings"
