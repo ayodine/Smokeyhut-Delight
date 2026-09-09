@@ -41,74 +41,79 @@ describe('checkCustomerAlreadyUsedCoupon', () => {
   });
 });
 
-describe('isCustomerEligibleForCoupon (FREEFOWL08 lock)', () => {
-  it('allows unrestricted coupons for any customer', () => {
+describe('isCustomerEligibleForCoupon (Public vs Restricted)', () => {
+  it('allows unrestricted/public coupons for ANY customer without requiring contact info', () => {
     expect(isCustomerEligibleForCoupon('CLOSETDELIGHT', {}).eligible).toBe(true);
     expect(isCustomerEligibleForCoupon('DELIGHTSDC6', { name: 'Random Person' }).eligible).toBe(true);
+    // FREEFOWL08 when made public (isRestrictedOverride: false) qualifies ANY customer
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'John Doe', phone: '08012345678' }, false).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', {}, false).eligible).toBe(true);
   });
 
-  it('requires contact details when applying FREEFOWL08', () => {
-    const res = isCustomerEligibleForCoupon('FREEFOWL08', {});
+  it('requires contact details when coupon is restricted', () => {
+    const res = isCustomerEligibleForCoupon('FREEFOWL08', {}, true);
     expect(res.eligible).toBe(false);
     expect(res.reason).toBe('contact_required');
   });
 
-  it('rejects unqualified customers trying to use FREEFOWL08', () => {
+  it('rejects unqualified customers trying to use a restricted coupon', () => {
     const res = isCustomerEligibleForCoupon('FREEFOWL08', {
-      name: 'John Doe',
+      name: 'Random Stranger',
       phone: '08099999999',
-      email: 'john@example.com'
-    });
+      email: 'stranger@example.com'
+    }, true);
     expect(res.eligible).toBe(false);
     expect(res.reason).toBe('not_eligible');
   });
 
-  it('qualifies all 21 target customers by phone (including international/spaced format)', () => {
+  it('qualifies all 21 target customers by phone when restricted (including international/spaced format)', () => {
     for (const q of QUALIFIED_FREEFOWL08_CUSTOMERS) {
       // Direct phone
-      expect(isCustomerEligibleForCoupon('FREEFOWL08', { phone: q.phone }).eligible).toBe(true);
+      expect(isCustomerEligibleForCoupon('FREEFOWL08', { phone: q.phone }, true).eligible).toBe(true);
       // International +234 format
       const intlPhone = '+234 ' + q.phone.slice(1);
-      expect(isCustomerEligibleForCoupon('FREEFOWL08', { phone: intlPhone }).eligible).toBe(true);
+      expect(isCustomerEligibleForCoupon('FREEFOWL08', { phone: intlPhone }, true).eligible).toBe(true);
     }
   });
 
-  it('qualifies all 21 target customers by email (case-insensitive)', () => {
+  it('qualifies all 21 target customers by email when restricted (case-insensitive)', () => {
     for (const q of QUALIFIED_FREEFOWL08_CUSTOMERS) {
-      expect(isCustomerEligibleForCoupon('FREEFOWL08', { email: q.email.toUpperCase() }).eligible).toBe(true);
+      expect(isCustomerEligibleForCoupon('FREEFOWL08', { email: q.email.toUpperCase() }, true).eligible).toBe(true);
     }
   });
 
-  it('qualifies target customer by name', () => {
-    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Seun Alli' }).eligible).toBe(true);
-    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Oluwaseun Oguntola' }).eligible).toBe(true);
-    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Kafilat Oyefeso' }).eligible).toBe(true);
-    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Hareez Maye' }).eligible).toBe(true);
-    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'dan Daniel' }).eligible).toBe(true);
-    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Sunday Oguntoye' }).eligible).toBe(true);
+  it('qualifies target customer by name when restricted', () => {
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Seun Alli' }, true).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Oluwaseun Oguntola' }, true).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Kafilat Oyefeso' }, true).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Hareez Maye' }, true).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'dan Daniel' }, true).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Sunday Oguntoye' }, true).eligible).toBe(true);
   });
 
-  it('qualifies target customer by street address keywords', () => {
-    expect(isCustomerEligibleForCoupon('FREEFOWL08', { address: '17b Kingsley Emu Street Lekki Phase 1' }).eligible).toBe(true);
-    expect(isCustomerEligibleForCoupon('FREEFOWL08', { address: '9A isaac John Street Ikeja GRA' }).eligible).toBe(true);
-    expect(isCustomerEligibleForCoupon('FREEFOWL08', { address: '7/9 mobolade okoya thomas Vi' }).eligible).toBe(true);
+  it('qualifies target customer by street address keywords when restricted', () => {
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { address: '17b Kingsley Emu Street Lekki Phase 1' }, true).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { address: '9A isaac John Street Ikeja GRA' }, true).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { address: '7/9 mobolade okoya thomas Vi' }, true).eligible).toBe(true);
   });
 
-  it('qualifies customer SHD-06595 (Daniel) across all name and phone variations', () => {
+  it('qualifies customer SHD-06595 (Daniel) across all name and phone variations when restricted', () => {
     // Primary phone from order SHD-06595
-    expect(isCustomerEligibleForCoupon('FREEFOWL08', { phone: '09168652077' }).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { phone: '09168652077' }, true).eligible).toBe(true);
     // Alternate phone 1 (SHD-06617)
-    expect(isCustomerEligibleForCoupon('FREEFOWL08', { phone: '07087316641' }).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { phone: '07087316641' }, true).eligible).toBe(true);
     // Alternate phone 2 (SHD-06594)
-    expect(isCustomerEligibleForCoupon('FREEFOWL08', { phone: '08159561128' }).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { phone: '08159561128' }, true).eligible).toBe(true);
     // Canonical email
-    expect(isCustomerEligibleForCoupon('FREEFOWL08', { email: 'alimidaniel64@gmail.com' }).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { email: 'alimidaniel64@gmail.com' }, true).eligible).toBe(true);
     // Variations of his name
-    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Daniel' }).eligible).toBe(true);
-    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Dan' }).eligible).toBe(true);
-    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'dan Daniel' }).eligible).toBe(true);
-    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Daniel Alimi' }).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Daniel' }, true).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Dan' }, true).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'dan Daniel' }, true).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Daniel Alimi' }, true).eligible).toBe(true);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'may Mariam' }, true).eligible).toBe(true);
   });
 });
+
 
 

@@ -275,59 +275,91 @@ export function normalizeText(str) {
   return String(str).toLowerCase().trim().replace(/\s+/g, ' ');
 }
 
+let dynamicCouponMetaCache = {};
 let dynamicEligibleCache = {};
-let lastCacheFetchTime = 0;
+let lastCacheFetchTime = {};
 
-export async function fetchEligibleCustomersFromDb(code) {
-  const cleanCode = (code || '').trim().toUpperCase();
+/**
+ * Fetches coupon metadata (and customer whitelist if restricted) from Supabase.
+ */
+export async function fetchCouponFromDb(code) {
+  if (!code) return null;
+  const cleanCode = code.trim().toUpperCase();
   const now = Date.now();
-  if (dynamicEligibleCache[cleanCode] && now - lastCacheFetchTime < 120000) {
-    return dynamicEligibleCache[cleanCode];
+  if (dynamicCouponMetaCache[cleanCode] && (now - (lastCacheFetchTime[cleanCode] || 0) < 60000)) {
+    return dynamicCouponMetaCache[cleanCode];
   }
   try {
-    const { data: coupon } = await publicSupabase
+    const { data: coupon, error } = await publicSupabase
       .from('coupons')
-      .select('id, is_restricted')
+      .select('id, code, type, value, expires_at, max_uses, uses, min_order_amount, is_active, is_restricted, max_uses_per_customer')
       .eq('code', cleanCode)
       .maybeSingle();
 
-    if (!coupon || !coupon.is_restricted) {
+    if (error || !coupon) {
+      return null;
+    }
+
+    dynamicCouponMetaCache[cleanCode] = coupon;
+    lastCacheFetchTime[cleanCode] = now;
+
+    if (coupon.is_restricted) {
+      const { data: rows } = await publicSupabase
+        .from('coupon_eligible_customers')
+        .select('customer_name, customer_phone, customer_email, customer_address, max_uses, reference_order_id')
+        .eq('coupon_id', coupon.id);
+
+      dynamicEligibleCache[cleanCode] = (rows && rows.length > 0)
+        ? rows.map(r => ({
+            name: r.customer_name,
+            phone: r.customer_phone,
+            email: r.customer_email,
+            address: r.customer_address,
+            orderId: r.reference_order_id,
+            max_uses: r.max_uses
+          }))
+        : (cleanCode === 'FREEFOWL08' ? QUALIFIED_FREEFOWL08_CUSTOMERS : []);
+    } else {
       dynamicEligibleCache[cleanCode] = [];
-      return [];
     }
 
-    const { data: rows } = await publicSupabase
-      .from('coupon_eligible_customers')
-      .select('customer_name, customer_phone, customer_email, customer_address, max_uses, reference_order_id')
-      .eq('coupon_id', coupon.id);
-
-    if (rows && rows.length > 0) {
-      dynamicEligibleCache[cleanCode] = rows.map(r => ({
-        name: r.customer_name,
-        phone: r.customer_phone,
-        email: r.customer_email,
-        address: r.customer_address,
-        orderId: r.reference_order_id,
-        max_uses: r.max_uses
-      }));
-      lastCacheFetchTime = now;
-    }
-    return dynamicEligibleCache[cleanCode] || [];
+    return coupon;
   } catch (err) {
-    console.warn('[CouponValidator] DB fetch eligible customers failed:', err);
-    return [];
+    console.warn('[CouponValidator] fetchCouponFromDb failed:', err);
+    return null;
   }
 }
 
+export async function fetchEligibleCustomersFromDb(code) {
+  const cleanCode = (code || '').trim().toUpperCase();
+  await fetchCouponFromDb(cleanCode);
+  return dynamicEligibleCache[cleanCode] || [];
+}
+
 /**
- * Checks if the customer is eligible for a restricted coupon (specifically FREEFOWL08).
+ * Checks if the customer is eligible for a restricted coupon.
+ * If the coupon is public (is_restricted === false), returns eligible: true for ANY customer.
  * @param {string} code - The coupon code to check
  * @param {Object} customer - { name, phone, email, address }
+ * @param {boolean|null} [isRestrictedOverride] - Explicit restriction flag if already known from DB
  * @returns {{ eligible: boolean, matchedCustomer?: Object, error?: string, reason?: string }}
  */
-export function isCustomerEligibleForCoupon(code, customer = {}) {
+export function isCustomerEligibleForCoupon(code, customer = {}, isRestrictedOverride = null) {
   const cleanCode = (code || '').trim().toUpperCase();
-  if (cleanCode !== 'FREEFOWL08') {
+  if (!cleanCode) return { eligible: false, error: 'Coupon code required' };
+
+  let isRestricted = false;
+  if (isRestrictedOverride !== null && isRestrictedOverride !== undefined) {
+    isRestricted = Boolean(isRestrictedOverride);
+  } else if (dynamicCouponMetaCache[cleanCode] !== undefined) {
+    isRestricted = Boolean(dynamicCouponMetaCache[cleanCode]?.is_restricted);
+  } else {
+    // If not yet queried, default to false (public)
+    isRestricted = false;
+  }
+
+  // If coupon is NOT restricted (public to all customers), anyone qualifies!
+  if (!isRestricted) {
     return { eligible: true };
   }
 
@@ -345,13 +377,15 @@ export function isCustomerEligibleForCoupon(code, customer = {}) {
     };
   }
 
-  const pool = [...QUALIFIED_FREEFOWL08_CUSTOMERS, ...(dynamicEligibleCache[cleanCode] || [])];
+  const pool = (dynamicEligibleCache[cleanCode] && dynamicEligibleCache[cleanCode].length > 0)
+    ? dynamicEligibleCache[cleanCode]
+    : (cleanCode === 'FREEFOWL08' ? QUALIFIED_FREEFOWL08_CUSTOMERS : []);
 
   // Find match in qualified customer list
   const matched = pool.find(q => {
     const qPhoneDigits = normalizePhoneDigits(q.phone || q.customer_phone);
     const qEmail = normalizeText(q.email || q.customer_email);
-    const qRawName = q.name || q.customer_name;
+    const qRawName = (q.name || q.customer_name || '').replace(/[()]/g, ' ');
     const qName = normalizeText(qRawName);
     const qAddr = normalizeText(q.address || q.customer_address);
 
@@ -378,8 +412,10 @@ export function isCustomerEligibleForCoupon(code, customer = {}) {
       const inTokens = inputName.split(' ').filter(t => t.length > 1);
       if (qTokens.length >= 2 && qTokens.every(t => inTokens.includes(t))) return true;
       if (inTokens.length >= 2 && inTokens.every(t => qTokens.includes(t))) return true;
-      // Handle 'dan daniel' matching 'daniel', 'dan', or 'daniel alimi'
-      if (qName.includes('dan daniel') && (inTokens.includes('daniel') || inTokens.includes('dan'))) return true;
+      // Handle partial token overlaps e.g. "daniel", "dan", "may", "mariam"
+      if (inTokens.some(t => qTokens.includes(t)) && (inTokens.includes('daniel') || inTokens.includes('dan') || inTokens.includes('mariam') || inTokens.includes('may'))) {
+        return true;
+      }
     }
 
     // 4. Address match
@@ -412,8 +448,7 @@ export function getLastCouponError() {
 }
 
 /**
- * Checks if a customer (identified by phone and/or email) has already placed an order with the given coupon code,
- * or if they are eligible for a restricted coupon.
+ * Checks if a customer (identified by phone and/or email) has already placed an order with the given coupon code.
  * @param {string} code - The coupon code to check
  * @param {string} phone - Customer phone number
  * @param {string} email - Customer email address
@@ -427,7 +462,6 @@ export async function checkCustomerAlreadyUsedCoupon(code, phone, email, matched
   const cleanCode = code.trim().toUpperCase();
   const cleanPhone = (phone || '').trim();
   const cleanEmail = (email || '').trim().toLowerCase();
-
 
   try {
     const { data, error } = await publicSupabase.rpc('check_coupon_used_by_customer', {
@@ -451,8 +485,8 @@ export async function checkCustomerAlreadyUsedCoupon(code, phone, email, matched
       return true;
     }
 
-    // If this is FREEFOWL08 and we matched a qualified customer, verify their canonical phone/email too
-    if (cleanCode === 'FREEFOWL08' && matchedCustomer) {
+    // If matched a qualified customer with a different canonical phone/email, verify that too
+    if (matchedCustomer) {
       const qPhone = matchedCustomer.phone || null;
       const qEmail = (matchedCustomer.email || '').toLowerCase() || null;
       if ((qPhone && qPhone !== cleanPhone) || (qEmail && qEmail !== cleanEmail)) {
@@ -473,4 +507,5 @@ export async function checkCustomerAlreadyUsedCoupon(code, phone, email, matched
 
   return false;
 }
+
 

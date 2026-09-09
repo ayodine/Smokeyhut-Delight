@@ -10,7 +10,7 @@ import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher
 import { fetchDeliveryPromo, getPromoDeliveryFee } from '../../lib/deliveryPromo';
 import { validateEmail } from '../../lib/emailValidation';
 import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
-import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, getLastCouponError, fetchEligibleCustomersFromDb } from '../../lib/couponValidator';
+import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, getLastCouponError, fetchEligibleCustomersFromDb, fetchCouponFromDb } from '../../lib/couponValidator';
 import CheckoutDisclaimerModal from '../../components/CheckoutDisclaimerModal';
 import PromoProgressBanner from '../../components/PromoProgressBanner';
 import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Search, MapPin, Tag, X, Copy, Banknote, Send, ClipboardList, Utensils, AlertTriangle, Clock, Lightbulb, Gift } from 'lucide-react';
@@ -188,29 +188,57 @@ export default function Checkout() {
     setCouponError('');
     setCouponLoading(true);
 
-    // Warm up dynamic whitelist from DB
-    await fetchEligibleCustomersFromDb(code);
+    const couponData = await fetchCouponFromDb(code);
+    if (!couponData) {
+      setCouponLoading(false);
+      setCouponError('Invalid or expired coupon code');
+      return;
+    }
+    if (!couponData.is_active) {
+      setCouponLoading(false);
+      setCouponError('This coupon is currently inactive');
+      return;
+    }
+    const now = new Date();
+    if (couponData.expires_at && new Date(couponData.expires_at) < now) {
+      setCouponLoading(false);
+      setCouponError('This coupon has expired');
+      return;
+    }
+    if (couponData.max_uses !== null && couponData.uses >= couponData.max_uses) {
+      setCouponLoading(false);
+      setCouponError('This coupon has reached its usage limit');
+      return;
+    }
+    if (couponData.min_order_amount && total < couponData.min_order_amount) {
+      setCouponLoading(false);
+      setCouponError(`Minimum order of ${fmt(couponData.min_order_amount)} required for this coupon`);
+      return;
+    }
 
-    const customerInfo = {
-      name: `${form.firstName} ${form.lastName}`.trim(),
-      phone: form.phone,
-      email: form.email,
-      address: form.address,
-    };
-
-    const hasAnyContact = (form.phone && form.phone.trim().length >= 10) || (form.email && form.email.trim().length >= 5) || customerInfo.name;
-    let eligibility = { eligible: true };
-    if (hasAnyContact) {
-      eligibility = isCustomerEligibleForCoupon(code, customerInfo);
-      if (!eligibility.eligible && eligibility.reason !== 'contact_required') {
-        setCouponLoading(false);
-        setCouponError(eligibility.error);
-        return;
+    let matchedCustomer = null;
+    // Check customer restriction ONLY if coupon is restricted
+    if (couponData.is_restricted) {
+      const customerInfo = {
+        name: `${form.firstName} ${form.lastName}`.trim(),
+        phone: form.phone,
+        email: form.email,
+        address: form.address,
+      };
+      const hasAnyContact = (form.phone && form.phone.trim().length >= 10) || (form.email && form.email.trim().length >= 5) || customerInfo.name;
+      if (hasAnyContact) {
+        const eligibility = isCustomerEligibleForCoupon(code, customerInfo, true);
+        if (!eligibility.eligible && eligibility.reason !== 'contact_required') {
+          setCouponLoading(false);
+          setCouponError(eligibility.error || 'This coupon is valid only for eligible customers');
+          return;
+        }
+        matchedCustomer = eligibility.matchedCustomer;
       }
     }
 
     if (form.phone || form.email) {
-      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(code, form.phone, form.email, eligibility.matchedCustomer);
+      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(code, form.phone, form.email, matchedCustomer);
       if (alreadyUsed) {
         setCouponLoading(false);
         setCouponError(getLastCouponError() || 'You have already used this coupon code on a previous order');
@@ -218,24 +246,18 @@ export default function Checkout() {
       }
     }
 
-    const { data, error } = await publicSupabase
-      .from('coupons')
-      .select('id,code,type,value,expires_at,max_uses,uses,min_order_amount')
-      .eq('code', code)
-      .eq('is_active', true)
-      .maybeSingle();
     setCouponLoading(false);
-    if (error || !data) { setCouponError('Invalid or expired coupon code'); return; }
-    const now = new Date();
-    if (data.expires_at && new Date(data.expires_at) < now) { setCouponError('This coupon has expired'); return; }
-    if (data.max_uses !== null && data.uses >= data.max_uses) { setCouponError('This coupon has reached its usage limit'); return; }
-    if (data.min_order_amount && total < data.min_order_amount) {
-      setCouponError(`Minimum order of ${fmt(data.min_order_amount)} required for this coupon`); return;
-    }
-    const discount = data.type === 'free_guinea_fowl' ? 0 : (data.type === 'percent'
-      ? Math.round((total + deliveryFee) * (data.value / 100))
-      : data.value);
-    setAppliedCoupon({ id: data.id, code: data.code, type: data.type, value: data.value, discount: Math.min(discount, total + deliveryFee) });
+    const discount = couponData.type === 'free_guinea_fowl' ? 0 : (couponData.type === 'percent'
+      ? Math.round((total + deliveryFee) * (couponData.value / 100))
+      : couponData.value);
+    setAppliedCoupon({
+      id: couponData.id,
+      code: couponData.code,
+      type: couponData.type,
+      value: couponData.value,
+      is_restricted: Boolean(couponData.is_restricted),
+      discount: Math.min(discount, total + deliveryFee)
+    });
   };
 
   const removeCoupon = () => {
@@ -269,7 +291,7 @@ export default function Checkout() {
 
   const handleContactBlur = (field) => {
     setTouched(t => ({ ...t, [field]: true }));
-    if (appliedCoupon?.code) {
+    if (appliedCoupon?.code && appliedCoupon?.is_restricted) {
       const hasPhone = form.phone && form.phone.trim().length >= 10;
       const hasEmail = form.email && form.email.trim().length >= 5;
       if (hasPhone || hasEmail) {
@@ -279,7 +301,7 @@ export default function Checkout() {
           email: form.email,
           address: form.address,
         };
-        const eligibility = isCustomerEligibleForCoupon(appliedCoupon.code, customerInfo);
+        const eligibility = isCustomerEligibleForCoupon(appliedCoupon.code, customerInfo, true);
         // Only strip coupon if customer has entered BOTH phone and email and neither is qualified
         if (!eligibility.eligible && hasPhone && hasEmail) {
           removeCoupon();
@@ -384,19 +406,23 @@ export default function Checkout() {
     if (!validateForm()) return;
 
     if (appliedCoupon?.code) {
-      const customerInfo = {
-        name: `${form.firstName} ${form.lastName}`.trim(),
-        phone: form.phone,
-        email: form.email,
-        address: form.address,
-      };
-      const eligibility = isCustomerEligibleForCoupon(appliedCoupon.code, customerInfo);
-      if (!eligibility.eligible) {
-        showToast('Invalid Coupon', eligibility.error, 'error');
-        removeCoupon();
-        return;
+      let matchedCust = null;
+      if (appliedCoupon.is_restricted) {
+        const customerInfo = {
+          name: `${form.firstName} ${form.lastName}`.trim(),
+          phone: form.phone,
+          email: form.email,
+          address: form.address,
+        };
+        const eligibility = isCustomerEligibleForCoupon(appliedCoupon.code, customerInfo, true);
+        if (!eligibility.eligible) {
+          showToast('Invalid Coupon', eligibility.error || 'This coupon is valid only for eligible customers.', 'error');
+          removeCoupon();
+          return;
+        }
+        matchedCust = eligibility.matchedCustomer;
       }
-      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email, eligibility.matchedCustomer);
+      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email, matchedCust);
       if (alreadyUsed) {
         const msg = getLastCouponError() || 'You have already used this coupon code on a previous order.';
         showToast('Coupon Error', msg, 'error');
@@ -483,19 +509,23 @@ export default function Checkout() {
     if (!validateForm()) return;
 
     if (appliedCoupon?.code) {
-      const customerInfo = {
-        name: `${form.firstName} ${form.lastName}`.trim(),
-        phone: form.phone,
-        email: form.email,
-        address: form.address,
-      };
-      const eligibility = isCustomerEligibleForCoupon(appliedCoupon.code, customerInfo);
-      if (!eligibility.eligible) {
-        showToast('Invalid Coupon', eligibility.error, 'error');
-        removeCoupon();
-        return;
+      let matchedCust = null;
+      if (appliedCoupon.is_restricted) {
+        const customerInfo = {
+          name: `${form.firstName} ${form.lastName}`.trim(),
+          phone: form.phone,
+          email: form.email,
+          address: form.address,
+        };
+        const eligibility = isCustomerEligibleForCoupon(appliedCoupon.code, customerInfo, true);
+        if (!eligibility.eligible) {
+          showToast('Invalid Coupon', eligibility.error || 'This coupon is valid only for eligible customers.', 'error');
+          removeCoupon();
+          return;
+        }
+        matchedCust = eligibility.matchedCustomer;
       }
-      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email, eligibility.matchedCustomer);
+      const alreadyUsed = await checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email, matchedCust);
       if (alreadyUsed) {
         const msg = getLastCouponError() || 'You have already used this coupon code on a previous order.';
         showToast('Coupon Error', msg, 'error');
