@@ -244,15 +244,23 @@ export function isCustomerEligibleForCoupon(code, customer = {}) {
   };
 }
 
+let lastCouponError = '';
+
+export function getLastCouponError() {
+  return lastCouponError;
+}
+
 /**
- * Checks if a customer (identified by phone and/or email) has already placed an order with the given coupon code.
+ * Checks if a customer (identified by phone and/or email) has already placed an order with the given coupon code,
+ * or if they are eligible for a restricted coupon.
  * @param {string} code - The coupon code to check
  * @param {string} phone - Customer phone number
  * @param {string} email - Customer email address
  * @param {Object} [matchedCustomer] - Optional matched qualified customer profile
- * @returns {Promise<{ used: boolean, notEligible?: boolean, message?: string }>}
+ * @returns {Promise<boolean>} - False if allowed, true if blocked/already used
  */
 export async function checkCustomerAlreadyUsedCoupon(code, phone, email, matchedCustomer = null) {
+  lastCouponError = '';
   if (!code || (!phone && !email && !matchedCustomer)) return false;
   
   const cleanCode = code.trim().toUpperCase();
@@ -274,12 +282,16 @@ export async function checkCustomerAlreadyUsedCoupon(code, phone, email, matched
 
     if (error) {
       if (error.message && error.message.includes('valid only for eligible customers')) {
-        return true; // Rejected by database qualification rule
+        lastCouponError = 'This coupon is valid only for eligible customers';
+        return true;
       }
       console.warn('[CouponValidator] RPC error:', error);
+      lastCouponError = error.message || 'Could not verify coupon eligibility';
+      return true;
     }
 
     if (!error && typeof data === 'boolean' && data) {
+      lastCouponError = 'You have already used this coupon code on a previous order';
       return true;
     }
 
@@ -294,6 +306,7 @@ export async function checkCustomerAlreadyUsedCoupon(code, phone, email, matched
           p_email: qEmail
         });
         if (!qError && typeof qData === 'boolean' && qData) {
+          lastCouponError = 'You have already used this coupon code on a previous order';
           return true;
         }
       }

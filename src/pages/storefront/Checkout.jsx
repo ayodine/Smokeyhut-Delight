@@ -10,7 +10,7 @@ import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher
 import { fetchDeliveryPromo, getPromoDeliveryFee } from '../../lib/deliveryPromo';
 import { validateEmail } from '../../lib/emailValidation';
 import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
-import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon } from '../../lib/couponValidator';
+import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, getLastCouponError } from '../../lib/couponValidator';
 import CheckoutDisclaimerModal from '../../components/CheckoutDisclaimerModal';
 import PromoProgressBanner from '../../components/PromoProgressBanner';
 import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Search, MapPin, Tag, X, Copy, Banknote, Send, ClipboardList, Utensils, AlertTriangle, Clock, Lightbulb, Gift } from 'lucide-react';
@@ -206,7 +206,7 @@ export default function Checkout() {
       const alreadyUsed = await checkCustomerAlreadyUsedCoupon(code, form.phone, form.email, eligibility.matchedCustomer);
       if (alreadyUsed) {
         setCouponLoading(false);
-        setCouponError('You have already used this coupon code on a previous order');
+        setCouponError(getLastCouponError() || 'You have already used this coupon code on a previous order');
         return;
       }
     }
@@ -277,7 +277,7 @@ export default function Checkout() {
         checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email, eligibility.matchedCustomer).then(used => {
           if (used) {
             removeCoupon();
-            setCouponError('You have already used this coupon code on a previous order');
+            setCouponError(getLastCouponError() || 'You have already used this coupon code on a previous order');
           }
         });
       }
@@ -386,7 +386,8 @@ export default function Checkout() {
       }
       const alreadyUsed = await checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email, eligibility.matchedCustomer);
       if (alreadyUsed) {
-        showToast('Coupon already used', 'You have already used this coupon code on a previous order.', 'error');
+        const msg = getLastCouponError() || 'You have already used this coupon code on a previous order.';
+        showToast('Coupon Error', msg, 'error');
         removeCoupon();
         return;
       }
@@ -484,7 +485,8 @@ export default function Checkout() {
       }
       const alreadyUsed = await checkCustomerAlreadyUsedCoupon(appliedCoupon.code, form.phone, form.email, eligibility.matchedCustomer);
       if (alreadyUsed) {
-        showToast('Coupon already used', 'You have already used this coupon code on a previous order.', 'error');
+        const msg = getLastCouponError() || 'You have already used this coupon code on a previous order.';
+        showToast('Coupon Error', msg, 'error');
         removeCoupon();
         return;
       }
