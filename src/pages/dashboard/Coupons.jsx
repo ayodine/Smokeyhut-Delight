@@ -772,7 +772,7 @@ function CustomerManagerDrawer({ coupon, onClose, canManage }) {
       .from('orders')
       .select('id, customer_name, customer_phone, customer_email, total, coupon_discount, status, created_at, delivery_address')
       .ilike('coupon_code', coupon.code)
-      .neq('status', 'cancelled')
+      .not('status', 'in', '("cancelled","pending_payment")')
       .order('created_at', { ascending: false });
 
     if (ordersError) {

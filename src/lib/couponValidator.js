@@ -267,11 +267,6 @@ export async function checkCustomerAlreadyUsedCoupon(code, phone, email, matched
   const cleanPhone = (phone || '').trim();
   const cleanEmail = (email || '').trim().toLowerCase();
 
-  // Temporary bypass for customer SHD-06595 until payment goes through successfully
-  const phoneDigits = normalizePhoneDigits(cleanPhone);
-  if (cleanCode === 'FREEFOWL08' && (phoneDigits === '9168652077' || cleanEmail === 'alimidaniel64@gmail.com' || matchedCustomer?.orderId === 'SHD-06595')) {
-    return false;
-  }
 
   try {
     const { data, error } = await publicSupabase.rpc('check_coupon_used_by_customer', {

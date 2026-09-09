@@ -421,7 +421,7 @@ export default function MenuPage() {
       const data = await res.json();
       if (!res.ok || !data.authorization_url) throw new Error(data.error || 'Could not start payment');
 
-      await incrementCouponUse();
+      // Coupon redemption is recorded only when payment is confirmed successful
       window.location.assign(data.authorization_url);
     } catch (err) {
       showToast('Could not start card payment', `${err.message} — you can pay by bank transfer instead.`, 'error');
