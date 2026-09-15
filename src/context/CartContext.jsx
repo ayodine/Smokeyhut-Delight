@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useMemo, useCall
 import { useCartTracker } from '../hooks/useCartTracker';
 import { publicSupabase } from '../lib/supabase';
 import { fetchActivePromos, findBestCartPromo } from '../lib/promoOffers';
+import { trackAddToCart } from '../lib/analytics';
 
 const CartContext = createContext(null);
 
@@ -94,15 +95,11 @@ export function CartProvider({ children }) {
       return [...prev, { ...product, qty: 1 }];
     });
 
-    if (typeof window !== 'undefined' && window.fbq) {
-      window.fbq('track', 'AddToCart', {
-        content_name: product.name,
-        content_ids: [String(product.id)],
-        content_type: 'product',
-        value: Number(product.price),
-        currency: 'NGN'
-      });
-    }
+    trackAddToCart({
+      id: product.id,
+      name: product.name,
+      price: product.price,
+    });
   }, []);
 
   const removeItem = useCallback((id) => {

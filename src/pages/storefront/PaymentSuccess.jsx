@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { CheckCircle, Loader2, Clock } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import { publicSupabase } from '../../lib/supabase';
+import { trackPurchase } from '../../lib/analytics';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -40,13 +41,27 @@ export default function PaymentSuccess() {
           markConverted(id);
         }
         clearCart();
-        if (typeof window !== 'undefined' && window.fbq) {
-          window.fbq('track', 'Purchase', {
-            content_type: 'product',
-            currency: 'NGN',
-            order_id: id,
-          });
-        }
+
+        let pendingAmount = undefined;
+        let pendingItems = undefined;
+        try {
+          const pendingStr = sessionStorage.getItem('pending_paystack_order');
+          if (pendingStr) {
+            const parsed = JSON.parse(pendingStr);
+            if (!parsed.orderId || String(parsed.orderId) === String(id)) {
+              pendingAmount = parsed.amount;
+              pendingItems = parsed.numItems;
+            }
+          }
+          sessionStorage.removeItem('pending_paystack_order');
+        } catch {}
+
+        trackPurchase({
+          orderId: id,
+          total: pendingAmount,
+          itemsCount: pendingItems,
+          currency: 'NGN',
+        });
       }
     };
 

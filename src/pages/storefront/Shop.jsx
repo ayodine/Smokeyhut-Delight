@@ -5,6 +5,7 @@ import PromoProgressBanner from '../../components/PromoProgressBanner';
 import { Search, SlidersHorizontal, X } from 'lucide-react';
 import { getProducts } from '../../lib/productsCache';
 import { useSEO } from '../../hooks/useSEO';
+import { trackViewContent } from '../../lib/analytics';
 
 export default function Shop() {
   useSEO({
@@ -25,12 +26,7 @@ export default function Shop() {
       setProducts(p);
       setCategories([{ id: 'all', label: 'All Items' }, ...c]);
       setLoading(false);
-      if (typeof window !== 'undefined' && window.fbq) {
-        window.fbq('track', 'ViewContent', {
-          content_type: 'product_group',
-          content_name: 'Shop Catalog'
-        });
-      }
+      trackViewContent({ category: 'Shop Catalog', name: 'Shop Catalog' });
     });
   }, []);
 

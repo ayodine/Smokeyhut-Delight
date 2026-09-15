@@ -11,6 +11,7 @@ import { fetchDeliveryPromo, getPromoDeliveryFee } from '../../lib/deliveryPromo
 import { validateEmail } from '../../lib/emailValidation';
 import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
 import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, getLastCouponError, fetchEligibleCustomersFromDb, fetchCouponFromDb } from '../../lib/couponValidator';
+import { trackInitiateCheckout, trackAddPaymentInfo, trackPurchase } from '../../lib/analytics';
 import CheckoutDisclaimerModal from '../../components/CheckoutDisclaimerModal';
 import PromoProgressBanner from '../../components/PromoProgressBanner';
 import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Search, MapPin, Tag, X, Copy, Banknote, Send, ClipboardList, Utensils, AlertTriangle, Clock, Lightbulb, Gift } from 'lucide-react';
@@ -132,14 +133,10 @@ export default function Checkout() {
     if (promoteStage) {
       promoteStage('checkout');
     }
-    if (typeof window !== 'undefined' && window.fbq) {
-      window.fbq('track', 'InitiateCheckout', {
-        content_type: 'product',
-        num_items: items.reduce((acc, i) => acc + i.qty, 0),
-        value: total,
-        currency: 'NGN'
-      });
-    }
+    trackInitiateCheckout({
+      total,
+      itemsCount: items.reduce((acc, i) => acc + i.qty, 0),
+    });
   }, [promoteStage]);
 
   // Fetch zones and active stores on mount
@@ -471,14 +468,11 @@ export default function Checkout() {
       ? `Store Pickup — ${stores.find(s => s.id === selectedStoreId)?.name || 'Store'}`
       : `${form.address}, ${selectedMatch?.area?.name || selectedMatch?.zone?.name || form.city}`;
 
-    if (typeof window !== 'undefined' && window.fbq) {
-      window.fbq('track', 'Purchase', {
-        content_type: 'product',
-        value: Number(amountSnapshot),
-        currency: 'NGN',
-        num_items: itemsSnapshot.reduce((acc, i) => acc + i.qty, 0)
-      });
-    }
+    trackPurchase({
+      orderId,
+      total: Number(amountSnapshot),
+      itemsCount: itemsSnapshot.reduce((acc, i) => acc + i.qty, 0),
+    });
 
     if (markConverted) {
       markConverted(orderId);
@@ -553,14 +547,10 @@ export default function Checkout() {
     }
 
     try {
-      if (typeof window !== 'undefined' && window.fbq) {
-        window.fbq('track', 'AddPaymentInfo', {
-          content_type: 'product',
-          value: Number(amountToPayNow),
-          currency: 'NGN',
-          num_items: itemsSnapshot.reduce((acc, i) => acc + i.qty, 0)
-        });
-      }
+      trackAddPaymentInfo({
+        total: Number(amountToPayNow),
+        itemsCount: itemsSnapshot.reduce((acc, i) => acc + i.qty, 0),
+      });
 
       // Hidden until paid: the webhook flips pending_payment -> pending.
       // No notify() and no clearCart() here — email fires on payment,
@@ -580,6 +570,14 @@ export default function Checkout() {
       });
       const data = await res.json();
       if (!res.ok || !data.authorization_url) throw new Error(data.error || 'Could not start payment');
+
+      try {
+        sessionStorage.setItem('pending_paystack_order', JSON.stringify({
+          orderId,
+          amount: Number(amountToPayNow),
+          numItems: itemsSnapshot.reduce((acc, i) => acc + i.qty, 0),
+        }));
+      } catch {}
 
       // Coupon redemption is recorded only when payment is confirmed successful
       window.location.assign(data.authorization_url);

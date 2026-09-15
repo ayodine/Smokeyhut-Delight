@@ -13,6 +13,7 @@ import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher
 import { fetchDeliveryPromo, getPromoDeliveryFee } from '../../lib/deliveryPromo';
 import { validateEmail } from '../../lib/emailValidation';
 import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, getLastCouponError, fetchEligibleCustomersFromDb, fetchCouponFromDb } from '../../lib/couponValidator';
+import { trackViewContent, trackInitiateCheckout, trackAddPaymentInfo, trackPurchase } from '../../lib/analytics';
 import PromoProgressBanner from '../../components/PromoProgressBanner';
 import {
   ShoppingCart, X, Truck, Store as StoreIcon, Loader2, MapPin,
@@ -234,12 +235,7 @@ export default function MenuPage() {
       setProducts(p);
       setCategories([{ id: 'all', label: 'All Items' }, ...c]);
       setLoadingProducts(false);
-      if (typeof window !== 'undefined' && window.fbq) {
-        window.fbq('track', 'ViewContent', {
-          content_type: 'product_group',
-          content_name: 'Menu Catalog'
-        });
-      }
+      trackViewContent({ category: 'Menu Catalog', name: 'Menu Catalog' });
     });
   }, []);
 
@@ -421,14 +417,11 @@ export default function MenuPage() {
       delivery_address: deliveryLine,
       total: amountSnapshot,
     });
-    if (typeof window !== 'undefined' && window.fbq) {
-      window.fbq('track', 'Purchase', {
-        content_type: 'product',
-        value: Number(amountSnapshot),
-        currency: 'NGN',
-        num_items: itemsSnapshot.reduce((acc, i) => acc + i.qty, 0)
-      });
-    }
+    trackPurchase({
+      orderId,
+      total: Number(amountSnapshot),
+      itemsCount: itemsSnapshot.reduce((acc, i) => acc + i.qty, 0),
+    });
     setCheckoutOpen(false);
     setSuccessData({ 
       orderId, 
@@ -477,6 +470,11 @@ export default function MenuPage() {
     }
     setProcessing(true);
 
+    trackAddPaymentInfo({
+      total: Number(amountToPayNow),
+      itemsCount: itemsSnapshot.reduce((acc, i) => acc + i.qty, 0),
+    });
+
     try {
       // Hidden until paid: the webhook flips pending_payment -> pending.
       // No notify() and no clearCart() here — email fires on payment,
@@ -497,6 +495,14 @@ export default function MenuPage() {
       const data = await res.json();
       if (!res.ok || !data.authorization_url) throw new Error(data.error || 'Could not start payment');
 
+      try {
+        sessionStorage.setItem('pending_paystack_order', JSON.stringify({
+          orderId,
+          amount: Number(amountToPayNow),
+          numItems: itemsSnapshot.reduce((acc, i) => acc + i.qty, 0),
+        }));
+      } catch {}
+
       // Coupon redemption is recorded only when payment is confirmed successful
       window.location.assign(data.authorization_url);
     } catch (err) {
@@ -507,14 +513,10 @@ export default function MenuPage() {
 
   const handleOpenCheckout = () => {
     setCheckoutOpen(true);
-    if (typeof window !== 'undefined' && window.fbq) {
-      window.fbq('track', 'InitiateCheckout', {
-        content_type: 'product',
-        num_items: itemCount,
-        value: total,
-        currency: 'NGN'
-      });
-    }
+    trackInitiateCheckout({
+      total,
+      itemsCount: itemCount,
+    });
   };
 
   const filtered = useMemo(() => {

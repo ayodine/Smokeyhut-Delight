@@ -1,6 +1,7 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AlertCircle, X } from 'lucide-react';
+import { trackPageView } from './lib/analytics';
 
 // Prefetch products as early as possible
 import { prefetchProducts } from './lib/productsCache';
@@ -66,8 +67,19 @@ function AdminLoader() {
 }
 
 function ScrollToTop() {
-  const { pathname } = useLocation();
-  useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
+  const { pathname, search } = useLocation();
+  const isFirstMount = useRef(true);
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    // index.html already fires the initial PageView on full load
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+      return;
+    }
+    trackPageView();
+  }, [pathname, search]);
+
   return null;
 }
 
