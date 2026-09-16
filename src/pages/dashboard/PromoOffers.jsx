@@ -597,7 +597,7 @@ export default function PromoOffers() {
                             : `Buy ${p.min_qualifying_qty}+ Items`}
                         </div>
                         <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: 2 }}>
-                          {p.qualifying_type === 'guinea_fowl_birds' ? 'Whole birds & combo packs' : 'Single or multiple items'}
+                          {p.qualifying_type === 'guinea_fowl_birds' ? 'Whole birds (strict, no packs)' : 'Single or multiple items'}
                         </div>
                       </td>
 
@@ -830,7 +830,7 @@ export default function PromoOffers() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 14 }}>
                   {[
-                    { id: 'guinea_fowl_birds', label: 'Guinea Fowl Count', sub: 'Whole birds & packs', icon: Flame },
+                    { id: 'guinea_fowl_birds', label: 'Guinea Fowl Count', sub: 'Whole birds (no packs)', icon: Flame },
                     { id: 'min_amount',        label: 'Min Cart Total',    sub: 'Total order value (\u20a6)', icon: DollarSign },
                     { id: 'category',          label: 'Product Category',  sub: 'Any item from a category', icon: Layers },
                     { id: 'specific_products', label: 'Specific Items',    sub: 'Selected menu products', icon: Tag }

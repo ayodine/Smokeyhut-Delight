@@ -9,6 +9,8 @@
  * and the matched area has an override. Fee 0 means free delivery.
  */
 
+import { isQualifyingGuineaFowlBird } from './promoOffers';
+
 export async function fetchDeliveryPromo(supabaseClient) {
   const { data, error } = await supabaseClient
     .from('app_settings')
@@ -21,34 +23,14 @@ export async function fetchDeliveryPromo(supabaseClient) {
 
 /**
  * Checks the bird count multiplier for an item.
- * - Multi-bird packs/combos (Hangout Pack = 3, Triple Delight Combo = 3, Stock Up = 5, Party Pack = 10)
- * - Single whole Guinea Fowl items (Full, King Size, Extra Dry, Travel Standard, etc.) = 1
- * - Non-bird items (Guinea Fowl Rice, drinks, sides, bowls) = 0
+ * Strictly 1 for individual genuine Guinea Fowl birds, 0 for everything else (packs, sides, drinks).
  */
 export function getGuineaFowlBirdCount(item) {
-  if (!item) return 0;
-  const name = (item.name || '').toLowerCase();
-
-  // Explicit non-bird exclusions
-  if (name.includes('rice') || name.includes('bowl') || name.includes('drink') || name.includes('palm wine') || name.includes('zobo')) {
-    return 0;
-  }
-
-  // Packs & Combos that contain multiple guinea fowl birds
-  if (name.includes('party pack')) return 10;
-  if (name.includes('stock up') || name.includes('stock-up')) return 5;
-  if (name.includes('triple delight') || name.includes('hangout')) return 3;
-
-  // Single Guinea Fowl birds (Full Smokey Guineafowl, King Size, Extra Dry, Travel Standard, etc.)
-  if (name.includes('guineafowl') || name.includes('guinea fowl') || name.includes('guinea')) {
-    return 1;
-  }
-
-  return 0;
+  return isQualifyingGuineaFowlBird(item) ? 1 : 0;
 }
 
 export function isQualifyingGuineaFowl(item) {
-  return getGuineaFowlBirdCount(item) > 0;
+  return isQualifyingGuineaFowlBird(item);
 }
 
 /**

@@ -8,6 +8,7 @@ import { useCustomerAuth } from '../../context/CustomerAuthContext';
 import { profileToPrefill } from '../../lib/customerProfile';
 import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher';
 import { fetchDeliveryPromo, getPromoDeliveryFee } from '../../lib/deliveryPromo';
+import { isQualifyingGuineaFowlBird } from '../../lib/promoOffers';
 import { validateEmail } from '../../lib/emailValidation';
 import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
 import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, getLastCouponError, fetchEligibleCustomersFromDb, fetchCouponFromDb } from '../../lib/couponValidator';
@@ -170,7 +171,8 @@ export default function Checkout() {
   const VAT = 200;
   const isPickup = deliveryType === 'pickup';
   const allFreeShipping = items.length > 0 && items.every(i => i.free_shipping === true);
-  const promoFreeDelivery = !isPickup && promoRewardItem?.is_free_delivery === true;
+  const qualifyingBirdCount = items.reduce((acc, i) => acc + (isQualifyingGuineaFowlBird(i) ? (Number(i.qty) || 0) : 0), 0);
+  const promoFreeDelivery = !isPickup && promoRewardItem?.is_free_delivery === true && qualifyingBirdCount >= 3;
   const promoFee = !isPickup && selectedMatch
     ? getPromoDeliveryFee(deliveryPromo, items, selectedMatch.area?.name || '', selectedMatch.zone.price)
     : null;
@@ -331,13 +333,15 @@ export default function Checkout() {
     }
   };
 
-  const buildOrderPayload = (method) => {
+  const buildOrderPayload = (method, currentItems = items) => {
     const customerName = `${form.firstName} ${form.lastName}`.trim();
     const pickupStore = stores.find(s => s.id === selectedStoreId);
     const deliveryAddress = isPickup
       ? `Store Pickup — ${pickupStore?.name || 'Store'}`
       : `${form.address}, ${selectedMatch?.area?.name || selectedMatch?.zone?.name || form.city}`;
     const deliveryZoneName = isPickup ? 'Store Pickup' : (selectedMatch?.area?.name || selectedMatch?.zone?.name || '');
+    const isPromoFreeDeliveryActive = promoFreeDelivery && promoRewardItem?.is_free_delivery;
+    const effectivePromoReward = isPromoFreeDeliveryActive ? promoRewardItem : (promoRewardItem?.is_free_delivery ? null : promoRewardItem);
 
     return {
       customer_name: customerName,
@@ -351,10 +355,17 @@ export default function Checkout() {
       delivery_fee: deliveryFee,
       coupon_code: appliedCoupon?.code || null,
       coupon_discount: appliedCoupon?.discount || 0,
-      promo_id: promoRewardItem?.promo_id || null,
+      promo_id: effectivePromoReward?.promo_id || null,
       status: 'pending',
       session_id: cartSessionId || null,
-      notes: (promoApplied ? '[via Website] [Delivery Promo]' : '[via Website]') + (promoRewardItem ? ` [Promo: ${promoRewardItem.name}]` : '') + (form.notes ? '\n' + form.notes : ''),
+      items: currentItems.map(i => ({
+        id: i.id || null,
+        name: i.name,
+        price: i.price,
+        qty: i.qty,
+        is_promo_reward: i.is_promo_reward || false
+      })),
+      notes: (promoApplied ? '[via Website] [Delivery Promo]' : '[via Website]') + (effectivePromoReward ? ` [Promo: ${effectivePromoReward.name}]` : '') + (form.notes ? '\n' + form.notes : ''),
     };
   };
 
@@ -449,7 +460,7 @@ export default function Checkout() {
 
     let orderId;
     try {
-      const payload = buildOrderPayload('bank_transfer');
+      const payload = buildOrderPayload('bank_transfer', itemsSnapshot);
       payload.notes = payload.notes + `\nTransfer Name: ${transferName.trim()}`;
       const { data, error } = await orderClient.rpc('create_storefront_order', { p: payload });
       if (error) throw error;
@@ -565,7 +576,7 @@ export default function Checkout() {
       // Hidden until paid: the webhook flips pending_payment -> pending.
       // No notify() and no clearCart() here — email fires on payment,
       // cart clears on the success page.
-      const payload = buildOrderPayload('paystack');
+      const payload = buildOrderPayload('paystack', itemsSnapshot);
       payload.status = 'pending_payment';
       const { data: orderId, error } = await orderClient.rpc('create_storefront_order', { p: payload });
       if (error) throw error;

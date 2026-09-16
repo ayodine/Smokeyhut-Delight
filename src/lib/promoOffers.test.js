@@ -15,43 +15,57 @@ describe('promoOffers - getPromoBirdCount', () => {
     expect(getPromoBirdCount({ name: 'GUINEAFOWL', category_id: 'guineafowl' })).toBe(1);
   });
 
-  it('returns correct multiplier for multi-bird packs', () => {
-    expect(getPromoBirdCount({ name: 'Triple Delight Combo' })).toBe(3);
-    expect(getPromoBirdCount({ name: 'Hangout Pack' })).toBe(3);
-    expect(getPromoBirdCount({ name: 'Stock Up 5-Pack' })).toBe(5);
-    expect(getPromoBirdCount({ name: 'Party Pack (10 Birds)' })).toBe(10);
+  it('returns 0 for multi-bird combo packs to prevent promo bypass', () => {
+    expect(getPromoBirdCount({ name: 'Triple Delight Combo' })).toBe(0);
+    expect(getPromoBirdCount({ name: 'Hangout Pack' })).toBe(0);
+    expect(getPromoBirdCount({ name: 'Stock Up 5-Pack' })).toBe(0);
+    expect(getPromoBirdCount({ name: 'Party Pack (10 Birds)' })).toBe(0);
+    expect(getPromoBirdCount({ name: 'PARTY PACK' })).toBe(0);
+    expect(getPromoBirdCount({ name: 'BUY 10 GET 11 GUINEAFOWL' })).toBe(0);
   });
 
   it('returns 0 for non-bird items even if name contains guinea fowl', () => {
     expect(getPromoBirdCount({ name: 'Smokey Guinea Fowl Jollof Rice' })).toBe(0);
+    expect(getPromoBirdCount({ name: '1 Liter Bowl Guineafowl Rice' })).toBe(0);
     expect(getPromoBirdCount({ name: 'Guinea Fowl Rice Bowl' })).toBe(0);
     expect(getPromoBirdCount({ name: 'Guineafowl Egg(4pcs)' })).toBe(0);
     expect(getPromoBirdCount({ name: 'Zobo Drink' })).toBe(0);
     expect(getPromoBirdCount({ name: 'Fresh Palm Wine' })).toBe(0);
+    expect(getPromoBirdCount({ name: 'Full Grill Rabbit' })).toBe(0);
+    expect(getPromoBirdCount({ name: 'Full Smokey Chicken' })).toBe(0);
   });
 });
 
 describe('promoOffers - getCartQualifyingQty', () => {
   const birdPromo = {
     qualifying_type: 'guinea_fowl_birds',
-    min_qualifying_qty: 2,
+    min_qualifying_qty: 3,
   };
 
-  it('calculates total bird count accurately with quantities', () => {
+  it('calculates total bird count accurately with quantities and ignores packs', () => {
     const cart = [
       { name: 'GUINEAFOWL', qty: 2 },
+      { name: 'PARTY PACK', qty: 1 },
       { name: 'Smokey Guinea Fowl Jollof Rice', qty: 3 },
       { name: 'Zobo Drink', qty: 2 },
     ];
+    // Only the 2 GUINEAFOWL count; party pack and rice are 0
     expect(getCartQualifyingQty(cart, birdPromo)).toBe(2);
   });
 
-  it('handles multi-pack items correctly in cart total', () => {
+  it('does not give extra multipliers to combo pack items', () => {
     const cart = [
-      { name: 'Triple Delight Combo', qty: 1 },
-      { name: 'Extra Dry Guinea Fowl', qty: 1 },
+      { name: 'PARTY PACK', qty: 1 },
     ];
-    expect(getCartQualifyingQty(cart, birdPromo)).toBe(4);
+    expect(getCartQualifyingQty(cart, birdPromo)).toBe(0);
+  });
+
+  it('qualifies when 3 or more individual guinea fowls are in cart', () => {
+    const cart = [
+      { name: 'Full Smokey Guineafowl', qty: 2 },
+      { name: 'Full Smokey Guineafowl (chopped)', qty: 1 },
+    ];
+    expect(getCartQualifyingQty(cart, birdPromo)).toBe(3);
   });
 
   it('handles minimum amount triggers correctly', () => {
@@ -138,13 +152,86 @@ describe('promoOffers - evaluateCartPromo', () => {
 
   it('does not qualify when daily quota is exhausted', () => {
     const exhaustedPromo = { ...promo, remaining_today: 0 };
-    const cart = [{ name: 'Triple Delight Combo', qty: 1 }];
+    const cart = [{ name: 'GUINEAFOWL', qty: 2 }];
     const evalResult = evaluateCartPromo(exhaustedPromo, cart);
 
     expect(evalResult.qualifies).toBe(false);
     expect(evalResult.isQuotaExhausted).toBe(true);
     expect(evalResult.rewardItem).toBeNull();
     expect(evalResult.statusMessage).toContain('daily promo limit has been reached');
+  });
+
+  describe('Daily Early Bird Free Delivery (3+ Guinea Fowls)', () => {
+    const freeDeliveryPromo = {
+      id: 'e7d0c16b-d69d-455c-a546-beca3b381e18',
+      title: 'Daily Early Bird: Free Delivery',
+      qualifying_type: 'guinea_fowl_birds',
+      min_qualifying_qty: 3,
+      reward_type: 'free_delivery',
+      reward_product_name: 'Free Delivery',
+      reward_qty: 1,
+      daily_quota: 10,
+      remaining_today: 10,
+    };
+
+    it('strictly rejects a customer ordering 1 Party Pack', () => {
+      const cart = [{ name: 'PARTY PACK', qty: 1, price: 118000 }];
+      const evalResult = evaluateCartPromo(freeDeliveryPromo, cart);
+
+      expect(evalResult.qualifies).toBe(false);
+      expect(evalResult.currentQty).toBe(0);
+      expect(evalResult.requiredQty).toBe(3);
+      expect(evalResult.remainingQtyNeeded).toBe(3);
+      expect(evalResult.rewardItem).toBeNull();
+    });
+
+    it('strictly rejects a customer ordering 2 Guinea Fowls and 1 Party Pack', () => {
+      const cart = [
+        { name: 'Full Smokey Guineafowl', qty: 2, price: 12500 },
+        { name: 'PARTY PACK', qty: 1, price: 118000 },
+      ];
+      const evalResult = evaluateCartPromo(freeDeliveryPromo, cart);
+
+      expect(evalResult.qualifies).toBe(false);
+      expect(evalResult.currentQty).toBe(2);
+      expect(evalResult.remainingQtyNeeded).toBe(1);
+      expect(evalResult.rewardItem).toBeNull();
+    });
+
+    it('strictly rejects a customer ordering 3 packs of eggs or 3 bowls of rice', () => {
+      const cart = [
+        { name: 'Guineafowl Egg(4pcs)', qty: 3, price: 3000 },
+        { name: '1 Liter Bowl Guineafowl Rice', qty: 3, price: 22000 },
+      ];
+      const evalResult = evaluateCartPromo(freeDeliveryPromo, cart);
+
+      expect(evalResult.qualifies).toBe(false);
+      expect(evalResult.currentQty).toBe(0);
+      expect(evalResult.rewardItem).toBeNull();
+    });
+
+    it('qualifies ONLY when customer orders 3 or more genuine Guinea Fowls', () => {
+      const cart = [
+        { name: 'Full Smokey Guineafowl', qty: 2, price: 12500 },
+        { name: 'Travel standard Dry Guineafowl', qty: 1, price: 13000 },
+      ];
+      const evalResult = evaluateCartPromo(freeDeliveryPromo, cart);
+
+      expect(evalResult.qualifies).toBe(true);
+      expect(evalResult.currentQty).toBe(3);
+      expect(evalResult.remainingQtyNeeded).toBe(0);
+      expect(evalResult.rewardItem).toEqual({
+        id: 'promo-free-delivery-e7d0c16b-d69d-455c-a546-beca3b381e18',
+        productId: null,
+        name: 'Free Delivery',
+        price: 0,
+        qty: 1,
+        is_promo_reward: true,
+        is_free_delivery: true,
+        promo_id: 'e7d0c16b-d69d-455c-a546-beca3b381e18',
+      });
+      expect(evalResult.statusMessage).toContain('Free Delivery applied');
+    });
   });
 });
 
