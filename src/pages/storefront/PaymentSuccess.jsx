@@ -44,6 +44,7 @@ export default function PaymentSuccess() {
 
         let pendingAmount = undefined;
         let pendingItems = undefined;
+        let pendingCustomer = undefined;
         try {
           const pendingStr = sessionStorage.getItem('pending_paystack_order');
           if (pendingStr) {
@@ -51,16 +52,28 @@ export default function PaymentSuccess() {
             if (!parsed.orderId || String(parsed.orderId) === String(id)) {
               pendingAmount = parsed.amount;
               pendingItems = parsed.numItems;
+              pendingCustomer = parsed.customer;
             }
           }
           sessionStorage.removeItem('pending_paystack_order');
         } catch {}
+
+        if (!pendingCustomer) {
+          try {
+            const backup = localStorage.getItem(`pending_snap_customer_${id}`);
+            if (backup) {
+              pendingCustomer = JSON.parse(backup);
+              localStorage.removeItem(`pending_snap_customer_${id}`);
+            }
+          } catch {}
+        }
 
         trackPurchase({
           orderId: id,
           total: pendingAmount,
           itemsCount: pendingItems,
           currency: 'NGN',
+          customer: pendingCustomer,
         });
       }
     };

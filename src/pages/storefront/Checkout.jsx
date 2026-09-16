@@ -472,6 +472,16 @@ export default function Checkout() {
       orderId,
       total: Number(amountSnapshot),
       itemsCount: itemsSnapshot.reduce((acc, i) => acc + i.qty, 0),
+      currency: 'NGN',
+      customer: {
+        email: form.email,
+        phone: form.phone,
+        firstName: form.firstName,
+        lastName: form.lastName,
+        postalCode: '100001',
+        city: form.city,
+        address: form.address,
+      },
     });
 
     if (markConverted) {
@@ -571,12 +581,24 @@ export default function Checkout() {
       const data = await res.json();
       if (!res.ok || !data.authorization_url) throw new Error(data.error || 'Could not start payment');
 
+      const customerData = {
+        email: form.email,
+        phone: form.phone,
+        firstName: form.firstName,
+        lastName: form.lastName,
+        postalCode: '100001',
+        city: form.city,
+        address: form.address,
+      };
+
       try {
         sessionStorage.setItem('pending_paystack_order', JSON.stringify({
           orderId,
           amount: Number(amountToPayNow),
           numItems: itemsSnapshot.reduce((acc, i) => acc + i.qty, 0),
+          customer: customerData,
         }));
+        localStorage.setItem(`pending_snap_customer_${orderId}`, JSON.stringify(customerData));
       } catch {}
 
       // Coupon redemption is recorded only when payment is confirmed successful

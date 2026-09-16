@@ -13,7 +13,7 @@ import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher
 import { fetchDeliveryPromo, getPromoDeliveryFee } from '../../lib/deliveryPromo';
 import { validateEmail } from '../../lib/emailValidation';
 import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, getLastCouponError, fetchEligibleCustomersFromDb, fetchCouponFromDb } from '../../lib/couponValidator';
-import { trackViewContent, trackInitiateCheckout, trackAddPaymentInfo, trackPurchase } from '../../lib/analytics';
+import { trackViewContent, trackInitiateCheckout, trackAddPaymentInfo, trackPurchase, splitFullName } from '../../lib/analytics';
 import PromoProgressBanner from '../../components/PromoProgressBanner';
 import {
   ShoppingCart, X, Truck, Store as StoreIcon, Loader2, MapPin,
@@ -417,10 +417,20 @@ export default function MenuPage() {
       delivery_address: deliveryLine,
       total: amountSnapshot,
     });
+    const { firstName, lastName } = splitFullName(form.name);
     trackPurchase({
       orderId,
       total: Number(amountSnapshot),
       itemsCount: itemsSnapshot.reduce((acc, i) => acc + i.qty, 0),
+      currency: 'NGN',
+      customer: {
+        email: form.email,
+        phone: form.phone,
+        firstName,
+        lastName,
+        postalCode: '100001',
+        address: form.address,
+      },
     });
     setCheckoutOpen(false);
     setSuccessData({ 
@@ -495,12 +505,24 @@ export default function MenuPage() {
       const data = await res.json();
       if (!res.ok || !data.authorization_url) throw new Error(data.error || 'Could not start payment');
 
+      const { firstName, lastName } = splitFullName(form.name);
+      const customerData = {
+        email: form.email,
+        phone: form.phone,
+        firstName,
+        lastName,
+        postalCode: '100001',
+        address: form.address,
+      };
+
       try {
         sessionStorage.setItem('pending_paystack_order', JSON.stringify({
           orderId,
           amount: Number(amountToPayNow),
           numItems: itemsSnapshot.reduce((acc, i) => acc + i.qty, 0),
+          customer: customerData,
         }));
+        localStorage.setItem(`pending_snap_customer_${orderId}`, JSON.stringify(customerData));
       } catch {}
 
       // Coupon redemption is recorded only when payment is confirmed successful
