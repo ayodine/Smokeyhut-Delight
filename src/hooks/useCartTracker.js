@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { publicSupabase } from '../lib/supabase';
 import { useCustomerAuth } from '../context/CustomerAuthContext';
 import { profileToPrefill } from '../lib/customerProfile';
+import { getAttribution } from '../lib/attribution';
 
 const SESSION_COOKIE_NAME = 'smokeyhut_cart_session';
 const SESSION_STORAGE_KEY = 'smokeyhut_cart_session';
@@ -123,6 +124,7 @@ export function useCartTracker() {
       metadata: {
         referrer: typeof document !== 'undefined' ? document.referrer : '',
         url: typeof window !== 'undefined' ? window.location.pathname : '',
+        attribution: getAttribution() || null,
         ...(overrides.metadata || {}),
       },
     };

@@ -1,13 +1,29 @@
 /**
- * Analytics helper for Meta (Facebook) Pixel and Snapchat Pixel tracking.
+ * Analytics helper for Google Analytics 4 (GA4), Meta (Facebook) Pixel,
+ * and Snapchat Pixel tracking.
  * Safe to execute in browser and SSR/test environments (guards against missing window/globals).
  */
 
+export const GA4_MEASUREMENT_ID = 'G-Y6HGZ973EK';
 export const SNAP_PIXEL_ID = '50b7945b-504b-48b7-9802-0411c32675b2';
 const TRACKED_SNAP_PURCHASES_KEY = 'smokey_snap_tracked_purchases';
 
 function isBrowser() {
   return typeof window !== 'undefined';
+}
+
+/**
+ * Safe wrapper around window.gtag (Google Analytics 4).
+ * No-ops silently if gtag is not loaded.
+ */
+function ga4(command, ...args) {
+  if (isBrowser() && typeof window.gtag === 'function') {
+    try {
+      window.gtag(command, ...args);
+    } catch (e) {
+      console.warn('[Analytics] GA4 error:', e);
+    }
+  }
 }
 
 /**
@@ -177,6 +193,13 @@ export function markSnapPurchaseFired(orderId) {
 export function trackPageView() {
   if (!isBrowser()) return;
 
+  // GA4
+  ga4('event', 'page_view', {
+    page_location: window.location.href,
+    page_path: window.location.pathname,
+    page_title: document.title,
+  });
+
   if (window.fbq) {
     try {
       window.fbq('track', 'PageView');
@@ -199,6 +222,12 @@ export function trackPageView() {
  */
 export function trackViewContent({ category = 'Shop Catalog', name = 'Shop Catalog' } = {}) {
   if (!isBrowser()) return;
+
+  // GA4
+  ga4('event', 'view_item_list', {
+    item_list_id: category,
+    item_list_name: name,
+  });
 
   if (window.fbq) {
     try {
@@ -230,6 +259,18 @@ export function trackAddToCart({ id, name, price = 0, currency = 'NGN' } = {}) {
   if (!isBrowser()) return;
 
   const numPrice = Number(price) || 0;
+
+  // GA4
+  ga4('event', 'add_to_cart', {
+    currency,
+    value: numPrice,
+    items: [{
+      item_id: id != null ? String(id) : undefined,
+      item_name: name,
+      price: numPrice,
+      quantity: 1,
+    }],
+  });
 
   if (window.fbq) {
     try {
@@ -270,6 +311,12 @@ export function trackInitiateCheckout({ total = 0, itemsCount = 0, currency = 'N
   const numTotal = Number(total) || 0;
   const numItems = Number(itemsCount) || 0;
 
+  // GA4
+  ga4('event', 'begin_checkout', {
+    currency,
+    value: numTotal,
+  });
+
   if (window.fbq) {
     try {
       window.fbq('track', 'InitiateCheckout', {
@@ -304,6 +351,12 @@ export function trackAddPaymentInfo({ total = 0, itemsCount = 0, currency = 'NGN
 
   const numTotal = Number(total) || 0;
   const numItems = Number(itemsCount) || 0;
+
+  // GA4
+  ga4('event', 'add_payment_info', {
+    currency,
+    value: numTotal,
+  });
 
   if (window.fbq) {
     try {
@@ -349,7 +402,18 @@ export async function trackPurchase({
   const numTotal = total != null ? Number(total) : undefined;
   const numItems = itemsCount != null ? Number(itemsCount) : undefined;
 
-  // 1. Meta (Facebook) Pixel - standard tracking
+  // 1. GA4 — purchase event with e-commerce revenue tracking
+  if (numTotal != null) {
+    const ga4Payload = {
+      transaction_id: orderId != null ? String(orderId) : undefined,
+      value: numTotal,
+      currency,
+    };
+    if (numItems != null) ga4Payload.items = [{ item_name: 'Order', quantity: numItems }];
+    ga4('event', 'purchase', ga4Payload);
+  }
+
+  // 2. Meta (Facebook) Pixel - standard tracking
   if (window.fbq) {
     try {
       const fbPayload = {
@@ -366,7 +430,7 @@ export async function trackPurchase({
     }
   }
 
-  // 2. Snapchat Pixel - enriched tracking with customer matching & deduplication
+  // 3. Snapchat Pixel - enriched tracking with customer matching & deduplication
   if (window.snaptr) {
     // Ensure the Snapchat Purchase event fires only ONCE per completed order
     if (orderId && hasSnapPurchaseFired(orderId)) {

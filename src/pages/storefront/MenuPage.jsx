@@ -15,6 +15,7 @@ import { isQualifyingGuineaFowlBird } from '../../lib/promoOffers';
 import { validateEmail } from '../../lib/emailValidation';
 import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, getLastCouponError, fetchEligibleCustomersFromDb, fetchCouponFromDb } from '../../lib/couponValidator';
 import { trackViewContent, trackInitiateCheckout, trackAddPaymentInfo, trackPurchase, splitFullName } from '../../lib/analytics';
+import { getAttribution, formatAttributionForNotes } from '../../lib/attribution';
 import PromoProgressBanner from '../../components/PromoProgressBanner';
 import {
   ShoppingCart, X, Truck, Store as StoreIcon, Loader2, MapPin,
@@ -290,6 +291,17 @@ export default function MenuPage() {
     const isPromoFreeDeliveryActive = promoFreeDelivery && promoRewardItem?.is_free_delivery;
     const effectivePromoReward = isPromoFreeDeliveryActive ? promoRewardItem : (promoRewardItem?.is_free_delivery ? null : promoRewardItem);
 
+    const attr = getAttribution();
+    const attrNote = formatAttributionForNotes(attr);
+
+    let orderNotes = (promoApplied ? '[via WhatsApp Menu] [Delivery Promo]' : '[via WhatsApp Menu]') + (effectivePromoReward ? ` [Promo: ${effectivePromoReward.name}]` : '');
+    if (attrNote) {
+      orderNotes += ` ${attrNote}`;
+    }
+    if (form.notes) {
+      orderNotes += '\n' + form.notes;
+    }
+
     return {
       customer_name:    customerName,
       customer_email:   form.email || null,
@@ -304,6 +316,11 @@ export default function MenuPage() {
       coupon_discount:  couponDiscount,
       promo_id:         effectivePromoReward?.promo_id || null,
       status:           'pending',
+      traffic_source:   attr?.traffic_source || null,
+      utm_source:       attr?.utm_source || null,
+      utm_medium:       attr?.utm_medium || null,
+      utm_campaign:     attr?.utm_campaign || null,
+      ad_click_id:      attr?.ad_click_id || null,
       items:            currentItems.map(i => ({
         id: i.id || null,
         name: i.name,
@@ -311,7 +328,7 @@ export default function MenuPage() {
         qty: i.qty,
         is_promo_reward: i.is_promo_reward || false
       })),
-      notes:            (promoApplied ? '[via WhatsApp Menu] [Delivery Promo]' : '[via WhatsApp Menu]') + (effectivePromoReward ? ` [Promo: ${effectivePromoReward.name}]` : '') + (form.notes ? '\n' + form.notes : ''),
+      notes:            orderNotes,
     };
   };
 

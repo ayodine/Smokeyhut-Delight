@@ -13,6 +13,7 @@ import { validateEmail } from '../../lib/emailValidation';
 import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
 import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, getLastCouponError, fetchEligibleCustomersFromDb, fetchCouponFromDb } from '../../lib/couponValidator';
 import { trackInitiateCheckout, trackAddPaymentInfo, trackPurchase } from '../../lib/analytics';
+import { getAttribution, formatAttributionForNotes } from '../../lib/attribution';
 import CheckoutDisclaimerModal from '../../components/CheckoutDisclaimerModal';
 import PromoProgressBanner from '../../components/PromoProgressBanner';
 import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Search, MapPin, Tag, X, Copy, Banknote, Send, ClipboardList, Utensils, AlertTriangle, Clock, Lightbulb, Gift } from 'lucide-react';
@@ -343,6 +344,17 @@ export default function Checkout() {
     const isPromoFreeDeliveryActive = promoFreeDelivery && promoRewardItem?.is_free_delivery;
     const effectivePromoReward = isPromoFreeDeliveryActive ? promoRewardItem : (promoRewardItem?.is_free_delivery ? null : promoRewardItem);
 
+    const attr = getAttribution();
+    const attrNote = formatAttributionForNotes(attr);
+
+    let orderNotes = (promoApplied ? '[via Website] [Delivery Promo]' : '[via Website]') + (effectivePromoReward ? ` [Promo: ${effectivePromoReward.name}]` : '');
+    if (attrNote) {
+      orderNotes += ` ${attrNote}`;
+    }
+    if (form.notes) {
+      orderNotes += '\n' + form.notes;
+    }
+
     return {
       customer_name: customerName,
       customer_email: form.email || null,
@@ -358,6 +370,11 @@ export default function Checkout() {
       promo_id: effectivePromoReward?.promo_id || null,
       status: 'pending',
       session_id: cartSessionId || null,
+      traffic_source: attr?.traffic_source || null,
+      utm_source: attr?.utm_source || null,
+      utm_medium: attr?.utm_medium || null,
+      utm_campaign: attr?.utm_campaign || null,
+      ad_click_id: attr?.ad_click_id || null,
       items: currentItems.map(i => ({
         id: i.id || null,
         name: i.name,
@@ -365,7 +382,7 @@ export default function Checkout() {
         qty: i.qty,
         is_promo_reward: i.is_promo_reward || false
       })),
-      notes: (promoApplied ? '[via Website] [Delivery Promo]' : '[via Website]') + (effectivePromoReward ? ` [Promo: ${effectivePromoReward.name}]` : '') + (form.notes ? '\n' + form.notes : ''),
+      notes: orderNotes,
     };
   };
 

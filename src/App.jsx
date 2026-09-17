@@ -2,10 +2,12 @@ import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AlertCircle, X } from 'lucide-react';
 import { trackPageView } from './lib/analytics';
+import { initAttribution } from './lib/attribution';
 
 // Prefetch products as early as possible
 import { prefetchProducts } from './lib/productsCache';
 prefetchProducts();
+initAttribution();
 
 // Context
 import { AuthProvider } from './context/AuthContext';
@@ -72,9 +74,18 @@ function ScrollToTop() {
 
   useEffect(() => {
     window.scrollTo(0, 0);
-    // index.html already fires the initial PageView on full load
+    initAttribution();
     if (isFirstMount.current) {
       isFirstMount.current = false;
+      // index.html fires initial PageView for Meta/Snap pixels,
+      // but GA4 needs a manual page_view since we set send_page_view: false
+      if (typeof window.gtag === 'function') {
+        window.gtag('event', 'page_view', {
+          page_location: window.location.href,
+          page_path: window.location.pathname,
+          page_title: document.title,
+        });
+      }
       return;
     }
     trackPageView();

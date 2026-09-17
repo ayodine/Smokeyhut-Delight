@@ -11,6 +11,7 @@ import CustomSelect from '../../components/CustomSelect';
 import BulkActionBar from '../../components/BulkActionBar';
 import DashCalendar from '../../components/DashCalendar';
 import ConfirmModal from '../../components/ConfirmModal';
+import { parseOrderAttribution } from '../../lib/attribution';
 
 const fmt = (n) => '₦' + Number(n).toLocaleString();
 const statuses = ['all', 'pending_payment', 'pending', 'processing', 'shipped', 'delivered', 'cancelled', 'rescheduled'];
@@ -64,7 +65,7 @@ function generateInvoice(order) {
   if (!subtotal) subtotal = (order.total || 0) + couponDiscount;
   const dateStr = new Date(order.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' });
   const channel = getChannel(order.notes);
-  const notes = order.notes ? order.notes.replace(/^\[via .+?\]\n?/, '') : '';
+  const notes = order.notes ? order.notes.replace(/^\[via .+?\]\n?/, '').replace(/\[Source: [^\]]+\]\s*/g, '').trim() : '';
 
   const logoUrl = window.location.origin + '/logo.svg';
 
@@ -223,7 +224,7 @@ export default function Orders() {
   const [orders, setOrders] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
   const [statusCounts, setStatusCounts] = useState({ all: 0, pending: 0, processing: 0, shipped: 0, delivered: 0, cancelled: 0 });
-  const [sourceCounts, setSourceCounts] = useState({ storefront: 0, whatsapp: 0 });
+  const [sourceCounts, setSourceCounts] = useState({ storefront: 0, whatsapp: 0, snapchat: 0, meta: 0 });
   const [expandedCustomerOrderCount, setExpandedCustomerOrderCount] = useState(0);
   const [products, setProducts] = useState([]);
   const [storeList, setStoreList] = useState([]);
@@ -559,10 +560,12 @@ export default function Orders() {
         return q;
       };
 
-      const [countsRes, storefrontRes, whatsappRes, rescheduledRes, productsRes, storesRes, zonesRes] = await Promise.all([
+      const [countsRes, storefrontRes, whatsappRes, snapchatRes, metaRes, rescheduledRes, productsRes, storesRes, zonesRes] = await Promise.all([
         supabase.rpc('get_orders_status_counts', { p_store_id, p_start, p_end }),
         getBaseCountQuery().eq('channel', 'storefront'),
         getBaseCountQuery().eq('channel', 'whatsapp'),
+        getBaseCountQuery().or('traffic_source.ilike.%snap%,notes.ilike.%[Source: Snapchat%'),
+        getBaseCountQuery().or('traffic_source.ilike.%facebook%,traffic_source.ilike.%instagram%,traffic_source.ilike.%meta%,notes.ilike.%[Source: Facebook%,notes.ilike.%[Source: Instagram%'),
         getBaseCountQuery().or('delivery_status.eq.Rescheduled,notes.ilike.%[Rescheduled]%'),
         supabase.from('products').select('id, name, price').order('name'),
         supabase.from('stores').select('id, name').eq('is_active', true).order('id'),
@@ -577,7 +580,9 @@ export default function Orders() {
       }
       setSourceCounts({
         storefront: storefrontRes.count || 0,
-        whatsapp: whatsappRes.count || 0
+        whatsapp: whatsappRes.count || 0,
+        snapchat: snapchatRes.count || 0,
+        meta: metaRes.count || 0,
       });
 
       let q = supabase.from('orders').select('*, order_items(*)', { count: 'exact' }).is('deleted_at', null);
@@ -591,7 +596,15 @@ export default function Orders() {
       } else {
         q = q.neq('status', 'pending_payment'); // hide unpaid Paystack orders from the default view
       }
-      if (sourceFilter !== 'all') q = q.eq('channel', sourceFilter);
+      if (sourceFilter === 'storefront') {
+        q = q.eq('channel', 'storefront');
+      } else if (sourceFilter === 'whatsapp') {
+        q = q.eq('channel', 'whatsapp');
+      } else if (sourceFilter === 'snapchat') {
+        q = q.or('traffic_source.ilike.%snap%,notes.ilike.%[Source: Snapchat%');
+      } else if (sourceFilter === 'meta') {
+        q = q.or('traffic_source.ilike.%facebook%,traffic_source.ilike.%instagram%,traffic_source.ilike.%meta%,notes.ilike.%[Source: Facebook%,notes.ilike.%[Source: Instagram%');
+      }
 
       if (debouncedSearch.trim()) {
         const searchVal = debouncedSearch.trim();
@@ -1170,7 +1183,9 @@ export default function Orders() {
                 options={[
                   { value: 'all', label: `All Sources (${statusCounts.all || 0})` },
                   { value: 'storefront', label: `Website (${sourceCounts.storefront || 0})` },
-                  { value: 'whatsapp', label: `WhatsApp (${sourceCounts.whatsapp || 0})` }
+                  { value: 'whatsapp', label: `WhatsApp (${sourceCounts.whatsapp || 0})` },
+                  { value: 'snapchat', label: `Snapchat Ads (${sourceCounts.snapchat || 0})` },
+                  { value: 'meta', label: `Facebook / Meta Ads (${sourceCounts.meta || 0})` }
                 ]}
               />
             </div>
@@ -1391,8 +1406,37 @@ export default function Orders() {
                         )}
                       </td>
                       <td style={{ fontSize: '0.82rem' }}>
-                        {channel && <div style={{ fontSize: '0.72rem', background: 'rgba(192,32,31,0.08)', color: 'var(--red)', padding: '2px 7px', borderRadius: 20, display: 'inline-block', fontWeight: 800, marginBottom: 2 }}>{channel}</div>}
-                        <div style={{ color: 'var(--text-muted)' }}>{(order.payment_method || '').replace(/_/g, ' ')}</div>
+                        {(() => {
+                          const attr = parseOrderAttribution(order);
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+                              <span style={{
+                                fontSize: '0.70rem',
+                                fontWeight: 800,
+                                padding: '2px 8px',
+                                borderRadius: 20,
+                                background: attr.bg,
+                                color: attr.color,
+                                border: `1px solid ${attr.border}`,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                letterSpacing: '0.2px'
+                              }}>
+                                {attr.isAd && <span style={{ width: 6, height: 6, borderRadius: '50%', background: attr.color, display: 'inline-block' }} />}
+                                {attr.badgeText}
+                              </span>
+                              {attr.campaign && (
+                                <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)', fontWeight: 600, maxWidth: 125, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`Campaign: ${attr.campaign}`}>
+                                  🎯 {attr.campaign}
+                                </span>
+                              )}
+                              <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+                                {(order.payment_method || '').replace(/_/g, ' ')}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td><span className={`status-badge ${order.status}`}>{order.status}</span></td>
                       <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
@@ -1474,6 +1518,74 @@ export default function Orders() {
                   </div>
                 </div>
 
+                {/* ── Ad & Traffic Attribution ── */}
+                {(() => {
+                  const selAttr = parseOrderAttribution(sel);
+                  return (
+                    <div style={{
+                      background: selAttr.bg || 'var(--card-bg2)',
+                      border: `1px solid ${selAttr.border || 'var(--border-subtle)'}`,
+                      borderRadius: 12,
+                      padding: 16,
+                      marginBottom: 20
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                        <h4 style={{
+                          fontSize: '0.82rem',
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.5,
+                          color: selAttr.color || 'var(--text-muted)',
+                          margin: 0,
+                          fontWeight: 800,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6
+                        }}>
+                          <Sparkles size={14} color={selAttr.color} /> Ad & Traffic Attribution
+                        </h4>
+                        <span style={{
+                          fontSize: '0.72rem',
+                          fontWeight: 800,
+                          padding: '2px 8px',
+                          borderRadius: 20,
+                          background: '#fff',
+                          color: selAttr.color,
+                          border: `1px solid ${selAttr.border}`
+                        }}>
+                          {selAttr.badgeText}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, fontSize: '0.85rem' }}>
+                        <div>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>Platform / Source</span>
+                          <strong style={{ color: selAttr.color }}>{selAttr.platform || selAttr.source}</strong>
+                        </div>
+                        {selAttr.campaign && (
+                          <div>
+                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>Campaign</span>
+                            <strong>{selAttr.campaign}</strong>
+                          </div>
+                        )}
+                        {selAttr.medium && (
+                          <div>
+                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>Medium</span>
+                            <strong>{selAttr.medium}</strong>
+                          </div>
+                        )}
+                        {selAttr.clickId && (
+                          <div style={{ gridColumn: '1 / -1' }}>
+                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>Ad Click ID (Proof)</span>
+                            <code style={{ fontSize: '0.75rem', background: 'rgba(255,255,255,0.85)', padding: '2px 6px', borderRadius: 4, wordBreak: 'break-all', display: 'inline-block', border: '1px solid rgba(0,0,0,0.06)' }}>
+                              {selAttr.clickId}
+                            </code>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div style={{ background: 'rgba(192,32,31,0.03)', border: '1px solid rgba(192,32,31,0.1)', borderRadius: 12, padding: 20, marginBottom: 20 }}>
                   <h4 style={{ fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--red)', marginBottom: 12 }}>Payment & Fulfillment</h4>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, fontSize: '0.9rem' }}>
@@ -1519,11 +1631,15 @@ export default function Orders() {
                         <span>{storeList.find(s => s.id === sel.store_id)?.name || 'Unassigned'}</span>
                       )}
                     </div>
-                    {sel.notes?.replace(/^\[via .+?\]\n?/, '') && (
-                      <div style={{ marginTop: 8, padding: 12, background: '#fff', borderRadius: 8, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                        <strong>Note:</strong> {sel.notes.replace(/^\[via .+?\]\n?/, '')}
-                      </div>
-                    )}
+                    {(() => {
+                      const cleanNote = sel.notes ? sel.notes.replace(/^\[via .+?\]\n?/, '').replace(/\[Source: [^\]]+\]\s*/g, '').trim() : '';
+                      if (!cleanNote) return null;
+                      return (
+                        <div style={{ marginTop: 8, padding: 12, background: '#fff', borderRadius: 8, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                          <strong>Note:</strong> {cleanNote}
+                        </div>
+                      );
+                    })()}
                     {sel.status === 'cancelled' && (
                       <div style={{ marginTop: 12, padding: '12px 16px', background: 'rgba(239, 68, 68, 0.07)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: 10, fontSize: '0.85rem', color: '#dc2626' }}>
                         <div style={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.72rem', letterSpacing: 0.5, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
