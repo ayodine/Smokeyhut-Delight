@@ -195,13 +195,20 @@ export default function Coupons() {
       }
     }
 
+    let formattedExpiresAt = null;
+    if (form.expires_at) {
+      formattedExpiresAt = /^\d{4}-\d{2}-\d{2}$/.test(form.expires_at)
+        ? `${form.expires_at}T23:59:59+01:00`
+        : form.expires_at;
+    }
+
     const payload = {
       code: form.code.trim().toUpperCase(),
       type: form.type,
       value: Number(finalValue),
       min_order_amount: form.min_order_amount ? Number(form.min_order_amount) : null,
       max_uses: form.max_uses ? Number(form.max_uses) : null,
-      expires_at: form.expires_at || null,
+      expires_at: formattedExpiresAt,
       is_active: form.is_active,
       is_restricted: Boolean(form.is_restricted),
       max_uses_per_customer: Math.max(1, Number(form.max_uses_per_customer) || 1)

@@ -342,6 +342,39 @@ export async function fetchEligibleCustomersFromDb(code) {
  * @param {string} code - The coupon code to check
  * @param {Object} customer - { name, phone, email, address }
  * @param {boolean|null} [isRestrictedOverride] - Explicit restriction flag if already known from DB
+/**
+ * Checks if a coupon expiration timestamp has passed, giving customers the full day (until 23:59:59)
+ * for dates formatted as YYYY-MM-DD or midnight timestamps.
+ */
+export function isCouponExpired(expiresAt) {
+  if (!expiresAt) return false;
+  const expStr = String(expiresAt).trim();
+  let expTime;
+  if (expStr.length === 10) {
+    // YYYY-MM-DD: expires at the very end of that day in Lagos (UTC+1)
+    expTime = new Date(`${expStr}T23:59:59+01:00`).getTime();
+  } else if (expStr.includes('00:00:00')) {
+    // Midnight timestamp: add 24h minus 1s so the entire day is valid
+    const baseDate = new Date(expStr).getTime();
+    expTime = baseDate + (24 * 60 * 60 * 1000 - 1000);
+  } else {
+    expTime = new Date(expStr).getTime();
+  }
+  return expTime < Date.now();
+}
+
+export function clearCouponCache() {
+  dynamicCouponMetaCache = {};
+  dynamicEligibleCache = {};
+  lastCacheFetchTime = {};
+}
+
+/**
+ * Checks if the customer is eligible for a restricted coupon.
+ * If the coupon is public (is_restricted === false), returns eligible: true for ANY customer.
+ * @param {string} code - The coupon code to check
+ * @param {Object} customer - { name, phone, email, address }
+ * @param {boolean|null} [isRestrictedOverride] - Explicit restriction flag if already known from DB
  * @returns {{ eligible: boolean, matchedCustomer?: Object, error?: string, reason?: string }}
  */
 export function isCustomerEligibleForCoupon(code, customer = {}, isRestrictedOverride = null) {
@@ -368,7 +401,7 @@ export function isCustomerEligibleForCoupon(code, customer = {}, isRestrictedOve
   const inputEmail = normalizeText(customer.email);
   const inputAddress = normalizeText(customer.address);
 
-  // If no contact details have been entered yet, we cannot verify eligibility
+  // If no contact details or identifying info have been entered yet, we cannot verify eligibility
   if (!inputPhoneDigits && !inputEmail && !inputName && !inputAddress) {
     return {
       eligible: false,
@@ -405,21 +438,17 @@ export function isCustomerEligibleForCoupon(code, customer = {}, isRestrictedOve
       return false;
     }
 
-    // 3. Name match (exact or token match when contact details do not conflict)
+    // 3. Name match (exact or complete token match when contact details do not conflict)
     if (inputName && qName) {
       if (inputName === qName) return true;
       const qTokens = qName.split(' ').filter(t => t.length > 1);
       const inTokens = inputName.split(' ').filter(t => t.length > 1);
       if (qTokens.length >= 2 && qTokens.every(t => inTokens.includes(t))) return true;
       if (inTokens.length >= 2 && inTokens.every(t => qTokens.includes(t))) return true;
-      // Handle partial token overlaps e.g. "daniel", "dan", "may", "mariam"
-      if (inTokens.some(t => qTokens.includes(t)) && (inTokens.includes('daniel') || inTokens.includes('dan') || inTokens.includes('mariam') || inTokens.includes('may'))) {
-        return true;
-      }
     }
 
-    // 4. Address match
-    if (inputAddress && qAddr) {
+    // 4. Address match (when no conflicting phone was provided)
+    if (inputAddress && qAddr && !inputPhoneDigits) {
       if (inputAddress === qAddr) return true;
       const streetKeywords = qAddr.split(',')[0].replace(/store pickup/g, '').trim();
       if (streetKeywords.length > 8 && (inputAddress.includes(streetKeywords) || (inputAddress.length > 8 && streetKeywords.includes(inputAddress)))) {

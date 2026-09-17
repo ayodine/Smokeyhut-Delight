@@ -13,7 +13,7 @@ import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher
 import { fetchDeliveryPromo, getPromoDeliveryFee } from '../../lib/deliveryPromo';
 import { isQualifyingGuineaFowlBird } from '../../lib/promoOffers';
 import { validateEmail } from '../../lib/emailValidation';
-import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, getLastCouponError, fetchEligibleCustomersFromDb, fetchCouponFromDb } from '../../lib/couponValidator';
+import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, isCouponExpired, getLastCouponError, fetchEligibleCustomersFromDb, fetchCouponFromDb } from '../../lib/couponValidator';
 import { trackViewContent, trackInitiateCheckout, trackAddPaymentInfo, trackPurchase, splitFullName } from '../../lib/analytics';
 import { getAttribution, formatAttributionForNotes } from '../../lib/attribution';
 import PromoProgressBanner from '../../components/PromoProgressBanner';
@@ -159,8 +159,7 @@ export default function MenuPage() {
       setCouponError('This coupon is currently inactive');
       return;
     }
-    const now = new Date();
-    if (couponData.expires_at && new Date(couponData.expires_at) < now) {
+    if (isCouponExpired(couponData.expires_at)) {
       setCouponLoading(false);
       setCouponError('This coupon has expired');
       return;
@@ -179,22 +178,24 @@ export default function MenuPage() {
     let matchedCustomer = null;
     // Check customer restriction ONLY if coupon is restricted
     if (couponData.is_restricted) {
-      const hasAnyContact = (form.phone && form.phone.trim().length >= 10) || (form.email && form.email.trim().length >= 5) || (form.firstName?.trim() || form.lastName?.trim());
-      if (hasAnyContact) {
-        const customerInfo = {
-          name: `${form.firstName || ''} ${form.lastName || ''}`.trim(),
-          phone: form.phone,
-          email: form.email,
-          address: form.address,
-        };
-        const eligibility = isCustomerEligibleForCoupon(code, customerInfo, true);
-        if (!eligibility.eligible && eligibility.reason !== 'contact_required') {
-          setCouponLoading(false);
-          setCouponError(eligibility.error || 'This coupon is valid only for eligible customers');
-          return;
-        }
-        matchedCustomer = eligibility.matchedCustomer;
+      const customerInfo = {
+        name: `${form.firstName || ''} ${form.lastName || ''}`.trim(),
+        phone: form.phone,
+        email: form.email,
+        address: form.address,
+      };
+      if (!customerInfo.phone && !customerInfo.email) {
+        setCouponLoading(false);
+        setCouponError('Please enter your phone number or email first to verify eligibility');
+        return;
       }
+      const eligibility = isCustomerEligibleForCoupon(code, customerInfo, true);
+      if (!eligibility.eligible) {
+        setCouponLoading(false);
+        setCouponError(eligibility.error || 'This coupon is valid only for eligible customers');
+        return;
+      }
+      matchedCustomer = eligibility.matchedCustomer;
     }
 
     if (form.phone || form.email) {
@@ -207,21 +208,13 @@ export default function MenuPage() {
     }
 
     setCouponLoading(false);
-    const isPickup = deliveryType === 'pickup';
-    const promoFeeAtApply = !isPickup && selectedMatch
-      ? getPromoDeliveryFee(deliveryPromo, items, selectedMatch.area?.name || '', selectedMatch.zone?.price)
-      : null;
-    const deliveryFeeAtApply = isPickup ? 0 : (promoFeeAtApply ?? selectedMatch?.zone?.price ?? 0);
-    const discount = couponData.type === 'free_guinea_fowl' ? 0 : (couponData.type === 'percent'
-      ? Math.round((total + deliveryFeeAtApply) * (couponData.value / 100))
-      : couponData.value);
     setAppliedCoupon({
       id: couponData.id,
       code: couponData.code,
       type: couponData.type,
       value: couponData.value,
+      min_order_amount: couponData.min_order_amount,
       is_restricted: Boolean(couponData.is_restricted),
-      discount: Math.min(discount, total + deliveryFeeAtApply)
     });
   };
 
@@ -278,7 +271,16 @@ export default function MenuPage() {
     : null;
   const promoApplied    = promoFee !== null && !allFreeShipping;
   const deliveryFee     = isPickup ? 0 : (allFreeShipping || promoFreeDelivery ? 0 : (promoApplied ? promoFee : (selectedMatch?.zone?.price ?? 0)));
-  const couponDiscount  = appliedCoupon?.discount ?? 0;
+  const couponDiscount = useMemo(() => {
+    if (!appliedCoupon) return 0;
+    if (appliedCoupon.min_order_amount && total < appliedCoupon.min_order_amount) return 0;
+    if (appliedCoupon.type === 'free_guinea_fowl') return 0;
+    const base = total + deliveryFee;
+    const raw = appliedCoupon.type === 'percent'
+      ? Math.round(base * (appliedCoupon.value / 100))
+      : appliedCoupon.value;
+    return Math.min(raw, base);
+  }, [appliedCoupon, total, deliveryFee]);
   const amountToPayNow  = Math.max(0, total + deliveryFee - couponDiscount) + VAT;
 
   const buildOrderPayload = (method, currentItems = items) => {
@@ -390,7 +392,8 @@ export default function MenuPage() {
     const itemsSnapshot = items.map(i => ({ ...i }));
     if (promoRewardItem && !promoRewardItem.is_free_delivery) {
       itemsSnapshot.push({ id: promoRewardItem.productId || null, name: promoRewardItem.name, price: 0, qty: promoRewardItem.qty, is_promo_reward: true });
-    } else if (appliedCoupon?.type === 'free_guinea_fowl') {
+    }
+    if (appliedCoupon?.type === 'free_guinea_fowl') {
       itemsSnapshot.push({ id: null, name: 'Free Guinea Fowl (Promo)', price: 0, qty: 1 });
     }
     const amountSnapshot = amountToPayNow;
@@ -504,7 +507,8 @@ export default function MenuPage() {
     const itemsSnapshot = items.map(i => ({ ...i }));
     if (promoRewardItem && !promoRewardItem.is_free_delivery) {
       itemsSnapshot.push({ id: promoRewardItem.productId || null, name: promoRewardItem.name, price: 0, qty: promoRewardItem.qty, is_promo_reward: true });
-    } else if (appliedCoupon?.type === 'free_guinea_fowl') {
+    }
+    if (appliedCoupon?.type === 'free_guinea_fowl') {
       itemsSnapshot.push({ id: null, name: 'Free Guinea Fowl (Promo)', price: 0, qty: 1 });
     }
     setProcessing(true);
@@ -1114,7 +1118,7 @@ export default function MenuPage() {
                       <Tag size={15} color="#16a34a" />
                       <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#16a34a' }}>{appliedCoupon.code}</span>
                       <span style={{ fontSize: '0.82rem', color: '#555' }}>
-                        {appliedCoupon.type === 'free_guinea_fowl' ? '1 Free Guinea Fowl' : `−${fmt(appliedCoupon.discount)}`}
+                        {appliedCoupon.type === 'free_guinea_fowl' ? '1 Free Guinea Fowl' : `−${fmt(couponDiscount)}`}
                       </span>
                     </div>
                     <button onClick={removeCoupon} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888', display: 'flex', padding: 2 }}><X size={16} /></button>

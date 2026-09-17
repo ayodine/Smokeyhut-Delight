@@ -97,7 +97,12 @@ describe('isCustomerEligibleForCoupon (Public vs Restricted)', () => {
     expect(isCustomerEligibleForCoupon('FREEFOWL08', { address: '7/9 mobolade okoya thomas Vi' }, true).eligible).toBe(true);
   });
 
-  it('qualifies customer SHD-06595 (Daniel) across all name and phone variations when restricted', () => {
+  it('prevents unauthorized single common first-name bypass while qualifying Daniel across phone, email, full name, and address', () => {
+    // Single common first name alone must NOT qualify without verified phone/email/full token match
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Daniel' }, true).eligible).toBe(false);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Dan' }, true).eligible).toBe(false);
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Miracle' }, true).eligible).toBe(false);
+
     // Primary phone from order SHD-06595
     expect(isCustomerEligibleForCoupon('FREEFOWL08', { phone: '09168652077' }, true).eligible).toBe(true);
     // Alternate phone 1 (SHD-06617)
@@ -106,12 +111,41 @@ describe('isCustomerEligibleForCoupon (Public vs Restricted)', () => {
     expect(isCustomerEligibleForCoupon('FREEFOWL08', { phone: '08159561128' }, true).eligible).toBe(true);
     // Canonical email
     expect(isCustomerEligibleForCoupon('FREEFOWL08', { email: 'alimidaniel64@gmail.com' }, true).eligible).toBe(true);
-    // Variations of his name
-    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Daniel' }, true).eligible).toBe(true);
-    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Dan' }, true).eligible).toBe(true);
+    // Verified full name tokens
     expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'dan Daniel' }, true).eligible).toBe(true);
-    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Daniel Alimi' }, true).eligible).toBe(true);
-    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'may Mariam' }, true).eligible).toBe(true);
+    // Name with his verified email
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Daniel Alimi', email: 'alimidaniel64@gmail.com' }, true).eligible).toBe(true);
+    // Name with his verified phone
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { name: 'Daniel', phone: '09168652077' }, true).eligible).toBe(true);
+    // Verified address
+    expect(isCustomerEligibleForCoupon('FREEFOWL08', { address: '7/9 mobolade okoya thomas Vi' }, true).eligible).toBe(true);
+  });
+});
+
+describe('isCouponExpired', () => {
+  it('handles null, undefined, or empty expires_at as non-expiring', async () => {
+    const { isCouponExpired } = await import('./couponValidator');
+    expect(isCouponExpired(null)).toBe(false);
+    expect(isCouponExpired(undefined)).toBe(false);
+    expect(isCouponExpired('')).toBe(false);
+  });
+
+  it('correctly marks past dates as expired', async () => {
+    const { isCouponExpired } = await import('./couponValidator');
+    expect(isCouponExpired('2020-01-01')).toBe(true);
+    expect(isCouponExpired('2024-01-01T00:00:00Z')).toBe(true);
+  });
+
+  it('correctly marks future dates as not expired', async () => {
+    const { isCouponExpired } = await import('./couponValidator');
+    expect(isCouponExpired('2035-12-31')).toBe(false);
+    expect(isCouponExpired('2035-12-31T23:59:59Z')).toBe(false);
+  });
+
+  it('keeps today YYYY-MM-DD active until end of the day', async () => {
+    const { isCouponExpired } = await import('./couponValidator');
+    const today = new Date().toISOString().slice(0, 10);
+    expect(isCouponExpired(today)).toBe(false);
   });
 });
 

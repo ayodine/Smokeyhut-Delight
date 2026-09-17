@@ -11,7 +11,7 @@ import { fetchDeliveryPromo, getPromoDeliveryFee } from '../../lib/deliveryPromo
 import { isQualifyingGuineaFowlBird } from '../../lib/promoOffers';
 import { validateEmail } from '../../lib/emailValidation';
 import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
-import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, getLastCouponError, fetchEligibleCustomersFromDb, fetchCouponFromDb } from '../../lib/couponValidator';
+import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, getLastCouponError, fetchEligibleCustomersFromDb, fetchCouponFromDb, isCouponExpired } from '../../lib/couponValidator';
 import { trackInitiateCheckout, trackAddPaymentInfo, trackPurchase } from '../../lib/analytics';
 import { getAttribution, formatAttributionForNotes } from '../../lib/attribution';
 import CheckoutDisclaimerModal from '../../components/CheckoutDisclaimerModal';
@@ -179,7 +179,19 @@ export default function Checkout() {
     : null;
   const promoApplied = promoFee !== null && !allFreeShipping;
   const deliveryFee = isPickup ? 0 : (allFreeShipping || promoFreeDelivery ? 0 : (promoApplied ? promoFee : (selectedMatch?.zone.price ?? 0)));
-  const couponDiscount = appliedCoupon?.discount ?? 0;
+
+  // Dynamically recalculate discount based on current cart total & delivery fee
+  const couponDiscount = useMemo(() => {
+    if (!appliedCoupon) return 0;
+    if (appliedCoupon.type === 'free_guinea_fowl') return 0;
+    if (appliedCoupon.min_order_amount && total < appliedCoupon.min_order_amount) return 0;
+    const base = total + deliveryFee;
+    if (appliedCoupon.type === 'percent') {
+      return Math.min(Math.round(base * (appliedCoupon.value / 100)), base);
+    }
+    return Math.min(appliedCoupon.value, base);
+  }, [appliedCoupon, total, deliveryFee]);
+
   const amountToPayNow = Math.max(0, total + deliveryFee - couponDiscount) + VAT;
 
   const applyCoupon = async () => {
@@ -199,8 +211,7 @@ export default function Checkout() {
       setCouponError('This coupon is currently inactive');
       return;
     }
-    const now = new Date();
-    if (couponData.expires_at && new Date(couponData.expires_at) < now) {
+    if (isCouponExpired(couponData.expires_at)) {
       setCouponLoading(false);
       setCouponError('This coupon has expired');
       return;
@@ -225,16 +236,19 @@ export default function Checkout() {
         email: form.email,
         address: form.address,
       };
-      const hasAnyContact = (form.phone && form.phone.trim().length >= 10) || (form.email && form.email.trim().length >= 5) || customerInfo.name;
-      if (hasAnyContact) {
-        const eligibility = isCustomerEligibleForCoupon(code, customerInfo, true);
-        if (!eligibility.eligible && eligibility.reason !== 'contact_required') {
-          setCouponLoading(false);
-          setCouponError(eligibility.error || 'This coupon is valid only for eligible customers');
-          return;
-        }
-        matchedCustomer = eligibility.matchedCustomer;
+      // For restricted coupons, customer MUST provide at least a phone number or email to verify whitelist eligibility
+      if (!customerInfo.phone && !customerInfo.email) {
+        setCouponLoading(false);
+        setCouponError('Please enter your phone number or email first to verify eligibility');
+        return;
       }
+      const eligibility = isCustomerEligibleForCoupon(code, customerInfo, true);
+      if (!eligibility.eligible) {
+        setCouponLoading(false);
+        setCouponError(eligibility.error || 'This coupon is valid only for eligible customers');
+        return;
+      }
+      matchedCustomer = eligibility.matchedCustomer;
     }
 
     if (form.phone || form.email) {
@@ -247,16 +261,13 @@ export default function Checkout() {
     }
 
     setCouponLoading(false);
-    const discount = couponData.type === 'free_guinea_fowl' ? 0 : (couponData.type === 'percent'
-      ? Math.round((total + deliveryFee) * (couponData.value / 100))
-      : couponData.value);
     setAppliedCoupon({
       id: couponData.id,
       code: couponData.code,
       type: couponData.type,
       value: couponData.value,
+      min_order_amount: couponData.min_order_amount,
       is_restricted: Boolean(couponData.is_restricted),
-      discount: Math.min(discount, total + deliveryFee)
     });
   };
 
@@ -366,7 +377,7 @@ export default function Checkout() {
       total: amountToPayNow,
       delivery_fee: deliveryFee,
       coupon_code: appliedCoupon?.code || null,
-      coupon_discount: appliedCoupon?.discount || 0,
+      coupon_discount: couponDiscount,
       promo_id: effectivePromoReward?.promo_id || null,
       status: 'pending',
       session_id: cartSessionId || null,
@@ -459,7 +470,8 @@ export default function Checkout() {
     const itemsSnapshot = [...items];
     if (promoRewardItem && !promoRewardItem.is_free_delivery) {
       itemsSnapshot.push({ id: promoRewardItem.productId || null, name: promoRewardItem.name, price: 0, qty: promoRewardItem.qty, is_promo_reward: true });
-    } else if (appliedCoupon?.type === 'free_guinea_fowl') {
+    }
+    if (appliedCoupon?.type === 'free_guinea_fowl') {
       itemsSnapshot.push({ id: null, name: 'Free Guinea Fowl (Promo)', price: 0, qty: 1 });
     }
     const amountSnapshot = amountToPayNow;
@@ -569,7 +581,8 @@ export default function Checkout() {
     const itemsSnapshot = [...items];
     if (promoRewardItem && !promoRewardItem.is_free_delivery) {
       itemsSnapshot.push({ id: promoRewardItem.productId || null, name: promoRewardItem.name, price: 0, qty: promoRewardItem.qty, is_promo_reward: true });
-    } else if (appliedCoupon?.type === 'free_guinea_fowl') {
+    }
+    if (appliedCoupon?.type === 'free_guinea_fowl') {
       itemsSnapshot.push({ id: null, name: 'Free Guinea Fowl (Promo)', price: 0, qty: 1 });
     }
     setProcessing(true);

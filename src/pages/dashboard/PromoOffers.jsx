@@ -1260,8 +1260,9 @@ export default function PromoOffers() {
                     <div style={{ textAlign: 'right' }}>
                       <span style={{
                         fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: 4,
-                        background: 'var(--black2)', color: 'var(--text-muted)',
-                        border: '1px solid var(--border-subtle)'
+                        background: r.status === 'completed' ? 'rgba(22, 163, 74, 0.15)' : r.status === 'reserved' ? 'rgba(234, 179, 8, 0.15)' : 'rgba(107, 114, 128, 0.15)',
+                        color: r.status === 'completed' ? '#16a34a' : r.status === 'reserved' ? '#ca8a04' : 'var(--text-muted)',
+                        border: `1px solid ${r.status === 'completed' ? 'rgba(22, 163, 74, 0.3)' : r.status === 'reserved' ? 'rgba(234, 179, 8, 0.3)' : 'var(--border-subtle)'}`
                       }}>
                         {r.status?.toUpperCase() || 'COMPLETED'}
                       </span>

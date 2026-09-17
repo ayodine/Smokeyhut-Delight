@@ -258,4 +258,17 @@ describe('promoOffers - findBestCartPromo', () => {
     expect(match.promo.id).toBe('promo-1');
     expect(match.evaluation.qualifies).toBe(true);
   });
+
+  it('rejects promo qualification when daily quota is exhausted', () => {
+    const exhaustedPromo = {
+      ...promos[0],
+      remaining_today: 0,
+    };
+    const cart = [{ name: 'GUINEAFOWL', qty: 2 }];
+    const evalResult = evaluateCartPromo(exhaustedPromo, cart);
+    expect(evalResult.qualifies).toBe(false);
+    expect(evalResult.isQuotaExhausted).toBe(true);
+    expect(evalResult.statusMessage).toContain("Today's daily promo limit has been reached");
+  });
 });
+
