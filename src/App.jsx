@@ -77,15 +77,7 @@ function ScrollToTop() {
     initAttribution();
     if (isFirstMount.current) {
       isFirstMount.current = false;
-      // index.html fires initial PageView for Meta/Snap pixels,
-      // but GA4 needs a manual page_view since we set send_page_view: false
-      if (typeof window.gtag === 'function') {
-        window.gtag('event', 'page_view', {
-          page_location: window.location.href,
-          page_path: window.location.pathname,
-          page_title: document.title,
-        });
-      }
+      // index.html already fires the initial PageView for GA4, Meta, and Snap pixels on full load
       return;
     }
     trackPageView();
