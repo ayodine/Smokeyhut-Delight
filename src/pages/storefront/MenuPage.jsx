@@ -13,7 +13,7 @@ import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher
 import { fetchDeliveryPromo, getPromoDeliveryFee } from '../../lib/deliveryPromo';
 import { isQualifyingGuineaFowlBird } from '../../lib/promoOffers';
 import { validateEmail } from '../../lib/emailValidation';
-import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, isCouponExpired, getLastCouponError, fetchEligibleCustomersFromDb, fetchCouponFromDb } from '../../lib/couponValidator';
+import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, isCouponExpired, getLastCouponError, fetchCouponFromDb } from '../../lib/couponValidator';
 import { trackViewContent, trackInitiateCheckout, trackAddPaymentInfo, trackPurchase, splitFullName } from '../../lib/analytics';
 import { getAttribution, formatAttributionForNotes } from '../../lib/attribution';
 import PromoProgressBanner from '../../components/PromoProgressBanner';

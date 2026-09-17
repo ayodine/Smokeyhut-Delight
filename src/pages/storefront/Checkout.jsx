@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useCart } from '../../context/CartContext';
 import { useToast } from '../../context/ToastContext';
@@ -11,7 +11,7 @@ import { fetchDeliveryPromo, getPromoDeliveryFee } from '../../lib/deliveryPromo
 import { isQualifyingGuineaFowlBird } from '../../lib/promoOffers';
 import { validateEmail } from '../../lib/emailValidation';
 import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
-import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, getLastCouponError, fetchEligibleCustomersFromDb, fetchCouponFromDb, isCouponExpired } from '../../lib/couponValidator';
+import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, getLastCouponError, fetchCouponFromDb, isCouponExpired } from '../../lib/couponValidator';
 import { trackInitiateCheckout, trackAddPaymentInfo, trackPurchase } from '../../lib/analytics';
 import { getAttribution, formatAttributionForNotes } from '../../lib/attribution';
 import CheckoutDisclaimerModal from '../../components/CheckoutDisclaimerModal';
