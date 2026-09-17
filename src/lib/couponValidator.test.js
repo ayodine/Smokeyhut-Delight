@@ -144,7 +144,7 @@ describe('isCouponExpired', () => {
 
   it('keeps today YYYY-MM-DD active until end of the day', async () => {
     const { isCouponExpired } = await import('./couponValidator');
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
     expect(isCouponExpired(today)).toBe(false);
   });
 });

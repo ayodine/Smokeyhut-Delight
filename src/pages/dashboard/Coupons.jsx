@@ -912,6 +912,11 @@ function CustomerManagerDrawer({ coupon, onClose, canManage }) {
     );
   }, [redeemedOrders, search]);
 
+  // Count incomplete records (no phone and no email)
+  const incompleteCount = useMemo(() => {
+    return eligibleCustomers.filter(c => (!c.customer_phone || !c.customer_phone.trim()) && (!c.customer_email || !c.customer_email.trim())).length;
+  }, [eligibleCustomers]);
+
   // 1-Click Order Lookup
   const handleLookupOrder = async (e) => {
     e?.preventDefault();
@@ -1013,54 +1018,220 @@ function CustomerManagerDrawer({ coupon, onClose, canManage }) {
     setActiveTab('unredeemed');
   };
 
-  // Bulk Paste Addition
+  // Bulk Paste Addition (Smart lookup for Order IDs, phones, and emails)
   const handleAddBulk = async () => {
     if (!bulkText.trim()) {
-      showToast('Empty list', 'Please paste at least one phone number or email', 'error');
+      showToast('Empty list', 'Please paste at least one order ID, phone number, or email', 'error');
       return;
     }
 
     setAddingBulk(true);
-    const lines = bulkText.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
-    const toInsert = [];
 
-    for (const item of lines) {
+    const rawTokens = bulkText
+      .split(/[\r\n,;\t]+/)
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    if (rawTokens.length === 0) {
+      showToast('Empty list', 'Please paste at least one valid item', 'error');
+      setAddingBulk(false);
+      return;
+    }
+
+    const normalizeOrderId = (raw) => {
+      let s = raw.trim().replace(/^#/, '');
+      if (/^shd-?/i.test(s)) {
+        s = s.replace(/^shd-?/i, 'SHD-');
+      } else if (/^\d{4,5}$/.test(s)) {
+        s = `SHD-${s.padStart(5, '0')}`;
+      }
+      return s.toUpperCase();
+    };
+
+    const orderItems = [];
+    const emailItems = [];
+    const phoneItems = [];
+
+    for (const item of rawTokens) {
       if (item.includes('@')) {
+        emailItems.push(item.toLowerCase().trim());
+      } else if (/^#?shd/i.test(item) || /^#\d{4,5}$/.test(item) || (/^\d{4,5}$/.test(item) && item.length <= 5)) {
+        orderItems.push({ raw: item, normalized: normalizeOrderId(item) });
+      } else if (/\d{7,15}/.test(item.replace(/[\s+-]/g, ''))) {
+        phoneItems.push(item.trim());
+      }
+    }
+
+    const toInsert = [];
+    const notFoundOrders = [];
+
+    // 1. Process Order IDs: batch query the orders table
+    if (orderItems.length > 0) {
+      const uniqueOrderIds = [...new Set(orderItems.map(o => o.normalized))];
+
+      const { data: matchedOrders, error: orderErr } = await supabase
+        .from('orders')
+        .select('id, customer_name, customer_phone, customer_email, delivery_address')
+        .in('id', uniqueOrderIds);
+
+      if (orderErr) {
+        console.error('Error querying orders for bulk whitelist:', orderErr);
+      }
+
+      const orderMap = new Map();
+      matchedOrders?.forEach(o => {
+        if (o.id) orderMap.set(o.id.toUpperCase(), o);
+      });
+
+      for (const ordId of uniqueOrderIds) {
+        const orderData = orderMap.get(ordId.toUpperCase());
+        if (orderData) {
+          toInsert.push({
+            coupon_id: coupon.id,
+            customer_name: orderData.customer_name || 'Customer',
+            customer_phone: orderData.customer_phone || null,
+            customer_email: orderData.customer_email ? orderData.customer_email.toLowerCase().trim() : null,
+            customer_address: orderData.delivery_address || null,
+            reference_order_id: orderData.id,
+            max_uses: Math.max(1, Number(bulkMaxUses) || 1)
+          });
+        } else {
+          notFoundOrders.push(ordId);
+        }
+      }
+    }
+
+    // 2. Process Phone numbers: enrich with existing customer order details if found
+    if (phoneItems.length > 0) {
+      const cleanPhones = [...new Set(phoneItems.map(p => p.replace(/\s+/g, '')))];
+      const { data: phoneOrders } = await supabase
+        .from('orders')
+        .select('id, customer_name, customer_phone, customer_email, delivery_address')
+        .in('customer_phone', cleanPhones)
+        .order('created_at', { ascending: false });
+
+      const phoneOrderMap = new Map();
+      phoneOrders?.forEach(o => {
+        if (o.customer_phone && !phoneOrderMap.has(o.customer_phone)) {
+          phoneOrderMap.set(o.customer_phone, o);
+        }
+      });
+
+      for (const phone of cleanPhones) {
+        const matched = phoneOrderMap.get(phone);
         toInsert.push({
           coupon_id: coupon.id,
-          customer_email: item.toLowerCase(),
+          customer_name: matched?.customer_name || null,
+          customer_phone: phone,
+          customer_email: matched?.customer_email ? matched.customer_email.toLowerCase().trim() : null,
+          customer_address: matched?.delivery_address || null,
+          reference_order_id: matched?.id || null,
           max_uses: Math.max(1, Number(bulkMaxUses) || 1)
         });
-      } else if (/\d{7,15}/.test(item)) {
+      }
+    }
+
+    // 3. Process Emails: enrich with existing customer order details if found
+    if (emailItems.length > 0) {
+      const uniqueEmails = [...new Set(emailItems)];
+      const { data: emailOrders } = await supabase
+        .from('orders')
+        .select('id, customer_name, customer_phone, customer_email, delivery_address')
+        .in('customer_email', uniqueEmails)
+        .order('created_at', { ascending: false });
+
+      const emailOrderMap = new Map();
+      emailOrders?.forEach(o => {
+        if (o.customer_email && !emailOrderMap.has(o.customer_email.toLowerCase())) {
+          emailOrderMap.set(o.customer_email.toLowerCase(), o);
+        }
+      });
+
+      for (const email of uniqueEmails) {
+        const matched = emailOrderMap.get(email.toLowerCase());
         toInsert.push({
           coupon_id: coupon.id,
-          customer_phone: item,
-          max_uses: Math.max(1, Number(bulkMaxUses) || 1)
-        });
-      } else if (item.startsWith('SHD-') || item.startsWith('#SHD-')) {
-        toInsert.push({
-          coupon_id: coupon.id,
-          reference_order_id: item.replace(/^#/, ''),
+          customer_name: matched?.customer_name || null,
+          customer_phone: matched?.customer_phone || null,
+          customer_email: email,
+          customer_address: matched?.delivery_address || null,
+          reference_order_id: matched?.id || null,
           max_uses: Math.max(1, Number(bulkMaxUses) || 1)
         });
       }
     }
 
     if (toInsert.length === 0) {
-      showToast('Invalid items', 'No valid phone numbers, emails, or order IDs detected', 'error');
       setAddingBulk(false);
+      if (notFoundOrders.length > 0) {
+        showToast('Orders Not Found', `None of the order IDs were found in orders database: ${notFoundOrders.join(', ')}`, 'error');
+      } else {
+        showToast('Invalid items', 'No valid order IDs, phone numbers, or emails detected', 'error');
+      }
       return;
     }
 
-    const { error } = await supabase.from('coupon_eligible_customers').insert(toInsert);
+    // 4. Deduplicate against existing eligible customers and within toInsert itself
+    const existingPhones = new Set(
+      eligibleCustomers.map(c => normalizePhone(c.customer_phone)).filter(Boolean)
+    );
+    const existingEmails = new Set(
+      eligibleCustomers.map(c => (c.customer_email || '').toLowerCase().trim()).filter(Boolean)
+    );
+    const existingRefOrders = new Set(
+      eligibleCustomers.map(c => (c.reference_order_id || '').toUpperCase().trim()).filter(Boolean)
+    );
+
+    const finalToInsert = [];
+    let skippedDuplicates = 0;
+    const seenPhonesInBatch = new Set();
+    const seenEmailsInBatch = new Set();
+    const seenOrdersInBatch = new Set();
+
+    for (const row of toInsert) {
+      const phoneNorm = normalizePhone(row.customer_phone);
+      const emailNorm = (row.customer_email || '').toLowerCase().trim();
+      const refNorm = (row.reference_order_id || '').toUpperCase().trim();
+
+      const isDupPhone = phoneNorm && (existingPhones.has(phoneNorm) || seenPhonesInBatch.has(phoneNorm));
+      const isDupEmail = emailNorm && (existingEmails.has(emailNorm) || seenEmailsInBatch.has(emailNorm));
+      const isDupRef = refNorm && (existingRefOrders.has(refNorm) || seenOrdersInBatch.has(refNorm));
+
+      if (isDupPhone || isDupEmail || isDupRef) {
+        skippedDuplicates++;
+        continue;
+      }
+
+      if (phoneNorm) seenPhonesInBatch.add(phoneNorm);
+      if (emailNorm) seenEmailsInBatch.add(emailNorm);
+      if (refNorm) seenOrdersInBatch.add(refNorm);
+
+      finalToInsert.push(row);
+    }
+
+    if (finalToInsert.length === 0) {
+      setAddingBulk(false);
+      showToast('Already Whitelisted', `All ${toInsert.length} customer(s) are already in this coupon's whitelist.`, 'info');
+      return;
+    }
+
+    const { error: insertErr } = await supabase.from('coupon_eligible_customers').insert(finalToInsert);
     setAddingBulk(false);
 
-    if (error) {
-      showToast('Error', error.message, 'error');
+    if (insertErr) {
+      showToast('Error', insertErr.message, 'error');
       return;
     }
 
-    showToast('Success', `Added ${toInsert.length} eligible customer entries`, 'success');
+    let successMsg = `Added ${finalToInsert.length} eligible customer(s) with full contact details`;
+    if (skippedDuplicates > 0) {
+      successMsg += ` (${skippedDuplicates} existing duplicate(s) skipped)`;
+    }
+    if (notFoundOrders.length > 0) {
+      successMsg += `. Note: ${notFoundOrders.length} order(s) not found in DB (${notFoundOrders.join(', ')})`;
+    }
+
+    showToast('Success', successMsg, notFoundOrders.length > 0 ? 'warning' : 'success');
     setBulkText('');
     fetchDrawerData();
     setActiveTab('unredeemed');
@@ -1086,9 +1257,10 @@ function CustomerManagerDrawer({ coupon, onClose, canManage }) {
 
   // Remove customer from whitelist
   const handleRemoveCustomer = (customer) => {
+    const displayName = customer.customer_name || customer.customer_phone || customer.customer_email || (customer.reference_order_id ? `Order #${customer.reference_order_id}` : 'this customer');
     setConfirmDelete({
       title: 'Remove Customer from Whitelist?',
-      message: `Remove "${customer.customer_name || customer.customer_phone || customer.customer_email}" from ${coupon.code}? They will no longer be eligible to use this coupon.`,
+      message: `Remove "${displayName}" from ${coupon.code}? They will no longer be eligible to use this coupon.`,
       onConfirm: async () => {
         const { error } = await supabase.from('coupon_eligible_customers').delete().eq('id', customer.id);
         if (error) {
@@ -1097,6 +1269,32 @@ function CustomerManagerDrawer({ coupon, onClose, canManage }) {
           return;
         }
         showToast('Removed', 'Customer removed from whitelist', 'success');
+        setConfirmDelete(null);
+        fetchDrawerData();
+      }
+    });
+  };
+
+  // Purge all incomplete customers with missing contact info
+  const handlePurgeIncomplete = () => {
+    const count = eligibleCustomers.filter(c => (!c.customer_phone || !c.customer_phone.trim()) && (!c.customer_email || !c.customer_email.trim())).length;
+    if (count === 0) return;
+    setConfirmDelete({
+      title: 'Remove Incomplete Entries?',
+      message: `Delete all ${count} customer entries with missing contact details (phone & email) from ${coupon.code}? They cannot be redeemed at checkout without contact details.`,
+      onConfirm: async () => {
+        const ids = eligibleCustomers
+          .filter(c => (!c.customer_phone || !c.customer_phone.trim()) && (!c.customer_email || !c.customer_email.trim()))
+          .map(c => c.id);
+        if (ids.length > 0) {
+          const { error } = await supabase.from('coupon_eligible_customers').delete().in('id', ids);
+          if (error) {
+            showToast('Error', error.message, 'error');
+            setConfirmDelete(null);
+            return;
+          }
+          showToast('Cleaned Up', `Removed ${ids.length} entries with no contact details`, 'success');
+        }
         setConfirmDelete(null);
         fetchDrawerData();
       }
@@ -1368,6 +1566,37 @@ function CustomerManagerDrawer({ coupon, onClose, canManage }) {
                 </div>
               </div>
 
+              {/* Alert banner if incomplete entries exist */}
+              {incompleteCount > 0 && canManage && (
+                <div style={{ background: '#fff1f2', border: '1px solid #fecdd3', borderRadius: 10, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#9f1239', fontSize: '0.85rem' }}>
+                    <AlertCircle size={18} color="#e11d48" style={{ flexShrink: 0 }} />
+                    <span>
+                      Found <strong>{incompleteCount}</strong> customer entry/entries with missing contact details (no phone or email). These cannot be verified at checkout.
+                    </span>
+                  </div>
+                  <button
+                    onClick={handlePurgeIncomplete}
+                    style={{
+                      background: '#e11d48',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 6,
+                      padding: '7px 14px',
+                      fontSize: '0.8rem',
+                      fontWeight: 750,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6
+                    }}
+                  >
+                    <Trash2 size={13} />
+                    Purge {incompleteCount} Incomplete
+                  </button>
+                </div>
+              )}
+
               {/* Table */}
               {loading ? (
                 <SkelList rows={4} height={54} />
@@ -1414,6 +1643,12 @@ function CustomerManagerDrawer({ coupon, onClose, canManage }) {
 
                           {/* Phone & Email with Copy */}
                           <td style={{ padding: '12px 16px' }}>
+                            {!c.customer_phone && !c.customer_email && (
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 6, background: '#fef2f2', color: '#dc2626', fontSize: '0.74rem', fontWeight: 700 }}>
+                                <AlertCircle size={12} />
+                                <span>No Contact Info</span>
+                              </div>
+                            )}
                             {c.customer_phone && (
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'monospace', fontWeight: 700 }}>
                                 <Phone size={12} color="var(--text-muted)" />
@@ -1889,15 +2124,18 @@ function CustomerManagerDrawer({ coupon, onClose, canManage }) {
               {addMode === 'bulk' && (
                 <div style={{ background: 'var(--white)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 22, boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
                   <div style={{ fontWeight: 800, fontSize: '0.95rem', marginBottom: 4 }}>Bulk Paste Whitelist</div>
-                  <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 14 }}>
-                    Paste a list of customer phone numbers, email addresses, or order IDs separated with newlines or commas.
+                  <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 14, lineHeight: 1.5 }}>
+                    Paste a list of <strong>Order IDs</strong> (e.g. <code>#SHD-07007</code>), <strong>phone numbers</strong>, or <strong>emails</strong> separated by line or commas.<br/>
+                    <span style={{ color: '#16a34a', fontWeight: 700, display: 'inline-block', marginTop: 4 }}>
+                      ✓ When Order IDs are pasted, each customer&apos;s name, phone, email, and delivery address are automatically fetched from orders!
+                    </span>
                   </div>
 
                   <textarea
-                    rows={6}
+                    rows={7}
                     value={bulkText}
                     onChange={e => setBulkText(e.target.value)}
-                    placeholder={"08012345678\n09087654321\ncustomer@example.com\nSHD-06595"}
+                    placeholder={"#SHD-07007\n#SHD-07186\n#SHD-07179\n08012345678\ncustomer@example.com"}
                     style={{
                       width: '100%',
                       padding: 14,
@@ -1908,7 +2146,8 @@ function CustomerManagerDrawer({ coupon, onClose, canManage }) {
                       background: 'var(--black)',
                       resize: 'vertical',
                       boxSizing: 'border-box',
-                      outline: 'none'
+                      outline: 'none',
+                      lineHeight: 1.5
                     }}
                   />
 
