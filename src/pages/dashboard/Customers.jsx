@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Users, DollarSign, Package, Trash2, Download, Mail, Send, Loader2, UserPlus, Repeat2, ChevronUp, ChevronDown, Search, Sparkles, X, TrendingUp, TrendingDown, Crown, Star, User, Copy, Phone, MapPin, Calendar, MessageCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { SkelDashHeader, SkelKpiGrid, SkelTable } from '../../components/Skeleton';

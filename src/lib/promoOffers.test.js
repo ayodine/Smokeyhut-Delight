@@ -15,13 +15,14 @@ describe('promoOffers - getPromoBirdCount', () => {
     expect(getPromoBirdCount({ name: 'GUINEAFOWL', category_id: 'guineafowl' })).toBe(1);
   });
 
-  it('returns 0 for multi-bird combo packs to prevent promo bypass', () => {
-    expect(getPromoBirdCount({ name: 'Triple Delight Combo' })).toBe(0);
-    expect(getPromoBirdCount({ name: 'Hangout Pack' })).toBe(0);
-    expect(getPromoBirdCount({ name: 'Stock Up 5-Pack' })).toBe(0);
-    expect(getPromoBirdCount({ name: 'Party Pack (10 Birds)' })).toBe(0);
-    expect(getPromoBirdCount({ name: 'PARTY PACK' })).toBe(0);
-    expect(getPromoBirdCount({ name: 'BUY 10 GET 11 GUINEAFOWL' })).toBe(0);
+  it('returns appropriate bird counts for multi-bird packs containing 3+ Guinea Fowls', () => {
+    expect(getPromoBirdCount({ name: 'Triple Delight Combo' })).toBe(3);
+    expect(getPromoBirdCount({ name: 'Hangout Pack' })).toBe(3);
+    expect(getPromoBirdCount({ name: 'Stock Up 5-Pack' })).toBe(5);
+    expect(getPromoBirdCount({ name: 'STOCK UP PACK' })).toBe(5);
+    expect(getPromoBirdCount({ name: 'Party Pack (10 Birds)' })).toBe(10);
+    expect(getPromoBirdCount({ name: 'PARTY PACK' })).toBe(10);
+    expect(getPromoBirdCount({ name: 'BUY 10 GET 11 GUINEAFOWL' })).toBe(11);
   });
 
   it('returns 0 for non-bird items even if name contains guinea fowl', () => {
@@ -42,22 +43,22 @@ describe('promoOffers - getCartQualifyingQty', () => {
     min_qualifying_qty: 3,
   };
 
-  it('calculates total bird count accurately with quantities and ignores packs', () => {
+  it('calculates total bird count accurately with quantities and includes qualifying packs', () => {
     const cart = [
       { name: 'GUINEAFOWL', qty: 2 },
       { name: 'PARTY PACK', qty: 1 },
       { name: 'Smokey Guinea Fowl Jollof Rice', qty: 3 },
       { name: 'Zobo Drink', qty: 2 },
     ];
-    // Only the 2 GUINEAFOWL count; party pack and rice are 0
-    expect(getCartQualifyingQty(cart, birdPromo)).toBe(2);
+    // 2 GUINEAFOWL (2) + 1 PARTY PACK (10) = 12 birds; rice and zobo are 0
+    expect(getCartQualifyingQty(cart, birdPromo)).toBe(12);
   });
 
-  it('does not give extra multipliers to combo pack items', () => {
+  it('correctly credits bird multipliers to combo pack items', () => {
     const cart = [
       { name: 'PARTY PACK', qty: 1 },
     ];
-    expect(getCartQualifyingQty(cart, birdPromo)).toBe(0);
+    expect(getCartQualifyingQty(cart, birdPromo)).toBe(10);
   });
 
   it('qualifies when 3 or more individual guinea fowls are in cart', () => {
@@ -174,28 +175,55 @@ describe('promoOffers - evaluateCartPromo', () => {
       remaining_today: 10,
     };
 
-    it('strictly rejects a customer ordering 1 Party Pack', () => {
+    it('qualifies when customer orders 1 Party Pack (10 Guinea Fowls)', () => {
       const cart = [{ name: 'PARTY PACK', qty: 1, price: 118000 }];
       const evalResult = evaluateCartPromo(freeDeliveryPromo, cart);
 
-      expect(evalResult.qualifies).toBe(false);
-      expect(evalResult.currentQty).toBe(0);
+      expect(evalResult.qualifies).toBe(true);
+      expect(evalResult.currentQty).toBe(10);
       expect(evalResult.requiredQty).toBe(3);
-      expect(evalResult.remainingQtyNeeded).toBe(3);
-      expect(evalResult.rewardItem).toBeNull();
+      expect(evalResult.remainingQtyNeeded).toBe(0);
+      expect(evalResult.rewardItem).toEqual({
+        id: 'promo-free-delivery-e7d0c16b-d69d-455c-a546-beca3b381e18',
+        productId: null,
+        name: 'Free Delivery',
+        price: 0,
+        qty: 1,
+        is_promo_reward: true,
+        is_free_delivery: true,
+        promo_id: 'e7d0c16b-d69d-455c-a546-beca3b381e18',
+      });
     });
 
-    it('strictly rejects a customer ordering 2 Guinea Fowls and 1 Party Pack', () => {
+    it('qualifies when customer orders 1 Stock Up Pack (5 Guinea Fowls)', () => {
+      const cart = [{ name: 'STOCK UP PACK', qty: 1, price: 60000 }];
+      const evalResult = evaluateCartPromo(freeDeliveryPromo, cart);
+
+      expect(evalResult.qualifies).toBe(true);
+      expect(evalResult.currentQty).toBe(5);
+      expect(evalResult.remainingQtyNeeded).toBe(0);
+    });
+
+    it('qualifies when customer orders 1 Triple Delight Combo (3 Guinea Fowls)', () => {
+      const cart = [{ name: 'Triple Delight Combo', qty: 1, price: 37500 }];
+      const evalResult = evaluateCartPromo(freeDeliveryPromo, cart);
+
+      expect(evalResult.qualifies).toBe(true);
+      expect(evalResult.currentQty).toBe(3);
+      expect(evalResult.remainingQtyNeeded).toBe(0);
+    });
+
+    it('qualifies when customer orders 2 Guinea Fowls and 1 Party Pack', () => {
       const cart = [
         { name: 'Full Smokey Guineafowl', qty: 2, price: 12500 },
         { name: 'PARTY PACK', qty: 1, price: 118000 },
       ];
       const evalResult = evaluateCartPromo(freeDeliveryPromo, cart);
 
-      expect(evalResult.qualifies).toBe(false);
-      expect(evalResult.currentQty).toBe(2);
-      expect(evalResult.remainingQtyNeeded).toBe(1);
-      expect(evalResult.rewardItem).toBeNull();
+      expect(evalResult.qualifies).toBe(true);
+      expect(evalResult.currentQty).toBe(12);
+      expect(evalResult.remainingQtyNeeded).toBe(0);
+      expect(evalResult.rewardItem).not.toBeNull();
     });
 
     it('strictly rejects a customer ordering 3 packs of eggs or 3 bowls of rice', () => {

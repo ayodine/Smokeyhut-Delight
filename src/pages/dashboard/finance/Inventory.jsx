@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Plus, Loader2, Edit2, Check, X, AlertTriangle, Trash2,
   Package, TrendingDown, ArrowUp, ArrowDown, RefreshCw,

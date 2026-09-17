@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { MapPin, Clock, Camera, Truck } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { useSEO } from '../../hooks/useSEO';

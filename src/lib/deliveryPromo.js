@@ -9,7 +9,7 @@
  * and the matched area has an override. Fee 0 means free delivery.
  */
 
-import { isQualifyingGuineaFowlBird } from './promoOffers';
+import { isQualifyingGuineaFowlBird, getPromoBirdCount } from './promoOffers';
 
 export async function fetchDeliveryPromo(supabaseClient) {
   const { data, error } = await supabaseClient
@@ -23,10 +23,10 @@ export async function fetchDeliveryPromo(supabaseClient) {
 
 /**
  * Checks the bird count multiplier for an item.
- * Strictly 1 for individual genuine Guinea Fowl birds, 0 for everything else (packs, sides, drinks).
+ * Delegates to getPromoBirdCount (e.g. 10 for Party Pack, 5 for Stock Up, 3 for Hangout/Triple Delight, 1 for whole bird, 0 for excluded items).
  */
 export function getGuineaFowlBirdCount(item) {
-  return isQualifyingGuineaFowlBird(item) ? 1 : 0;
+  return getPromoBirdCount(item);
 }
 
 export function isQualifyingGuineaFowl(item) {

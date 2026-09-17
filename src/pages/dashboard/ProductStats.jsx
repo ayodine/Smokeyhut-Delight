@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { DollarSign, ShoppingBag, TrendingUp, TrendingDown, Users, ChevronRight, ArrowLeft, Search, X, Drumstick } from 'lucide-react';
 import { SkelKpiGrid, SkelTopListCard, SkelFilterPills, SkelTable } from '../../components/Skeleton';

@@ -8,7 +8,7 @@ import { useCustomerAuth } from '../../context/CustomerAuthContext';
 import { profileToPrefill } from '../../lib/customerProfile';
 import { fetchDeliveryZones, matchDeliveryZone } from '../../lib/deliveryMatcher';
 import { fetchDeliveryPromo, getPromoDeliveryFee } from '../../lib/deliveryPromo';
-import { isQualifyingGuineaFowlBird } from '../../lib/promoOffers';
+import { isQualifyingGuineaFowlBird, getPromoBirdCount } from '../../lib/promoOffers';
 import { validateEmail } from '../../lib/emailValidation';
 import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
 import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, getLastCouponError, fetchCouponFromDb, isCouponExpired } from '../../lib/couponValidator';
@@ -172,7 +172,7 @@ export default function Checkout() {
   const VAT = 200;
   const isPickup = deliveryType === 'pickup';
   const allFreeShipping = items.length > 0 && items.every(i => i.free_shipping === true);
-  const qualifyingBirdCount = items.reduce((acc, i) => acc + (isQualifyingGuineaFowlBird(i) ? (Number(i.qty) || 0) : 0), 0);
+  const qualifyingBirdCount = items.reduce((acc, i) => acc + (getPromoBirdCount(i) * (Number(i.qty) || 0)), 0);
   const promoFreeDelivery = !isPickup && promoRewardItem?.is_free_delivery === true && qualifyingBirdCount >= 3;
   const promoFee = !isPickup && selectedMatch
     ? getPromoDeliveryFee(deliveryPromo, items, selectedMatch.area?.name || '', selectedMatch.zone.price)

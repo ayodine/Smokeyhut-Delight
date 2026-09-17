@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, Loader2, FolderOpen, Receipt, Edit2, Check, X, ChevronUp, ChevronDown, DollarSign, Hash, Tag, TrendingDown } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { useToast } from '../../../context/ToastContext';

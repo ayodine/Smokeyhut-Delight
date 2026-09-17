@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Package, Search, X } from 'lucide-react';
 import { SkelKpiGrid, SkelFilterPills, SkelTable } from '../../components/Skeleton';

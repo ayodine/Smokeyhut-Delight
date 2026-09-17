@@ -1,3 +1,4 @@
+import React from 'react';
 import { CheckCircle2, X } from 'lucide-react';
 
 export default function SuccessModal({ 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { TrendingUp, TrendingDown, DollarSign, ShoppingBag, Truck, Tag, Calendar, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';

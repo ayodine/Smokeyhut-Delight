@@ -1,3 +1,5 @@
+import React from 'react';
+
 function buildPageList(current, total) {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
   if (current <= 4) return [1, 2, 3, 4, 5, '…', total];

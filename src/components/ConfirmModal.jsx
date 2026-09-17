@@ -1,3 +1,4 @@
+import React from 'react';
 import { Loader2, AlertTriangle, Info, X } from 'lucide-react';
 
 export default function ConfirmModal({ 

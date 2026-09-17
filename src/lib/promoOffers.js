@@ -8,31 +8,24 @@
  */
 
 /**
- * Determines whether an item is a genuine qualifying Guinea Fowl bird.
- * Strict rules:
- * - Must NOT be a combo pack (Party Pack, Hangout Pack, Stock Up, Triple Delight, Buy 10 Get 11, etc.)
- * - Must NOT be a dish, egg, drink, side, chicken, rabbit, kilishi, or standalone gizzard (Rice, Bowl, Egg, Zobo, etc.)
- * - Must be an actual individual Guinea Fowl bird product (Full Smokey Guineafowl, Full Smokey Guineafowl chopped,
- *   Travel standard Dry Guineafowl, King Size Smokey Guineafowl + Gizzard, Extra Dry King Size, GUINEAFOWL, etc.)
+ * Calculates the bird count multiplier for an item.
+ * - Genuine Guinea Fowl packs containing >= 3 birds return their respective bird count:
+ *   - Party Pack / 10 birds -> 10
+ *   - Buy 10 Get 11 -> 11
+ *   - Stock Up Pack / 5-pack -> 5
+ *   - Hangout Pack -> 3
+ *   - Triple Delight Combo -> 3
+ * - Individual Guinea Fowl birds -> 1
+ * - Excluded items (rice, eggs, drinks, palm wine, zobo, bags, sides, rabbit, chicken, kilishi, standalone gizzard) -> 0
  */
-export function isQualifyingGuineaFowlBird(item) {
-  if (!item) return false;
+export function getPromoBirdCount(item) {
+  if (!item) return 0;
   const name = String(item.name || '').toLowerCase().trim();
   const cat = String(item.category_id || item.category || '').toLowerCase().trim();
 
-  // 1. Explicit exclusions for combo packs and bundle offers
-  if (
-    name.includes('pack') ||
-    name.includes('combo') ||
-    name.includes('buy 10') ||
-    name.includes('stock up') ||
-    name.includes('stock-up') ||
-    name.includes('hangout')
-  ) {
-    return false;
-  }
+  const hasGuineaFowlName = name.includes('guineafowl') || name.includes('guinea fowl');
 
-  // 2. Explicit exclusions for non-bird items (rice, eggs, drinks, sides, rabbits, chicken, kilishi)
+  // 1. Explicit exclusions for non-bird items (rice, eggs, drinks, sides, rabbits, chicken, kilishi, bags)
   if (
     name.includes('rice') ||
     name.includes('egg') ||
@@ -44,32 +37,60 @@ export function isQualifyingGuineaFowlBird(item) {
     name.includes('bag') ||
     name.includes('kilishi') ||
     name.includes('rabbit') ||
-    name.includes('chicken') ||
+    (name.includes('chicken') && !hasGuineaFowlName) ||
     cat === 'drinks' ||
-    cat === 'sides'
+    cat === 'sides' ||
+    (cat === 'chicken' && !hasGuineaFowlName)
   ) {
-    return false;
+    return 0;
   }
 
   // Standalone gizzard (not a whole bird with gizzard)
-  if (name.includes('gizzard') && !name.includes('guineafowl') && !name.includes('guinea fowl') && !name.includes('king size')) {
-    return false;
+  if (name.includes('gizzard') && !hasGuineaFowlName && !name.includes('king size')) {
+    return 0;
   }
 
-  // 3. Must be a genuine guinea fowl bird product
-  return (
-    name.includes('guineafowl') ||
-    name.includes('guinea fowl') ||
-    name.includes('king size')
-  );
+  // 2. Multi-bird packs containing >= 3 Guinea Fowl birds
+  if (name.includes('buy 10') || name.includes('11 bird')) {
+    return 11;
+  }
+  if (name.includes('party pack') || name.includes('10 bird') || name.includes('10-pack') || name.includes('10 pack')) {
+    return 10;
+  }
+  if (name.includes('stock up') || name.includes('stock-up') || name.includes('5 bird') || name.includes('5-pack') || name.includes('5 pack')) {
+    return 5;
+  }
+  if (name.includes('hangout')) {
+    return 3;
+  }
+  if (name.includes('triple delight') || name.includes('3 bird') || name.includes('3-pack') || name.includes('3 pack')) {
+    return 3;
+  }
+
+  // Generic pack pattern: e.g. "X Birds", "X-Pack", "Pack of X"
+  const birdMatch = name.match(/(\d+)\s*(?:birds?|pcs?|pieces?)/i) || name.match(/(\d+)[\s-]*pack/i);
+  if (birdMatch) {
+    const parsed = parseInt(birdMatch[1], 10);
+    if (parsed > 0) return parsed;
+  }
+
+  // 3. Genuine individual Guinea Fowl bird
+  if (
+    hasGuineaFowlName ||
+    name.includes('king size') ||
+    cat === 'guineafowl'
+  ) {
+    return 1;
+  }
+
+  return 0;
 }
 
 /**
- * Calculates the bird count multiplier for an item.
- * Strictly 1 for individual genuine Guinea Fowl birds, 0 for everything else.
+ * Determines whether an item is a genuine qualifying Guinea Fowl product (individual bird or qualifying pack).
  */
-export function getPromoBirdCount(item) {
-  return isQualifyingGuineaFowlBird(item) ? 1 : 0;
+export function isQualifyingGuineaFowlBird(item) {
+  return getPromoBirdCount(item) > 0;
 }
 
 /**

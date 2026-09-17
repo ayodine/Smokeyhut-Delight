@@ -1,5 +1,4 @@
-
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -97,7 +96,11 @@ export default function DashboardLayout() {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    return localStorage.getItem('dash_sidebar_collapsed') === 'true';
+    try {
+      return typeof window !== 'undefined' && localStorage.getItem('dash_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
   });
   const [selectedStore, setSelectedStore] = useState('all');
   const [storeOptions, setStoreOptions] = useState([]);
@@ -122,7 +125,11 @@ export default function DashboardLayout() {
   };
 
   useEffect(() => {
-    localStorage.setItem('dash_sidebar_collapsed', sidebarCollapsed);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('dash_sidebar_collapsed', sidebarCollapsed);
+      }
+    } catch { /* ignore */ }
   }, [sidebarCollapsed]);
 
   // Keep group open when navigating within its child routes

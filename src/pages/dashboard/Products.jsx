@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Package, Trash2, Edit2, Image as ImageIcon, X, FolderKanban, Loader2, TrendingUp, Layers, Eye, EyeOff, Search } from 'lucide-react';
 import { SkelDashHeader, SkelKpiGrid, SkelTable } from '../../components/Skeleton';
 import Pagination from '../../components/Pagination';

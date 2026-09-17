@@ -1,3 +1,5 @@
+import React from 'react';
+
 // Reusable skeleton primitives — import what you need per page.
 
 // Raw shimmer block — pass className for shape, style for dimensions

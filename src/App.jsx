@@ -68,6 +68,96 @@ function AdminLoader() {
   );
 }
 
+function DashSubLoader() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '320px' }}>
+      <div style={{ width: 28, height: 28, border: '3px solid var(--border-subtle, #333)', borderTopColor: 'var(--red, #c0201f)', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+    </div>
+  );
+}
+
+class AdminErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('Admin Error caught by boundary:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'var(--bg, #0d0d0d)',
+          color: '#fff',
+          padding: '24px',
+          textAlign: 'center',
+          fontFamily: "'DM Sans', sans-serif"
+        }}>
+          <div style={{
+            background: 'var(--card-bg, #1a1a1a)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: '16px',
+            padding: '36px',
+            maxWidth: '480px',
+            width: '100%',
+            boxShadow: '0 10px 40px rgba(0,0,0,0.5)'
+          }}>
+            <h2 style={{ fontSize: '1.4rem', fontWeight: 700, margin: '0 0 12px', color: 'var(--red, #c0201f)' }}>
+              Dashboard Notice
+            </h2>
+            <p style={{ color: '#aaa', fontSize: '0.9rem', lineHeight: 1.5, marginBottom: '24px' }}>
+              We encountered an issue loading this section of the admin dashboard.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                onClick={() => window.location.reload()}
+                style={{
+                  background: 'var(--red, #c0201f)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '10px',
+                  padding: '10px 20px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Reload Dashboard
+              </button>
+              <button
+                onClick={() => { this.setState({ hasError: false }); window.location.href = '/admin'; }}
+                style={{
+                  background: 'rgba(255,255,255,0.1)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '10px',
+                  padding: '10px 20px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Go to Overview
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function ScrollToTop() {
   const { pathname, search } = useLocation();
   const isFirstMount = useRef(true);
@@ -306,34 +396,44 @@ export default function App() {
               <StoreHostRedirect />
               <EmergencyNoticeModal />
               <Routes>
-                {/* Admin (lazy-loaded) */}
-                <Route path="/admin/login" element={<Suspense fallback={<AdminLoader />}><Login /></Suspense>} />
-                <Route path="/admin/reset-password" element={<Suspense fallback={<AdminLoader />}><ResetPassword /></Suspense>} />
+                {/* Admin (lazy-loaded with error boundary & visible loaders) */}
+                <Route path="/admin/login" element={
+                  <AdminErrorBoundary>
+                    <Suspense fallback={<AdminLoader />}><Login /></Suspense>
+                  </AdminErrorBoundary>
+                } />
+                <Route path="/admin/reset-password" element={
+                  <AdminErrorBoundary>
+                    <Suspense fallback={<AdminLoader />}><ResetPassword /></Suspense>
+                  </AdminErrorBoundary>
+                } />
                 <Route path="/admin" element={
-                  <Suspense fallback={<AdminLoader />}>
-                    <ProtectedRoute>
-                      <DashboardLayout />
-                    </ProtectedRoute>
-                  </Suspense>
+                  <AdminErrorBoundary>
+                    <Suspense fallback={<AdminLoader />}>
+                      <ProtectedRoute>
+                        <DashboardLayout />
+                      </ProtectedRoute>
+                    </Suspense>
+                  </AdminErrorBoundary>
                 }>
-                  <Route index element={<Suspense fallback={null}><Overview /></Suspense>} />
-                  <Route path="orders" element={<Suspense fallback={null}><Orders /></Suspense>} />
-                  <Route path="abandoned-carts" element={<Suspense fallback={null}><AbandonedCarts /></Suspense>} />
-                  <Route path="shipping" element={<Suspense fallback={null}><Shipping /></Suspense>} />
-                  <Route path="payments" element={<Suspense fallback={null}><Payments /></Suspense>} />
-                  <Route path="stores" element={<Suspense fallback={null}><Stores /></Suspense>} />
-                  <Route path="products" element={<Suspense fallback={null}><Products /></Suspense>} />
-                  <Route path="stats" element={<Suspense fallback={null}><ProductStats /></Suspense>} />
-                  <Route path="products-sold" element={<Suspense fallback={null}><ProductsSold /></Suspense>} />
-                  <Route path="customers" element={<Suspense fallback={null}><Customers /></Suspense>} />
-                  <Route path="staff" element={<Suspense fallback={null}><Staff /></Suspense>} />
-                  <Route path="zones" element={<Suspense fallback={null}><DeliveryZones /></Suspense>} />
-                  <Route path="coupons" element={<Suspense fallback={null}><Coupons /></Suspense>} />
-                  <Route path="promos" element={<Suspense fallback={null}><PromoOffers /></Suspense>} />
-                  <Route path="finance/sales" element={<Suspense fallback={null}><SalesReport /></Suspense>} />
-                  <Route path="finance/expenses" element={<Suspense fallback={null}><Expenses /></Suspense>} />
-                  <Route path="finance/inventory" element={<Suspense fallback={null}><Inventory /></Suspense>} />
-                  <Route path="settings" element={<Suspense fallback={null}><Settings /></Suspense>} />
+                  <Route index element={<Suspense fallback={<DashSubLoader />}><Overview /></Suspense>} />
+                  <Route path="orders" element={<Suspense fallback={<DashSubLoader />}><Orders /></Suspense>} />
+                  <Route path="abandoned-carts" element={<Suspense fallback={<DashSubLoader />}><AbandonedCarts /></Suspense>} />
+                  <Route path="shipping" element={<Suspense fallback={<DashSubLoader />}><Shipping /></Suspense>} />
+                  <Route path="payments" element={<Suspense fallback={<DashSubLoader />}><Payments /></Suspense>} />
+                  <Route path="stores" element={<Suspense fallback={<DashSubLoader />}><Stores /></Suspense>} />
+                  <Route path="products" element={<Suspense fallback={<DashSubLoader />}><Products /></Suspense>} />
+                  <Route path="stats" element={<Suspense fallback={<DashSubLoader />}><ProductStats /></Suspense>} />
+                  <Route path="products-sold" element={<Suspense fallback={<DashSubLoader />}><ProductsSold /></Suspense>} />
+                  <Route path="customers" element={<Suspense fallback={<DashSubLoader />}><Customers /></Suspense>} />
+                  <Route path="staff" element={<Suspense fallback={<DashSubLoader />}><Staff /></Suspense>} />
+                  <Route path="zones" element={<Suspense fallback={<DashSubLoader />}><DeliveryZones /></Suspense>} />
+                  <Route path="coupons" element={<Suspense fallback={<DashSubLoader />}><Coupons /></Suspense>} />
+                  <Route path="promos" element={<Suspense fallback={<DashSubLoader />}><PromoOffers /></Suspense>} />
+                  <Route path="finance/sales" element={<Suspense fallback={<DashSubLoader />}><SalesReport /></Suspense>} />
+                  <Route path="finance/expenses" element={<Suspense fallback={<DashSubLoader />}><Expenses /></Suspense>} />
+                  <Route path="finance/inventory" element={<Suspense fallback={<DashSubLoader />}><Inventory /></Suspense>} />
+                  <Route path="settings" element={<Suspense fallback={<DashSubLoader />}><Settings /></Suspense>} />
                 </Route>
 
                 {/* Menu — standalone, no StorefrontLayout wrapper */}
