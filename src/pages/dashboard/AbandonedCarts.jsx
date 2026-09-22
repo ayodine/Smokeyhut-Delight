@@ -13,6 +13,7 @@ import { SkelKpiGrid, SkelTable, SkelDashHeader } from '../../components/Skeleto
 import DashCalendar from '../../components/DashCalendar';
 import CustomSelect from '../../components/CustomSelect';
 import ConfirmModal from '../../components/ConfirmModal';
+import { parseCartSessionAttribution } from '../../lib/attribution';
 
 const fmt = (n) => '₦' + Number(n || 0).toLocaleString();
 const PER_PAGE = 30;
@@ -22,6 +23,17 @@ const PERIOD_OPTIONS = [
   { label: 'Today',      value: 'today' },
   { label: 'This Week',  value: 'week' },
   { label: 'All Time',   value: 'all_time' },
+];
+
+const SOURCE_OPTIONS = [
+  { label: 'All Sources',           value: 'all' },
+  { label: 'Snapchat Ads',          value: 'snapchat' },
+  { label: 'Instagram Ads',         value: 'instagram_ad' },
+  { label: 'Instagram (Links/Bio)', value: 'instagram_link' },
+  { label: 'WhatsApp',              value: 'whatsapp' },
+  { label: 'Facebook Ads',          value: 'facebook' },
+  { label: 'Google',                value: 'google' },
+  { label: 'Direct',                value: 'direct' },
 ];
 
 function getPeriodRange(period) {
@@ -46,6 +58,7 @@ function getPeriodRange(period) {
     }
     case 'month': {
       const d = new Date(now.getFullYear(), now.getMonth(), 1);
+      d.setHours(0, 0, 0, 0);
       start = d.toISOString();
       end = now.toISOString();
       break;
@@ -74,6 +87,9 @@ function timeAgo(dateString) {
 function normalizeNigerianPhone(phone) {
   if (!phone) return '';
   let cleaned = String(phone).replace(/\D/g, '');
+  if (cleaned.startsWith('2340') && cleaned.length === 14) {
+    return '234' + cleaned.slice(4);
+  }
   if (cleaned.startsWith('0') && cleaned.length === 11) {
     return '234' + cleaned.slice(1);
   }
@@ -86,9 +102,23 @@ function normalizeNigerianPhone(phone) {
   return cleaned;
 }
 
+export function safeItems(rawItems) {
+  if (Array.isArray(rawItems)) return rawItems;
+  if (typeof rawItems === 'string') {
+    try {
+      const parsed = JSON.parse(rawItems);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 function getStageBadge(stage) {
   switch (stage) {
     case 'cart':
+    case 'cart_created':
       return { label: 'Cart', bg: '#f3f4f6', color: '#4b5563', border: '#e5e7eb' };
     case 'checkout':
       return { label: 'Checkout', bg: '#fef3c7', color: '#92400e', border: '#fde68a' };
@@ -147,7 +177,9 @@ function AbandonedCartsContent() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [tableLoading, setTableLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [filter, setFilter] = useState('abandoned'); // 'abandoned' | 'recoverable' | 'checkout' | 'contact_captured' | 'payment_pending' | 'recovered' | 'all'
+  const [sourceFilter, setSourceFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [period, setPeriod] = useState('month');
@@ -158,15 +190,20 @@ function AbandonedCartsContent() {
   const [deletingSession, setDeletingSession] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Derive active date range
+  // Ref to prevent initialLoading double-fetch glitch
+  const initialLoadedRef = React.useRef(false);
+
+  // Derive active date range with full end-of-day inclusion
   const activeRange = useMemo(() => {
     if (period && period !== 'custom') {
       return getPeriodRange(period);
     }
     if (dateFilter?.start && dateFilter?.end) {
+      const s = new Date(`${dateFilter.start}T00:00:00`);
+      const e = new Date(`${dateFilter.end}T23:59:59.999`);
       return {
-        start: new Date(dateFilter.start).toISOString(),
-        end: new Date(dateFilter.end).toISOString(),
+        start: s.toISOString(),
+        end: e.toISOString(),
       };
     }
     return { start: null, end: null };
@@ -181,11 +218,32 @@ function AbandonedCartsContent() {
     return () => clearTimeout(t);
   }, [searchInput]);
 
+  // Lock body scroll and handle Escape key for modals
+  useEffect(() => {
+    if (selectedSession || deletingSession) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+
+      const handleKeyDown = (e) => {
+        if (e.key === 'Escape') {
+          if (deletingSession) setDeletingSession(null);
+          else if (selectedSession) setSelectedSession(null);
+        }
+      };
+
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        document.body.style.overflow = originalOverflow;
+        window.removeEventListener('keydown', handleKeyDown);
+      };
+    }
+  }, [selectedSession, deletingSession]);
+
   const fetchData = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
       setRefreshing(true);
-    } else if (initialLoading) {
-      // keep initialLoading true
+    } else if (!initialLoadedRef.current) {
+      // First mount
     } else {
       setTableLoading(true);
     }
@@ -209,7 +267,8 @@ function AbandonedCartsContent() {
         p_filter: filter,
         p_search: search || null,
         p_limit: PER_PAGE,
-        p_offset: offset
+        p_offset: offset,
+        p_source: sourceFilter,
       });
 
       if (listError) throw listError;
@@ -222,11 +281,12 @@ function AbandonedCartsContent() {
       console.error('Failed to fetch cart abandonment data:', err);
       showToast('Error loading carts', err.message, 'error');
     } finally {
+      initialLoadedRef.current = true;
       setInitialLoading(false);
       setTableLoading(false);
       setRefreshing(false);
     }
-  }, [activeRange, filter, search, page, initialLoading, showToast]);
+  }, [activeRange, filter, sourceFilter, search, page, showToast]);
 
   useEffect(() => {
     fetchData();
@@ -312,8 +372,11 @@ function AbandonedCartsContent() {
       return;
     }
 
-    const firstName = session.customer_name ? session.customer_name.trim().split(' ')[0] : 'there';
-    const itemsList = (session.items || []).map(i => `${i.qty}x ${i.name}`).slice(0, 3).join(', ');
+    const rawName = session.customer_name?.trim();
+    const isGuest = !rawName || rawName.toLowerCase().startsWith('guest');
+    const firstName = isGuest ? 'there' : rawName.split(' ')[0];
+    const items = safeItems(session.items);
+    const itemsList = items.map(i => `${i.qty}x ${i.name}`).slice(0, 3).join(', ');
     
     // In production, uses live origin (e.g. https://smokeyhutdelight.com); in dev defaults to smokeyhutdelight.com or live origin
     const siteUrl = (typeof window !== 'undefined' && !window.location.hostname.includes('localhost'))
@@ -328,7 +391,7 @@ function AbandonedCartsContent() {
     const msg = [
       `Hello ${firstName}! ${wave}`,
       '',
-      `This is Smokeyhut Delights. We noticed you left some delicious items in your cart (${itemsList || 'Smokeyhut Order'}${session.items?.length > 3 ? '...' : ''}).`,
+      `This is Smokeyhut Delights. We noticed you left some delicious items in your cart (${itemsList || 'Smokeyhut Order'}${items.length > 3 ? '...' : ''}).`,
       '',
       'Would you like help completing your order or delivery? You can also complete it here anytime:',
       `${siteUrl}/checkout`,
@@ -341,35 +404,70 @@ function AbandonedCartsContent() {
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  const exportToExcel = () => {
+  const exportToExcel = async () => {
     if (!records.length) {
       showToast('No data to export', 'There are no records in the current view.', 'error');
       return;
     }
 
-    const rows = records.map(r => ({
-      'Session ID': r.session_id,
-      'Customer Name': r.customer_name || 'Guest',
-      'Phone': r.customer_phone || '',
-      'Email': r.customer_email || '',
-      'Delivery Zone': r.delivery_zone || '',
-      'Delivery Address': r.delivery_address || '',
-      'Items Count': r.item_count || 0,
-      'Items': (r.items || []).map(i => `${i.qty}x ${i.name} (₦${i.price})`).join('; '),
-      'Cart Total (NGN)': r.cart_total || 0,
-      'Stage': r.stage,
-      'Recovered': r.recovered ? 'Yes' : 'No',
-      'Order ID': r.order_id || '',
-      'Last Active': r.last_active_at ? new Date(r.last_active_at).toLocaleString() : '',
-      'Created At': r.created_at ? new Date(r.created_at).toLocaleString() : '',
-    }));
+    setIsExporting(true);
+    try {
+      let exportRows = records;
 
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Abandoned Carts');
-    const dateStr = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(wb, `Smokeyhut_Abandoned_Carts_${dateStr}.xlsx`);
-    showToast('Exported', 'Excel file downloaded successfully', 'success');
+      // If more records exist across pages, fetch the full matching set up to 1000
+      if (totalCount > records.length) {
+        const { data: allData, error } = await supabase.rpc('get_abandoned_cart_list', {
+          p_start: activeRange.start,
+          p_end: activeRange.end,
+          p_filter: filter,
+          p_search: search || null,
+          p_limit: Math.min(totalCount, 1000),
+          p_offset: 0,
+          p_source: sourceFilter,
+        });
+        if (!error && allData) {
+          exportRows = allData.data || allData.records || records;
+        }
+      }
+
+      const rows = exportRows.map(r => {
+        const attr = parseCartSessionAttribution(r);
+        const rItems = safeItems(r.items);
+        return {
+          'Session ID': r.session_id,
+          'Customer Name': r.customer_name || 'Guest',
+          'Phone': r.customer_phone || '',
+          'Email': r.customer_email || '',
+          'Delivery Zone': r.delivery_zone || '',
+          'Delivery Address': r.delivery_address || '',
+          'Traffic Source': attr.badgeText,
+          'Channel': attr.platform,
+          'Ad Campaign': attr.campaign || '',
+          'Ad Click ID': attr.clickId || '',
+          'Referrer': attr.referrer || '',
+          'Items Count': r.item_count || 0,
+          'Items': rItems.map(i => `${i.qty}x ${i.name} (₦${i.price})`).join('; '),
+          'Cart Total (NGN)': r.cart_total || 0,
+          'Stage': r.stage,
+          'Recovered': r.recovered ? 'Yes' : 'No',
+          'Order ID': r.order_id || '',
+          'Last Active': r.last_active_at ? new Date(r.last_active_at).toLocaleString() : '',
+          'Created At': r.created_at ? new Date(r.created_at).toLocaleString() : '',
+        };
+      });
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Abandoned Carts');
+      const dateStr = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `Smokeyhut_Abandoned_Carts_${dateStr}.xlsx`);
+      showToast('Exported', `Successfully downloaded ${rows.length} cart records.`, 'success');
+    } catch (err) {
+      console.error('Export failed:', err);
+      showToast('Export Failed', err.message || 'Could not export records.', 'error');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PER_PAGE));
@@ -393,7 +491,7 @@ function AbandonedCartsContent() {
 
   const getPercent = (count) => {
     if (!funnelCart || funnelCart === 0) return 0;
-    return Math.round((count / funnelCart) * 100);
+    return Math.min(100, Math.max(0, Math.round((count / funnelCart) * 100)));
   };
 
   // Helper for dynamic tab labels with counts (omits count when 0)
@@ -401,6 +499,14 @@ function AbandonedCartsContent() {
     const num = Number(count || 0);
     return num > 0 ? `${title} (${num})` : title;
   };
+
+  const hasActiveFilters = Boolean(
+    (dateFilter && (dateFilter.start || dateFilter.end)) ||
+    (period && period !== 'month') ||
+    sourceFilter !== 'all' ||
+    filter !== 'abandoned' ||
+    searchInput.trim()
+  );
 
   return (
     <div>
@@ -430,6 +536,18 @@ function AbandonedCartsContent() {
             />
           </div>
 
+          {/* Source Dropdown (widened to accommodate Instagram Links/Bio) */}
+          <div style={{ width: 185 }}>
+            <CustomSelect
+              value={sourceFilter}
+              onChange={(e) => {
+                setSourceFilter(e.target.value);
+                setPage(1);
+              }}
+              options={SOURCE_OPTIONS}
+            />
+          </div>
+
           {/* Custom Date Picker */}
           <DashCalendar
             range={true}
@@ -444,16 +562,26 @@ function AbandonedCartsContent() {
             placeholder="Custom range"
           />
 
-          {((dateFilter && (dateFilter.start || dateFilter.end)) || (period && period !== 'month')) && (
+          {hasActiveFilters && (
             <button
               onClick={() => {
                 setDateFilter({ start: null, end: null });
                 setPeriod('month');
+                setSourceFilter('all');
+                setFilter('abandoned');
+                setSearchInput('');
+                setSearch('');
                 setPage(1);
               }}
-              style={{ background: 'none', border: 'none', fontSize: '0.78rem', color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 600, padding: '4px 6px' }}
+              style={{
+                background: '#f1f5f9', border: '1px solid var(--border-subtle)',
+                borderRadius: 8, fontSize: '0.78rem', color: 'var(--text-muted)',
+                cursor: 'pointer', fontWeight: 700, padding: '6px 10px',
+                transition: 'all 0.15s'
+              }}
+              title="Reset all filters to default"
             >
-              Reset
+              Reset Filters
             </button>
           )}
 
@@ -474,58 +602,68 @@ function AbandonedCartsContent() {
 
           <button
             onClick={exportToExcel}
+            disabled={isExporting}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '8px 14px', borderRadius: 10,
               background: 'var(--card-bg, #fff)', border: '1px solid var(--border-subtle)',
               color: 'var(--text)', fontSize: '0.82rem', fontWeight: 700,
-              cursor: 'pointer', transition: 'all 0.15s'
+              cursor: isExporting ? 'not-allowed' : 'pointer', transition: 'all 0.15s',
+              opacity: isExporting ? 0.7 : 1
             }}
           >
-            <Download size={14} />
-            Export Excel
+            {isExporting ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
+            {isExporting ? 'Exporting...' : 'Export Excel'}
           </button>
         </div>
       </div>
 
       {/* KPI Cards */}
       {canViewKpi && (
-        <div className="kpi-grid" style={{ marginBottom: 20 }}>
+        <div className="kpi-grid four-col" style={{ marginBottom: 20 }}>
           {/* Lost Revenue */}
-          <div className="kpi-card red">
-            <div className="kpi-icon"><TrendingDown size={24} /></div>
-            <div className="kpi-value">{fmt(stats.lost_revenue)}</div>
-            <div className="kpi-label">Lost Revenue</div>
+          <div className="kpi-card red" style={{ padding: '18px 16px' }}>
+            <div className="kpi-icon" style={{ width: 40, height: 40, marginBottom: 12 }}><TrendingDown size={22} /></div>
+            <div className="kpi-value" style={{ fontSize: 'clamp(1.25rem, 1.8vw, 1.8rem)', marginBottom: 4 }} title={fmt(stats.lost_revenue)}>
+              {fmt(stats.lost_revenue)}
+            </div>
+            <div className="kpi-label" style={{ fontSize: '0.84rem' }}>Lost Revenue</div>
             <div style={{ fontSize: '0.72rem', color: '#991b1b', marginTop: 4, fontWeight: 600 }}>
-              {stats.abandoned_sessions} abandoned cart sessions
+              {stats.abandoned_sessions} abandoned sessions
             </div>
           </div>
 
           {/* Cart Abandonment Rate */}
-          <div className="kpi-card yellow">
-            <div className="kpi-icon"><ShoppingCart size={24} /></div>
-            <div className="kpi-value">{stats.abandonment_rate}%</div>
-            <div className="kpi-label">Abandonment Rate</div>
+          <div className="kpi-card yellow" style={{ padding: '18px 16px' }}>
+            <div className="kpi-icon" style={{ width: 40, height: 40, marginBottom: 12 }}><ShoppingCart size={22} /></div>
+            <div className="kpi-value" style={{ fontSize: 'clamp(1.25rem, 1.8vw, 1.8rem)', marginBottom: 4 }}>
+              {stats.abandonment_rate}%
+            </div>
+            <div className="kpi-label" style={{ fontSize: '0.84rem' }}>Abandonment Rate</div>
             <div style={{ fontSize: '0.72rem', color: '#854d0e', marginTop: 4, fontWeight: 600 }}>
               {stats.converted_sessions} converted / {stats.total_sessions} total
             </div>
           </div>
 
           {/* Recoverable Carts */}
-          <div className="kpi-card blue">
-            <div className="kpi-icon"><MessageCircle size={24} /></div>
-            <div className="kpi-value">{stats.recoverable_count}</div>
-            <div className="kpi-label">Recoverable Leads</div>
+          <div className="kpi-card blue" style={{ padding: '18px 16px' }}>
+            <div className="kpi-icon" style={{ width: 40, height: 40, marginBottom: 12 }}><MessageCircle size={22} /></div>
+            <div className="kpi-value" style={{ fontSize: 'clamp(1.25rem, 1.8vw, 1.8rem)', marginBottom: 4 }}>
+              {stats.recoverable_count}
+            </div>
+            <div className="kpi-label" style={{ fontSize: '0.84rem' }}>Recoverable Leads</div>
             <div style={{ fontSize: '0.72rem', color: '#075985', marginTop: 4, fontWeight: 600 }}>
               With phone or email captured
             </div>
           </div>
 
           {/* Recovered Revenue */}
-          <div className="kpi-card green">
-            <div className="kpi-icon"><DollarSign size={24} /></div>
-            <div className="kpi-value">{fmt(stats.recovered_revenue)}</div>
-            <div className="kpi-label">Recovered Revenue</div>
+          <div className="kpi-card green" style={{ padding: '18px 16px' }}>
+            <div className="kpi-icon" style={{ width: 40, height: 40, marginBottom: 12 }}><DollarSign size={22} /></div>
+            <div className="kpi-value" style={{ fontSize: 'clamp(1.25rem, 1.8vw, 1.8rem)', marginBottom: 4 }} title={fmt(stats.recovered_revenue)}>
+              {fmt(stats.recovered_revenue)}
+            </div>
+            <div className="kpi-label" style={{ fontSize: '0.84rem' }}>Recovered Revenue</div>
             <div style={{ fontSize: '0.72rem', color: '#166534', marginTop: 4, fontWeight: 600 }}>
               {stats.recovered_count || stats.stages?.recovered || 0} carts marked recovered
             </div>
@@ -682,7 +820,7 @@ function AbandonedCartsContent() {
       </div>
 
       {/* Main Abandoned Carts Table */}
-      <div className="dash-card" style={{ borderRadius: 16, overflow: 'hidden', position: 'relative' }}>
+      <div className="dash-card" style={{ borderRadius: 16, overflow: 'hidden', position: 'relative', minWidth: 0, width: '100%', padding: '20px 20px 24px 20px' }}>
         {/* Subtle inline table loading overlay (no full page jump) */}
         {tableLoading && (
           <div style={{
@@ -697,16 +835,16 @@ function AbandonedCartsContent() {
           </div>
         )}
 
-        <div style={{ overflowX: 'auto' }}>
-          <table className="dash-table">
+        <div className="dash-table-wrapper" style={{ width: '100%', minWidth: 0, overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <table className="dash-table" style={{ width: '100%', minWidth: 800, borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <th>Customer / Lead</th>
-                <th>Cart Details</th>
-                <th>Stage</th>
-                <th>Last Active</th>
-                <th>Recovery Status</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
+                <th style={{ minWidth: 200 }}>Customer / Lead</th>
+                <th style={{ minWidth: 160 }}>Cart Details</th>
+                <th style={{ minWidth: 140 }}>Traffic Source</th>
+                <th style={{ minWidth: 110 }}>Stage</th>
+                <th style={{ minWidth: 110 }}>Last Active</th>
+                <th style={{ minWidth: 165, textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -716,14 +854,36 @@ function AbandonedCartsContent() {
                     <ShoppingCart size={40} style={{ opacity: 0.3, marginBottom: 10 }} />
                     <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text)' }}>No abandoned carts found</div>
                     <div style={{ fontSize: '0.82rem', marginTop: 4 }}>Try adjusting the date range or stage filter.</div>
+                    {hasActiveFilters && (
+                      <button
+                        onClick={() => {
+                          setDateFilter({ start: null, end: null });
+                          setPeriod('month');
+                          setSourceFilter('all');
+                          setFilter('abandoned');
+                          setSearchInput('');
+                          setSearch('');
+                          setPage(1);
+                        }}
+                        style={{
+                          marginTop: 14, padding: '7px 16px', borderRadius: 8,
+                          background: '#f1f5f9', border: '1px solid #e2e8f0',
+                          fontSize: '0.8rem', fontWeight: 700, color: '#475569', cursor: 'pointer',
+                          transition: 'all 0.15s'
+                        }}
+                      >
+                        Clear Filters
+                      </button>
+                    )}
                   </td>
                 </tr>
               ) : (
                 records.map(record => {
                   const stageStyle = getStageBadge(record.stage);
                   const hasContact = !!(record.customer_phone || record.customer_email);
-                  const itemsSummary = (record.items || []).map(i => `${i.qty}x ${i.name}`).slice(0, 2).join(', ');
-                  const extraItemsCount = (record.items || []).length - 2;
+                  const rItems = safeItems(record.items);
+                  const itemsSummary = rItems.map(i => `${i.qty}x ${i.name}`).slice(0, 2).join(', ');
+                  const extraItemsCount = rItems.length - 2;
 
                   return (
                     <tr
@@ -735,32 +895,34 @@ function AbandonedCartsContent() {
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           <div style={{
-                            width: 36, height: 36, borderRadius: '50%',
+                            width: 34, height: 34, borderRadius: '50%',
                             background: record.customer_name ? '#fee2e2' : '#f1f5f9',
                             color: record.customer_name ? '#c0201f' : '#64748b',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontWeight: 800, fontSize: '0.85rem', flexShrink: 0
+                            fontWeight: 800, fontSize: '0.82rem', flexShrink: 0
                           }}>
-                            {record.customer_name ? record.customer_name.charAt(0).toUpperCase() : <User size={18} />}
+                            {record.customer_name ? record.customer_name.charAt(0).toUpperCase() : <User size={16} />}
                           </div>
-                          <div>
-                            <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#111', display: 'flex', alignItems: 'center', gap: 6 }}>
-                              {record.customer_name || 'Guest Shopper'}
+                          <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                            <div style={{ fontWeight: 700, fontSize: '0.86rem', color: '#111', display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {record.customer_name || 'Guest Shopper'}
+                              </span>
                               {record.user_id && (
-                                <span style={{ fontSize: '0.65rem', background: '#e0e7ff', color: '#4338ca', padding: '1px 6px', borderRadius: 6, fontWeight: 800 }}>
+                                <span style={{ fontSize: '0.62rem', background: '#e0e7ff', color: '#4338ca', padding: '1px 5px', borderRadius: 5, fontWeight: 800, flexShrink: 0 }}>
                                   User
                                 </span>
                               )}
                             </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2, fontSize: '0.78rem', color: '#64748b' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 3, fontSize: '0.75rem', color: '#64748b' }}>
                               {record.customer_phone && (
-                                <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                                  <Phone size={12} /> {record.customer_phone}
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap' }}>
+                                  <Phone size={11} style={{ flexShrink: 0 }} /> {record.customer_phone}
                                 </span>
                               )}
                               {record.customer_email && (
-                                <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                                  <Mail size={12} /> {record.customer_email}
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 170 }} title={record.customer_email}>
+                                  <Mail size={11} style={{ flexShrink: 0 }} /> {record.customer_email}
                                 </span>
                               )}
                               {!hasContact && (
@@ -774,17 +936,47 @@ function AbandonedCartsContent() {
                       {/* Cart Details */}
                       <td>
                         <div>
-                          <div style={{ fontWeight: 800, fontSize: '0.92rem', color: 'var(--red)' }}>
+                          <div style={{ fontWeight: 800, fontSize: '0.9rem', color: 'var(--red)' }}>
                             {fmt(record.cart_total)}
                           </div>
-                          <div style={{ fontSize: '0.78rem', color: '#475569', marginTop: 2, maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <div style={{ fontSize: '0.76rem', color: '#475569', marginTop: 2, maxWidth: 180, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={itemsSummary}>
                             {itemsSummary || 'No items listed'}
                             {extraItemsCount > 0 && ` +${extraItemsCount} more`}
                           </div>
-                          <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: 1 }}>
-                            {record.item_count || 0} {(record.item_count || 0) === 1 ? 'item' : 'items'}
+                          <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: 1 }}>
+                            {record.item_count || rItems.length || 0} {(record.item_count || rItems.length || 0) === 1 ? 'item' : 'items'}
                           </div>
                         </div>
+                      </td>
+
+                      {/* Traffic Source */}
+                      <td>
+                        {(() => {
+                          const sAttr = parseCartSessionAttribution(record);
+                          return (
+                            <div>
+                              <span style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 4,
+                                padding: '3px 8px', borderRadius: 7,
+                                background: sAttr.bg, color: sAttr.color,
+                                border: `1px solid ${sAttr.border}`,
+                                fontSize: '0.72rem', fontWeight: 800, whiteSpace: 'nowrap'
+                              }}>
+                                {sAttr.badgeText}
+                              </span>
+                              {sAttr.campaign && (
+                                <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 2, maxWidth: 125, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`Campaign: ${sAttr.campaign}`}>
+                                  {sAttr.campaign}
+                                </div>
+                              )}
+                              {!sAttr.campaign && sAttr.medium && sAttr.medium !== 'referral' && (
+                                <div style={{ fontSize: '0.66rem', color: '#94a3b8', marginTop: 1 }}>
+                                  {sAttr.medium}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Stage */}
@@ -794,12 +986,13 @@ function AbandonedCartsContent() {
                           padding: '4px 10px', borderRadius: 8,
                           background: stageStyle.bg, color: stageStyle.color,
                           border: `1px solid ${stageStyle.border}`,
-                          fontSize: '0.75rem', fontWeight: 800, textTransform: 'capitalize'
+                          fontSize: '0.75rem', fontWeight: 800, textTransform: 'capitalize',
+                          whiteSpace: 'nowrap'
                         }}>
                           {stageStyle.label}
                         </span>
                         {record.order_id && (
-                          <div style={{ fontSize: '0.72rem', color: '#16a34a', fontWeight: 700, marginTop: 2 }}>
+                          <div style={{ fontSize: '0.72rem', color: '#16a34a', fontWeight: 700, marginTop: 2, whiteSpace: 'nowrap' }}>
                             Order: #{record.order_id}
                           </div>
                         )}
@@ -807,50 +1000,31 @@ function AbandonedCartsContent() {
 
                       {/* Last Active */}
                       <td>
-                        <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#334155' }}>
+                        <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#334155', whiteSpace: 'nowrap' }}>
                           {timeAgo(record.last_active_at)}
                         </div>
-                        <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: 1 }}>
+                        <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: 1, whiteSpace: 'nowrap' }}>
                           {record.last_active_at ? new Date(record.last_active_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
                         </div>
                       </td>
 
-                      {/* Recovery Status */}
-                      <td>
-                        <button
-                          onClick={(e) => handleToggleRecovered(record, e)}
-                          disabled={togglingId === record.session_id}
-                          style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 5,
-                            padding: '4px 10px', borderRadius: 20,
-                            background: record.recovered ? '#dcfce7' : '#f1f5f9',
-                            color: record.recovered ? '#15803d' : '#64748b',
-                            border: `1px solid ${record.recovered ? '#86efac' : '#cbd5e1'}`,
-                            fontSize: '0.74rem', fontWeight: 800, cursor: 'pointer',
-                            transition: 'all 0.15s'
-                          }}
-                        >
-                          {record.recovered ? <Check size={13} /> : null}
-                          {record.recovered ? 'Recovered' : 'Mark Recovered'}
-                        </button>
-                      </td>
-
                       {/* Actions */}
                       <td style={{ textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }} onClick={(e) => e.stopPropagation()}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 5 }} onClick={(e) => e.stopPropagation()}>
                           {/* WhatsApp Outreach */}
                           {record.customer_phone ? (
                             <button
                               onClick={(e) => openWhatsAppOutreach(record, e)}
                               title="Chat on WhatsApp"
                               style={{
-                                padding: '7px 11px', borderRadius: 8,
+                                padding: '6px 9px', borderRadius: 7,
                                 background: '#25D366', color: '#fff', border: 'none',
-                                fontWeight: 800, fontSize: '0.78rem', cursor: 'pointer',
-                                display: 'inline-flex', alignItems: 'center', gap: 5
+                                fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer',
+                                display: 'inline-flex', alignItems: 'center', gap: 4,
+                                whiteSpace: 'nowrap'
                               }}
                             >
-                              <MessageCircle size={14} />
+                              <MessageCircle size={13} />
                               WhatsApp
                             </button>
                           ) : null}
@@ -858,16 +1032,16 @@ function AbandonedCartsContent() {
                           {/* Direct Call */}
                           {record.customer_phone ? (
                             <a
-                              href={`tel:${record.customer_phone}`}
+                              href={`tel:${normalizeNigerianPhone(record.customer_phone) || String(record.customer_phone).replace(/\s+/g, '')}`}
                               title="Call Customer"
                               style={{
-                                padding: '7px 9px', borderRadius: 8,
+                                padding: '6px 8px', borderRadius: 7,
                                 background: '#f8fafc', color: '#334155', border: '1px solid #e2e8f0',
-                                fontWeight: 700, fontSize: '0.78rem', textDecoration: 'none',
+                                fontWeight: 700, fontSize: '0.75rem', textDecoration: 'none',
                                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
                               }}
                             >
-                              <Phone size={14} />
+                              <Phone size={13} />
                             </a>
                           ) : null}
 
@@ -876,13 +1050,13 @@ function AbandonedCartsContent() {
                             onClick={() => setSelectedSession(record)}
                             title="View Full Session Details"
                             style={{
-                              padding: '7px 9px', borderRadius: 8,
+                              padding: '6px 8px', borderRadius: 7,
                               background: '#f8fafc', color: '#334155', border: '1px solid #e2e8f0',
-                              fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer',
+                              fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer',
                               display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
                             }}
                           >
-                            <Eye size={14} />
+                            <Eye size={13} />
                           </button>
 
                           {/* Delete Cart */}
@@ -894,14 +1068,14 @@ function AbandonedCartsContent() {
                               }}
                               title="Delete Abandoned Cart"
                               style={{
-                                padding: '7px 9px', borderRadius: 8,
+                                padding: '6px 8px', borderRadius: 7,
                                 background: '#fef2f2', color: '#dc2626', border: '1px solid #fee2e2',
-                                fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer',
+                                fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer',
                                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                                 transition: 'all 0.15s'
                               }}
                             >
-                              <Trash2 size={14} />
+                              <Trash2 size={13} />
                             </button>
                           )}
                         </div>
@@ -1009,10 +1183,17 @@ function AbandonedCartsContent() {
                         <Mail size={13} color="#c0201f" /> {selectedSession.customer_email}
                       </span>
                     )}
-                    {selectedSession.delivery_address && (
+                    {(selectedSession.delivery_address || selectedSession.delivery_zone) && (
                       <span style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
                         <MapPin size={13} color="#c0201f" style={{ marginTop: 2, flexShrink: 0 }} />
-                        {selectedSession.delivery_address} {selectedSession.delivery_zone ? `(${selectedSession.delivery_zone})` : ''}
+                        <span>
+                          {selectedSession.delivery_address || 'No street address provided'}
+                          {selectedSession.delivery_zone && (
+                            <strong style={{ marginLeft: 4, color: '#0f172a' }}>
+                              • {selectedSession.delivery_zone}
+                            </strong>
+                          )}
+                        </span>
                       </span>
                     )}
                   </div>
@@ -1035,40 +1216,165 @@ function AbandonedCartsContent() {
               </div>
             </div>
 
-            {/* Items Breakdown */}
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: '0.74rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
-                Cart Items ({selectedSession.item_count || 0})
-              </div>
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden' }}>
-                {(selectedSession.items || []).map((item, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      padding: '12px 14px', borderBottom: idx < (selectedSession.items.length - 1) ? '1px solid #f1f5f9' : 'none',
-                      background: idx % 2 === 0 ? '#fff' : '#fafafa'
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#1e293b' }}>
-                        {item.name}
-                      </div>
-                      <div style={{ fontSize: '0.76rem', color: '#64748b' }}>
-                        Qty: {item.qty} × {fmt(item.price)}
-                      </div>
-                    </div>
-                    <div style={{ fontWeight: 800, fontSize: '0.9rem', color: '#0f172a' }}>
-                      {fmt((item.price || 0) * (item.qty || 1))}
-                    </div>
+            {/* Prominent Recovery Status Card with Action */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '14px 16px', borderRadius: 14, marginBottom: 20,
+              background: selectedSession.recovered ? '#f0fdf4' : '#f8fafc',
+              border: `1.5px solid ${selectedSession.recovered ? '#86efac' : '#e2e8f0'}`,
+              flexWrap: 'wrap', gap: 12
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{
+                  width: 36, height: 36, borderRadius: '50%',
+                  background: selectedSession.recovered ? '#22c55e' : '#94a3b8',
+                  color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  {selectedSession.recovered ? <Check size={18} /> : <ShoppingCart size={16} />}
+                </div>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '0.92rem', color: selectedSession.recovered ? '#15803d' : '#1e293b' }}>
+                    {selectedSession.recovered ? 'Cart Marked as Recovered' : 'Cart Not Yet Recovered'}
                   </div>
-                ))}
-                <div style={{ padding: '12px 14px', background: '#f8fafc', borderTop: '1.5px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#0f172a' }}>Total Cart Value</span>
-                  <span style={{ fontWeight: 900, fontSize: '1.1rem', color: 'var(--red)' }}>{fmt(selectedSession.cart_total)}</span>
+                  <div style={{ fontSize: '0.76rem', color: selectedSession.recovered ? '#166534' : '#64748b', marginTop: 1 }}>
+                    {selectedSession.recovered
+                      ? 'Customer purchase or re-engagement was successfully completed.'
+                      : 'Reach out to help the customer complete their order.'}
+                  </div>
                 </div>
               </div>
+              {canManage && (
+                <button
+                  onClick={(e) => handleToggleRecovered(selectedSession, e)}
+                  disabled={togglingId === selectedSession.session_id}
+                  style={{
+                    padding: '8px 16px', borderRadius: 9,
+                    background: selectedSession.recovered ? '#fff' : '#15803d',
+                    color: selectedSession.recovered ? '#15803d' : '#fff',
+                    border: `1.5px solid ${selectedSession.recovered ? '#86efac' : '#15803d'}`,
+                    fontWeight: 800, fontSize: '0.8rem', cursor: 'pointer',
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  {togglingId === selectedSession.session_id ? (
+                    <Loader2 size={13} className="spin" />
+                  ) : selectedSession.recovered ? (
+                    'Mark as Unrecovered'
+                  ) : (
+                    <>
+                      <Check size={14} /> Mark as Recovered
+                    </>
+                  )}
+                </button>
+              )}
             </div>
+
+            {/* Items Breakdown */}
+            {(() => {
+              const modalItems = safeItems(selectedSession.items);
+              return (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: '0.74rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
+                    Cart Items ({selectedSession.item_count || modalItems.length || 0})
+                  </div>
+                  <div style={{ border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden' }}>
+                    {modalItems.length === 0 ? (
+                      <div style={{ padding: '20px 14px', textAlign: 'center', color: '#94a3b8', fontSize: '0.82rem' }}>
+                        No items recorded in this cart session
+                      </div>
+                    ) : (
+                      modalItems.map((item, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                            padding: '12px 14px', borderBottom: idx < (modalItems.length - 1) ? '1px solid #f1f5f9' : 'none',
+                            background: idx % 2 === 0 ? '#fff' : '#fafafa'
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#1e293b' }}>
+                              {item.name}
+                            </div>
+                            <div style={{ fontSize: '0.76rem', color: '#64748b' }}>
+                              Qty: {item.qty} × {fmt(item.price)}
+                            </div>
+                          </div>
+                          <div style={{ fontWeight: 800, fontSize: '0.9rem', color: '#0f172a' }}>
+                            {fmt((item.price || 0) * (item.qty || 1))}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                    <div style={{ padding: '12px 14px', background: '#f8fafc', borderTop: '1.5px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#0f172a' }}>Total Cart Value</span>
+                      <span style={{ fontWeight: 900, fontSize: '1.1rem', color: 'var(--red)' }}>{fmt(selectedSession.cart_total)}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Marketing & Attribution Card */}
+            {(() => {
+              const selectedSourceAttr = parseCartSessionAttribution(selectedSession);
+              return (
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 14, padding: '16px', marginBottom: 20 }}>
+                  <div style={{ fontSize: '0.74rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Marketing & Traffic Attribution</span>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center',
+                      padding: '2px 8px', borderRadius: 6,
+                      background: selectedSourceAttr.bg, color: selectedSourceAttr.color,
+                      border: `1px solid ${selectedSourceAttr.border}`,
+                      fontSize: '0.72rem', fontWeight: 800
+                    }}>
+                      {selectedSourceAttr.badgeText}
+                    </span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: '0.8rem' }}>
+                    <div>
+                      <span style={{ fontWeight: 700, color: '#334155' }}>Platform / Channel: </span>
+                      <span>{selectedSourceAttr.platform || selectedSourceAttr.source}</span>
+                    </div>
+                    <div>
+                      <span style={{ fontWeight: 700, color: '#334155' }}>Traffic Type: </span>
+                      <span>{selectedSourceAttr.isAd ? 'Paid Ad' : (selectedSourceAttr.medium || 'Organic')}</span>
+                    </div>
+                    {selectedSourceAttr.campaign && (
+                      <div style={{ gridColumn: 'span 2', wordBreak: 'break-all' }}>
+                        <span style={{ fontWeight: 700, color: '#334155' }}>Campaign: </span>
+                        <span style={{ fontFamily: 'monospace', fontSize: '0.76rem', background: '#f1f5f9', padding: '2px 6px', borderRadius: 4 }}>
+                          {selectedSourceAttr.campaign}
+                        </span>
+                      </div>
+                    )}
+                    {selectedSourceAttr.clickId && (
+                      <div style={{ gridColumn: 'span 2', wordBreak: 'break-all' }}>
+                        <span style={{ fontWeight: 700, color: '#334155' }}>Ad Click ID: </span>
+                        <span style={{ fontFamily: 'monospace', fontSize: '0.76rem', color: '#c0201f', background: '#fef2f2', padding: '2px 6px', borderRadius: 4 }}>
+                          {selectedSourceAttr.clickId}
+                        </span>
+                      </div>
+                    )}
+                    {selectedSourceAttr.referrer && (
+                      <div style={{ gridColumn: 'span 2', wordBreak: 'break-all' }}>
+                        <span style={{ fontWeight: 700, color: '#334155' }}>Referrer: </span>
+                        <span style={{ fontSize: '0.76rem', color: '#475569' }}>{selectedSourceAttr.referrer}</span>
+                      </div>
+                    )}
+                    {selectedSourceAttr.url && (
+                      <div style={{ gridColumn: 'span 2', wordBreak: 'break-all' }}>
+                        <span style={{ fontWeight: 700, color: '#334155' }}>Landing Page: </span>
+                        <span style={{ fontSize: '0.76rem', color: '#475569' }}>{selectedSourceAttr.url}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Session Metadata & Device */}
             <div style={{ background: '#f8fafc', borderRadius: 12, padding: '14px 16px', fontSize: '0.78rem', color: '#64748b', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
@@ -1118,31 +1424,16 @@ function AbandonedCartsContent() {
                 </button>
               )}
 
-              <div style={{ display: 'flex', gap: 10 }}>
-                {canManage && (
-                  <button
-                    onClick={(e) => handleToggleRecovered(selectedSession, e)}
-                    style={{
-                      padding: '9px 16px', borderRadius: 10,
-                      border: '1px solid var(--border-subtle)', background: selectedSession.recovered ? '#f1f5f9' : '#dcfce7',
-                      color: selectedSession.recovered ? '#64748b' : '#15803d',
-                      fontWeight: 800, fontSize: '0.84rem', cursor: 'pointer'
-                    }}
-                  >
-                    {selectedSession.recovered ? 'Mark as Unrecovered' : 'Mark as Recovered'}
-                  </button>
-                )}
-                <button
-                  onClick={() => setSelectedSession(null)}
-                  style={{
-                    padding: '9px 16px', borderRadius: 10,
-                    border: 'none', background: '#0f172a', color: '#fff',
-                    fontWeight: 800, fontSize: '0.84rem', cursor: 'pointer'
-                  }}
-                >
-                  Close
-                </button>
-              </div>
+              <button
+                onClick={() => setSelectedSession(null)}
+                style={{
+                  padding: '9px 18px', borderRadius: 10,
+                  border: 'none', background: '#0f172a', color: '#fff',
+                  fontWeight: 800, fontSize: '0.84rem', cursor: 'pointer'
+                }}
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

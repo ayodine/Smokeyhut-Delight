@@ -12,7 +12,7 @@ import { isQualifyingGuineaFowlBird, getPromoBirdCount } from '../../lib/promoOf
 import { validateEmail } from '../../lib/emailValidation';
 import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
 import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, getLastCouponError, fetchCouponFromDb, isCouponExpired } from '../../lib/couponValidator';
-import { trackInitiateCheckout, trackAddPaymentInfo, trackPurchase } from '../../lib/analytics';
+import { trackInitiateCheckout, trackAddPaymentInfo, trackPurchase, updateSnapchatUserMatching } from '../../lib/analytics';
 import { getAttribution, formatAttributionForNotes } from '../../lib/attribution';
 import CheckoutDisclaimerModal from '../../components/CheckoutDisclaimerModal';
 import PromoProgressBanner from '../../components/PromoProgressBanner';
@@ -138,6 +138,7 @@ export default function Checkout() {
     trackInitiateCheckout({
       total,
       itemsCount: items.reduce((acc, i) => acc + i.qty, 0),
+      itemIds: items.map(i => String(i.id)),
     });
   }, [promoteStage]);
 
@@ -342,6 +343,17 @@ export default function Checkout() {
         deliveryAddress: form.address ? deliveryAddress : null,
         deliveryZone: deliveryZoneName || null,
       });
+
+      if (form.phone || form.email) {
+        updateSnapchatUserMatching({
+          firstName: form.firstName,
+          lastName: form.lastName,
+          phone: form.phone,
+          email: form.email,
+          city: form.city,
+          address: form.address,
+        });
+      }
     }
   };
 

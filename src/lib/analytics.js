@@ -305,7 +305,7 @@ export function trackAddToCart({ id, name, price = 0, currency = 'NGN' } = {}) {
 /**
  * Track starting checkout
  */
-export function trackInitiateCheckout({ total = 0, itemsCount = 0, currency = 'NGN' } = {}) {
+export function trackInitiateCheckout({ total = 0, itemsCount = 0, itemIds = [], currency = 'NGN' } = {}) {
   if (!isBrowser()) return;
 
   const numTotal = Number(total) || 0;
@@ -321,6 +321,7 @@ export function trackInitiateCheckout({ total = 0, itemsCount = 0, currency = 'N
     try {
       window.fbq('track', 'InitiateCheckout', {
         content_type: 'product',
+        content_ids: itemIds && itemIds.length > 0 ? itemIds.map(String) : undefined,
         num_items: numItems,
         value: numTotal,
         currency,
@@ -332,16 +333,78 @@ export function trackInitiateCheckout({ total = 0, itemsCount = 0, currency = 'N
 
   if (window.snaptr) {
     try {
-      window.snaptr('track', 'START_CHECKOUT', {
+      const snapPayload = {
         price: numTotal,
         currency,
         number_items: numItems,
-      });
+      };
+      if (itemIds && itemIds.length > 0) {
+        snapPayload.item_ids = itemIds.map(String);
+      }
+      window.snaptr('track', 'START_CHECKOUT', snapPayload);
     } catch (e) {
       console.warn('[Analytics] Snap Pixel START_CHECKOUT error:', e);
     }
   }
 }
+
+/**
+ * Updates Snapchat Pixel Advanced Matching parameters whenever user identifiers
+ * (email, phone, name) become available before purchase (e.g. during checkout typing).
+ */
+export async function updateSnapchatUserMatching(customer = {}) {
+  if (!isBrowser() || !window.snaptr) return;
+
+  try {
+    const emailNorm = normalizeEmail(customer?.email);
+    const phoneNorm = normalizePhone(customer?.phone);
+    const firstNorm = normalizeName(customer?.firstName);
+    const lastNorm = normalizeName(customer?.lastName);
+    const postalNorm = normalizePostalCode(customer?.postalCode || customer?.postcode);
+    const ip = getCachedIp() || await fetchClientIp();
+
+    const [emailHash, phoneHash, firstHash, lastHash, postalHash] = await Promise.all([
+      sha256(emailNorm),
+      sha256(phoneNorm),
+      sha256(firstNorm),
+      sha256(lastNorm),
+      sha256(postalNorm),
+    ]);
+
+    const snapUser = {};
+    if (emailNorm) {
+      snapUser.user_email = emailNorm;
+      snapUser.user_hashed_email = emailHash;
+    }
+    if (phoneNorm) {
+      snapUser.user_phone_number = phoneNorm;
+      snapUser.user_hashed_phone_number = phoneHash;
+    }
+    if (firstNorm) {
+      snapUser.firstname = firstNorm;
+      snapUser.user_hashed_first_name = firstHash;
+    }
+    if (lastNorm) {
+      snapUser.lastname = lastNorm;
+      snapUser.user_hashed_last_name = lastHash;
+    }
+    if (postalNorm) {
+      snapUser.geo_postal_code = postalNorm;
+      snapUser.postal_code = postalNorm;
+      snapUser.user_hashed_postal_code = postalHash;
+    }
+    if (ip) {
+      snapUser.ip_address = ip;
+    }
+
+    if (Object.keys(snapUser).length > 0) {
+      window.snaptr('init', SNAP_PIXEL_ID, snapUser);
+    }
+  } catch (e) {
+    console.warn('[Analytics] updateSnapchatUserMatching error:', e);
+  }
+}
+
 
 /**
  * Track adding payment info (e.g. proceeding to card payment)

@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   extractAttributionFromLocation,
   formatAttributionForNotes,
-  parseOrderAttribution
+  parseOrderAttribution,
+  parseCartSessionAttribution
 } from './attribution';
 
 describe('Attribution Extraction', () => {
@@ -118,6 +119,29 @@ describe('parseOrderAttribution', () => {
     expect(parsed.isAd).toBe(false);
   });
 
+  it('parses Instagram Ad from traffic_source with paid medium or ad click', () => {
+    const parsed = parseOrderAttribution({
+      traffic_source: 'Instagram Ad',
+      utm_medium: 'paid',
+      ad_click_id: 'fb_click_123'
+    });
+    expect(parsed.badgeText).toBe('Instagram Ad');
+    expect(parsed.source).toBe('Instagram Ad');
+    expect(parsed.isAd).toBe(true);
+    expect(parsed.color).toBe('#86198f');
+  });
+
+  it('parses Instagram Link from organic Instagram traffic', () => {
+    const parsed = parseOrderAttribution({
+      traffic_source: 'Instagram Link',
+      utm_medium: 'referral'
+    });
+    expect(parsed.badgeText).toBe('Instagram Link');
+    expect(parsed.source).toBe('Instagram Link');
+    expect(parsed.isAd).toBe(false);
+    expect(parsed.color).toBe('#4338ca');
+  });
+
   it('defaults to Direct for standard website orders without ads', () => {
     const parsed = parseOrderAttribution({
       channel: 'storefront',
@@ -127,3 +151,127 @@ describe('parseOrderAttribution', () => {
     expect(parsed.isAd).toBe(false);
   });
 });
+
+describe('parseCartSessionAttribution', () => {
+  it('parses Snapchat Ad from cart session metadata.attribution', () => {
+    const session = {
+      session_id: 'test-session-123',
+      metadata: {
+        attribution: {
+          traffic_source: 'Snapchat Ad',
+          channel: 'Snapchat',
+          is_ad: true,
+          ad_click_id: 'sc_click_999',
+          utm_campaign: 'sept_promo_camp',
+          utm_medium: 'paid',
+        },
+        referrer: 'https://ads.snapchat.com/',
+        url: '/shop'
+      }
+    };
+    const parsed = parseCartSessionAttribution(session);
+    expect(parsed.badgeText).toBe('Snapchat Ad');
+    expect(parsed.platform).toBe('Snapchat');
+    expect(parsed.isAd).toBe(true);
+    expect(parsed.campaign).toBe('sept_promo_camp');
+    expect(parsed.clickId).toBe('sc_click_999');
+    expect(parsed.color).toBe('#854d0e');
+  });
+
+  it('infers Instagram Link from organic referrer when attribution is not set', () => {
+    const session = {
+      session_id: 'test-session-456',
+      metadata: {
+        referrer: 'https://l.instagram.com/',
+        url: '/checkout'
+      }
+    };
+    const parsed = parseCartSessionAttribution(session);
+    expect(parsed.badgeText).toBe('Instagram Link');
+    expect(parsed.platform).toBe('Instagram');
+    expect(parsed.isAd).toBe(false);
+    expect(parsed.color).toBe('#4338ca');
+  });
+
+  it('infers Instagram Ad when fbclid or paid medium is present with Instagram source', () => {
+    const session = {
+      session_id: 'test-session-insta-ad',
+      metadata: {
+        attribution: {
+          traffic_source: 'Instagram Ad',
+          channel: 'Instagram',
+          is_ad: true,
+          ad_click_id: 'fb_click_123',
+          utm_source: 'instagram',
+          utm_medium: 'paid'
+        },
+        referrer: 'https://l.instagram.com/',
+        url: '/shop'
+      }
+    };
+    const parsed = parseCartSessionAttribution(session);
+    expect(parsed.badgeText).toBe('Instagram Ad');
+    expect(parsed.platform).toBe('Instagram');
+    expect(parsed.isAd).toBe(true);
+    expect(parsed.color).toBe('#86198f');
+  });
+
+  it('infers Snapchat Ad from referrer when referrer is snapchat.com', () => {
+    const session = {
+      session_id: 'test-session-789',
+      metadata: {
+        referrer: 'https://www.snapchat.com/',
+        url: '/shop'
+      }
+    };
+    const parsed = parseCartSessionAttribution(session);
+    expect(parsed.badgeText).toBe('Snapchat Ad');
+    expect(parsed.platform).toBe('Snapchat');
+    expect(parsed.isAd).toBe(true);
+  });
+
+  it('handles lowercase sccid and sc_cid in URL search', () => {
+    const attr1 = extractAttributionFromLocation('?sccid=test_lowercase_id');
+    expect(attr1.traffic_source).toBe('Snapchat Ad');
+    expect(attr1.ad_click_id).toBe('test_lowercase_id');
+
+    const attr2 = extractAttributionFromLocation('?sc_cid=test_underscore_id');
+    expect(attr2.traffic_source).toBe('Snapchat Ad');
+    expect(attr2.ad_click_id).toBe('test_underscore_id');
+  });
+
+  it('defaults to Direct for sessions without attribution or external referrer', () => {
+    const session = {
+      session_id: 'test-session-000',
+      metadata: {
+        url: '/menu'
+      }
+    };
+    const parsed = parseCartSessionAttribution(session);
+    expect(parsed.badgeText).toBe('Direct');
+    expect(parsed.platform).toBe('Direct');
+    expect(parsed.isAd).toBe(false);
+  });
+
+  it('infers WhatsApp from l.wl.co link shim referrer', () => {
+    const session = {
+      session_id: 'test-session-wa',
+      metadata: {
+        referrer: 'https://l.wl.co/',
+        url: '/shop'
+      }
+    };
+    const parsed = parseCartSessionAttribution(session);
+    expect(parsed.badgeText).toBe('WhatsApp');
+    expect(parsed.platform).toBe('WhatsApp');
+    expect(parsed.isAd).toBe(false);
+    expect(parsed.color).toBe('#15803d');
+  });
+
+  it('identifies WhatsApp from l.wl.co in extractAttributionFromLocation', () => {
+    const attr = extractAttributionFromLocation('', 'https://l.wl.co/');
+    expect(attr.traffic_source).toBe('WhatsApp');
+    expect(attr.channel).toBe('WhatsApp');
+  });
+});
+

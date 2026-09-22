@@ -101,9 +101,10 @@ export function SkelCard({ height = 120 }) {
 }
 
 // Full KPI grid — used standalone when you just need cards
-export function SkelKpiGrid({ count = 4, style = {} }) {
+export function SkelKpiGrid({ count = 4, className = '', style = {} }) {
+  const gridClass = `kpi-grid ${count === 4 ? 'four-col' : ''} ${className}`.trim();
   return (
-    <div className="kpi-grid" style={{ marginBottom: 24, ...style }}>
+    <div className={gridClass} style={{ marginBottom: 24, ...style }}>
       {Array.from({ length: count }).map((_, i) => <SkelKpi key={i} />)}
     </div>
   );
