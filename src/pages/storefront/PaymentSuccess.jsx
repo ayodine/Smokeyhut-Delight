@@ -31,7 +31,7 @@ export default function PaymentSuccess() {
     let verifyFired = false;
     const startedAt = Date.now();
 
-    const confirmPaid = (id) => {
+    const confirmPaid = (id, orderData = {}) => {
       if (stopped) return;
       setOrderId(id);
       setState('paid');
@@ -68,12 +68,25 @@ export default function PaymentSuccess() {
           } catch {}
         }
 
+        // Reliable fallback from get_payment_status database record
+        const finalAmount = pendingAmount ?? (orderData?.total != null ? Number(orderData.total) : undefined);
+        let finalCustomer = pendingCustomer;
+        if (!finalCustomer && (orderData?.customer_email || orderData?.customer_phone || orderData?.customer_name)) {
+          const nameParts = (orderData.customer_name || '').trim().split(/\s+/);
+          finalCustomer = {
+            email: orderData.customer_email || '',
+            phone: orderData.customer_phone || '',
+            firstName: nameParts[0] || '',
+            lastName: nameParts.slice(1).join(' ') || ''
+          };
+        }
+
         trackPurchase({
           orderId: id,
-          total: pendingAmount,
+          total: finalAmount,
           itemsCount: pendingItems,
           currency: 'NGN',
-          customer: pendingCustomer,
+          customer: finalCustomer,
         });
       }
     };
@@ -82,7 +95,7 @@ export default function PaymentSuccess() {
       if (stopped) return;
       const { data } = await publicSupabase.rpc('get_payment_status', { p_ref: reference });
       if (stopped) return;
-      if (data?.paid) { confirmPaid(data.order_id); return; }
+      if (data?.paid) { confirmPaid(data.order_id, data); return; }
       const elapsed = Date.now() - startedAt;
       if (elapsed > FIRST_PHASE_MS && !verifyFired) {
         verifyFired = true;
