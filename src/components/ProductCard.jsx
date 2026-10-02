@@ -41,7 +41,7 @@ function ProductCard({ product, variant }) {
   const discountPct = hasDiscount
     ? Math.round((1 - Number(product.price) / Number(product.compare_price)) * 100)
     : 0;
-  const isOutOfStock = false;
+  const isOutOfStock = product.is_active === false || (product.stock !== null && product.stock !== undefined && Number(product.stock) <= 0);
 
   /* ── Shopify-style white card (matches reference UI) ── */
   if (variant === 'shopify') {

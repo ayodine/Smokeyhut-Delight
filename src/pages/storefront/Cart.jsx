@@ -5,7 +5,8 @@ import { useToast } from '../../context/ToastContext';
 import { getProducts } from '../../lib/productsCache';
 import ProductCard from '../../components/ProductCard';
 import PromoProgressBanner from '../../components/PromoProgressBanner';
-import { ShoppingCart, Trash2, Plus, Minus, ArrowRight, Utensils, Clock, Gift } from 'lucide-react';
+import { verifyCartItemsAvailability } from '../../lib/productAvailability';
+import { ShoppingCart, Trash2, Plus, Minus, ArrowRight, Utensils, Clock, Gift, AlertTriangle } from 'lucide-react';
 import { anyItemPastCutoff } from '../../lib/deliveryCutoff';
 
 const fmt = (n) => '₦' + Number(n).toLocaleString();
@@ -14,11 +15,35 @@ export default function Cart() {
   const { items, updateQty, removeItem, total, itemCount, promoRewardItem } = useCart();
   const { showToast } = useToast();
 
-
   const [products, setProducts] = React.useState([]);
+  const [unavailableItems, setUnavailableItems] = React.useState([]);
+
   React.useEffect(() => {
     getProducts().then(({ products: p }) => setProducts(p));
   }, []);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!items || items.length === 0) {
+      setUnavailableItems([]);
+      return;
+    }
+    verifyCartItemsAvailability(items).then(res => {
+      if (!cancelled) setUnavailableItems(res.unavailableItems || []);
+    });
+    return () => { cancelled = true; };
+  }, [items]);
+
+  const handleRemoveUnavailableItems = () => {
+    const idsToRemove = new Set(unavailableItems.map(u => String(u.id)));
+    items.forEach(i => {
+      if (idsToRemove.has(String(i.id))) {
+        removeItem(i.id);
+      }
+    });
+    setUnavailableItems([]);
+    showToast('Bag updated', 'Unavailable items have been removed.', 'success');
+  };
 
   const cartIds = items.map(i => i.id);
   const upsell = products.filter(p => !cartIds.includes(p.id)).slice(0, 4);
@@ -71,6 +96,50 @@ export default function Cart() {
           <PromoProgressBanner variant="full" />
         </div>
 
+        {/* Unavailable items alert banner */}
+        {unavailableItems.length > 0 && (
+          <div style={{
+            marginBottom: 16,
+            borderRadius: 14,
+            border: '1.5px solid #f87171',
+            background: '#fef2f2',
+            padding: '14px 16px',
+            boxShadow: '0 2px 8px rgba(239, 68, 68, 0.08)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 10, flex: 1, minWidth: 240 }}>
+                <AlertTriangle size={20} color="#b91c1c" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '0.9rem', color: '#991b1b', marginBottom: 4 }}>
+                    Some items in your bag are no longer available
+                  </div>
+                  <div style={{ fontSize: '0.82rem', color: '#b91c1c', lineHeight: 1.4 }}>
+                    {unavailableItems.map(u => u.message).join(' · ')}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleRemoveUnavailableItems}
+                style={{
+                  background: '#b91c1c',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  padding: '8px 14px',
+                  fontSize: '0.8rem',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0
+                }}
+              >
+                Remove unavailable items
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Cart Items Card */}
         <div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 14 }}>
           {anyItemPastCutoff(items) && (
@@ -80,11 +149,12 @@ export default function Cart() {
           )}
           {items.map((item, idx) => {
             const hasImage = item.image && item.image.startsWith('http');
+            const isUnavailable = unavailableItems.some(u => String(u.id) === String(item.id));
             return (
-              <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px', borderBottom: (idx < items.length - 1 || promoRewardItem) ? '1px solid #f5f5f5' : 'none' }}>
+              <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px', borderBottom: (idx < items.length - 1 || promoRewardItem) ? '1px solid #f5f5f5' : 'none', background: isUnavailable ? '#fff5f5' : 'transparent' }}>
                 {/* Thumbnail + qty badge */}
                 <div style={{ position: 'relative', flexShrink: 0 }}>
-                  <div style={{ width: 64, height: 64, borderRadius: 12, overflow: 'hidden', background: '#f5f5f7', border: '1px solid #e5e5e5' }}>
+                  <div style={{ width: 64, height: 64, borderRadius: 12, overflow: 'hidden', background: '#f5f5f7', border: isUnavailable ? '1px solid #fca5a5' : '1px solid #e5e5e5' }}>
                     {hasImage
                       ? <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Utensils size={20} color="#ccc" /></div>
@@ -97,8 +167,14 @@ export default function Cart() {
 
                 {/* Info */}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
-                  <div style={{ fontSize: '0.78rem', color: '#888', marginTop: 2 }}>{fmt(item.price)} each</div>
+                  <div style={{ fontWeight: 700, fontSize: '0.9rem', color: isUnavailable ? '#991b1b' : '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
+                  {isUnavailable ? (
+                    <div style={{ display: 'inline-block', background: '#fee2e2', color: '#b91c1c', fontSize: '0.72rem', fontWeight: 800, padding: '2px 6px', borderRadius: 4, marginTop: 2 }}>
+                      No longer available (Out of stock)
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.78rem', color: '#888', marginTop: 2 }}>{fmt(item.price)} each</div>
+                  )}
                 </div>
 
                 {/* Right side: total + stepper */}
@@ -190,9 +266,22 @@ export default function Cart() {
             </div>
           </div>
           <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <Link to="/checkout" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: '#c0201f', color: '#fff', padding: '16px', borderRadius: 12, fontWeight: 900, textDecoration: 'none', fontSize: '1rem', letterSpacing: '-0.01em' }}>
-              Proceed to Checkout <ArrowRight size={18} />
-            </Link>
+            {unavailableItems.length > 0 ? (
+              <button
+                disabled
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  background: 'rgba(192,32,31,0.45)', color: '#fff', padding: '16px', borderRadius: 12,
+                  fontWeight: 900, border: 'none', fontSize: '0.95rem', cursor: 'not-allowed'
+                }}
+              >
+                Remove unavailable items to checkout
+              </button>
+            ) : (
+              <Link to="/checkout" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: '#c0201f', color: '#fff', padding: '16px', borderRadius: 12, fontWeight: 900, textDecoration: 'none', fontSize: '1rem', letterSpacing: '-0.01em' }}>
+                Proceed to Checkout <ArrowRight size={18} />
+              </Link>
+            )}
             <Link to="/menu" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', color: '#c0201f', fontWeight: 700, textDecoration: 'none', padding: '10px' }}>
               ← Continue Shopping
             </Link>

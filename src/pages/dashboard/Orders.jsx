@@ -567,7 +567,7 @@ export default function Orders() {
         getBaseCountQuery().or('traffic_source.ilike.%snap%,notes.ilike.%[Source: Snapchat%'),
         getBaseCountQuery().or('traffic_source.ilike.%facebook%,traffic_source.ilike.%instagram%,traffic_source.ilike.%meta%,notes.ilike.%[Source: Facebook%,notes.ilike.%[Source: Instagram%'),
         getBaseCountQuery().or('delivery_status.eq.Rescheduled,notes.ilike.%[Rescheduled]%'),
-        supabase.from('products').select('id, name, price').order('name'),
+        supabase.from('products').select('id, name, price, is_active, stock').is('deleted_at', null).order('name'),
         supabase.from('stores').select('id, name').eq('is_active', true).order('id'),
         fetchFlatAreas(supabase),
       ]);
@@ -758,6 +758,9 @@ export default function Orders() {
 
   const pickProduct = (i, productId) => {
     const p = products.find(pr => String(pr.id) === String(productId));
+    if (p && p.is_active === false) {
+      showToast('Notice', `${p.name} is hidden / out of stock.`, 'warning');
+    }
     setNewOrder(f => {
       const items = [...f.items];
       items[i] = { ...items[i], product: productId, name: p ? p.name : '', price: p ? String(p.price) : '' };
@@ -772,6 +775,35 @@ export default function Orders() {
     if (!newOrder.name.trim() || !newOrder.phone.trim()) return;
     const validItems = newOrder.items.filter(i => i.name.trim() && Number(i.price) > 0);
     if (validItems.length === 0) return;
+
+    // Check if any product is hidden or out of stock from local state first
+    const hiddenItem = validItems.find(i => {
+      if (!i.product) return false;
+      const p = products.find(pr => String(pr.id) === String(i.product));
+      return p && p.is_active === false;
+    });
+    if (hiddenItem) {
+      showToast('Cannot Add Product', `${hiddenItem.name} is hidden / out of stock and cannot be added to an order.`, 'error');
+      return;
+    }
+
+    // Live verify products against database in case status changed while modal was open
+    const productIds = validItems.map(i => i.product).filter(Boolean);
+    if (productIds.length > 0) {
+      const { data: dbProducts } = await supabase.from('products').select('id, name, is_active, deleted_at').in('id', productIds);
+      if (dbProducts) {
+        const dbMap = Object.fromEntries(dbProducts.map(p => [String(p.id), p]));
+        const unavailable = validItems.find(i => {
+          const p = dbMap[String(i.product)];
+          return !p || p.is_active === false || p.deleted_at !== null;
+        });
+        if (unavailable) {
+          showToast('Cannot Add Product', `${unavailable.name} is hidden / out of stock and cannot be added to an order.`, 'error');
+          return;
+        }
+      }
+    }
+
     setSavingNew(true);
     try {
       const notesStr = `[via ${newOrder.channel}]${newOrder.notes ? '\n' + newOrder.notes : ''}`;
@@ -822,6 +854,9 @@ export default function Orders() {
   const removeBulkItemRow = (oIdx, iIdx) => setBulkOrders(prev => { const c = [...prev]; c[oIdx] = { ...c[oIdx], items: c[oIdx].items.filter((_, i) => i !== iIdx) }; return c; });
   const pickBulkProduct = (oIdx, iIdx, productId) => {
     const p = products.find(pr => String(pr.id) === String(productId));
+    if (p && p.is_active === false) {
+      showToast('Notice', `${p.name} is hidden / out of stock.`, 'warning');
+    }
     setBulkOrders(prev => {
       const c = [...prev]; const it = [...c[oIdx].items];
       it[iIdx] = { ...it[iIdx], product: productId, name: p ? p.name : '', price: p ? String(p.price) : '' };
@@ -848,10 +883,20 @@ export default function Orders() {
       }));
       const productIds = Object.keys(qtyNeeded);
       if (productIds.length > 0) {
-        const { data: stockData } = await supabase.from('products').select('id,name,stock').in('id', productIds);
+        const { data: stockData } = await supabase.from('products').select('id,name,stock,is_active,deleted_at').in('id', productIds);
         if (stockData) {
           const stockMap = Object.fromEntries(stockData.map(p => [String(p.id), p]));
-          const failures = Object.entries(qtyNeeded).filter(([id, qty]) => { const p = stockMap[id]; return p && p.stock < qty; });
+          const inactiveFailures = Object.keys(qtyNeeded).filter(id => {
+            const p = stockMap[id];
+            return p && (p.is_active === false || p.deleted_at !== null);
+          });
+          if (inactiveFailures.length) {
+            const msg = inactiveFailures.map(id => `${stockMap[id]?.name || 'Item'} is hidden / out of stock`).join(' · ');
+            showToast('Order creation failed', msg, 'error');
+            setSavingBulk(false);
+            return;
+          }
+          const failures = Object.entries(qtyNeeded).filter(([id, qty]) => { const p = stockMap[id]; return p && p.stock !== null && p.stock < qty; });
           if (failures.length) {
             const msg = failures.map(([id]) => { const p = stockMap[id]; return p.stock === 0 ? `${p.name} is out of stock` : `Insufficient stock for ${p.name} (need ${qtyNeeded[id]}, have ${p.stock})`; }).join(' · ');
             showToast('Stock check failed', msg, 'error');
@@ -1836,7 +1881,10 @@ export default function Orders() {
                     <CustomSelect
                       value={item.product}
                       onChange={e => e.target.value ? pickProduct(i, e.target.value) : updateItemField(i, 'product', '')}
-                      options={[{ value: '', label: '— Custom Product —' }, ...products.map(p => ({ value: p.id, label: p.name }))]}
+                      options={[{ value: '', label: '— Custom Product —' }, ...products.map(p => ({
+                        value: p.id,
+                        label: p.is_active === false ? `${p.name} (Hidden / Out of Stock)` : p.name
+                      }))]}
                     />
                   </div>
                 )}
@@ -1982,7 +2030,10 @@ export default function Orders() {
                                 onChange={e => e.target.value ? pickBulkProduct(oIdx, iIdx, e.target.value) : updateBulkItemField(oIdx, iIdx, 'product', '')}
                                 options={[
                                   { value: '', label: '— Custom Product —' },
-                                  ...products.map(p => ({ value: p.id, label: p.name }))
+                                  ...products.map(p => ({
+                                    value: p.id,
+                                    label: p.is_active === false ? `${p.name} (Hidden / Out of Stock)` : p.name
+                                  }))
                                 ]}
                               />
                             </div>

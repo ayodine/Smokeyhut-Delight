@@ -1,13 +1,28 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useCart } from '../context/CartContext';
 import { useNavigate } from 'react-router-dom';
-import { ShoppingCart, Trash2, Clock, Gift } from 'lucide-react';
+import { ShoppingCart, Trash2, Clock, Gift, AlertTriangle } from 'lucide-react';
 import { anyItemPastCutoff } from '../lib/deliveryCutoff';
+import { verifyCartItemsAvailability } from '../lib/productAvailability';
 import PromoProgressBanner from './PromoProgressBanner';
 
 export default function CartSidebar({ isOpen, onClose }) {
   const { items, updateQty, removeItem, total, itemCount, promoRewardItem } = useCart();
   const navigate = useNavigate();
+
+  const [unavailableItems, setUnavailableItems] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!isOpen || !items || items.length === 0) {
+      setUnavailableItems([]);
+      return;
+    }
+    verifyCartItemsAvailability(items).then(res => {
+      if (!cancelled) setUnavailableItems(res.unavailableItems || []);
+    });
+    return () => { cancelled = true; };
+  }, [isOpen, items]);
 
   const fmt = (n) => '₦' + Number(n).toLocaleString();
 
@@ -24,6 +39,12 @@ export default function CartSidebar({ isOpen, onClose }) {
             <PromoProgressBanner variant="compact" />
           </div>
         )}
+        {unavailableItems.length > 0 && (
+          <div style={{ margin: '0 16px 12px', padding: '10px 12px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.78rem', color: '#b91c1c', fontWeight: 600 }}>
+            <AlertTriangle size={15} color="#b91c1c" style={{ flexShrink: 0 }} />
+            <span>Some items are out of stock / unavailable.</span>
+          </div>
+        )}
         <div className="cart-items">
 
           {items.length === 0 ? (
@@ -34,27 +55,36 @@ export default function CartSidebar({ isOpen, onClose }) {
             </div>
           ) : (
             <>
-              {items.map(item => (
-                <div key={item.id} className="cart-item">
-                  <div className="cart-item-emoji" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                    {item.image ? (
-                      <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    ) : (
-                      <div style={{ width: '100%', height: '100%', background: 'var(--black3)' }} />
-                    )}
-                  </div>
-                  <div className="cart-item-info">
-                    <div className="cart-item-name">{item.name}</div>
-                    <div className="cart-item-price">{fmt(item.price * item.qty)}</div>
-                    <div className="cart-qty">
-                      <button className="qty-btn" onClick={() => updateQty(item.id, item.qty - 1)}>−</button>
-                      <span className="qty-num">{item.qty}</span>
-                      <button className="qty-btn" onClick={() => updateQty(item.id, item.qty + 1)}>+</button>
+              {items.map(item => {
+                const isUnavailable = unavailableItems.some(u => String(u.id) === String(item.id));
+                return (
+                  <div key={item.id} className="cart-item" style={isUnavailable ? { background: '#fff5f5' } : {}}>
+                    <div className="cart-item-emoji" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                      {item.image ? (
+                        <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <div style={{ width: '100%', height: '100%', background: 'var(--black3)' }} />
+                      )}
                     </div>
+                    <div className="cart-item-info">
+                      <div className="cart-item-name">{item.name}</div>
+                      {isUnavailable ? (
+                        <span style={{ display: 'inline-block', fontSize: '0.68rem', fontWeight: 800, color: '#b91c1c', background: '#fee2e2', padding: '1px 5px', borderRadius: 4, marginTop: 2 }}>
+                          Out of stock / Hidden
+                        </span>
+                      ) : (
+                        <div className="cart-item-price">{fmt(item.price * item.qty)}</div>
+                      )}
+                      <div className="cart-qty">
+                        <button className="qty-btn" onClick={() => updateQty(item.id, item.qty - 1)}>−</button>
+                        <span className="qty-num">{item.qty}</span>
+                        <button className="qty-btn" onClick={() => updateQty(item.id, item.qty + 1)}>+</button>
+                      </div>
+                    </div>
+                    <button className="cart-remove" onClick={() => removeItem(item.id)}><Trash2 size={18} color="var(--text-muted)" /></button>
                   </div>
-                  <button className="cart-remove" onClick={() => removeItem(item.id)}><Trash2 size={18} color="var(--text-muted)" /></button>
-                </div>
-              ))}
+                );
+              })}
 
               {promoRewardItem && (
                 <div className="cart-item" style={{ background: 'rgba(34, 197, 94, 0.08)', borderRadius: 10, border: '1px dashed #22c55e', padding: '10px 12px', marginTop: 8 }}>
@@ -93,7 +123,7 @@ export default function CartSidebar({ isOpen, onClose }) {
             )}
             <div className="cart-note">Delivery fee calculated at checkout. Order before 10am for same-day delivery.</div>
             <button className="checkout-btn" onClick={() => { onClose(); navigate('/cart'); }}>
-              View Cart Details →
+              {unavailableItems.length > 0 ? 'View Cart & Remove Unavailable Items →' : 'View Cart Details →'}
             </button>
           </div>
         )}

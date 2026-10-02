@@ -17,6 +17,7 @@ import { checkCustomerAlreadyUsedCoupon, isCustomerEligibleForCoupon, isCouponEx
 import { trackViewContent, trackInitiateCheckout, trackAddPaymentInfo, trackPurchase, splitFullName } from '../../lib/analytics';
 import { getAttribution, formatAttributionForNotes } from '../../lib/attribution';
 import PromoProgressBanner from '../../components/PromoProgressBanner';
+import { verifyCartItemsAvailability } from '../../lib/productAvailability';
 import {
   ShoppingCart, X, Truck, Store as StoreIcon, Loader2, MapPin,
   MessageCircle, Banknote, Plus, Minus, Trash2, Tag, Copy, CheckCircle,
@@ -57,9 +58,42 @@ async function notify(type, order) {
 }
 
 export default function MenuPage() {
-  const { items, updateQty, clearCart, total, itemCount, promoRewardItem } = useCart();
+  const { items, updateQty, clearCart, total, itemCount, promoRewardItem, removeItem } = useCart();
   const { showToast } = useToast();
   const { settings } = useSettings();
+
+  // Availability validation state
+  const [unavailableItems, setUnavailableItems] = useState([]);
+  const [isVerifyingAvailability, setIsVerifyingAvailability] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!items || items.length === 0) {
+      setUnavailableItems([]);
+      return;
+    }
+    setIsVerifyingAvailability(true);
+    verifyCartItemsAvailability(items).then(res => {
+      if (!cancelled) {
+        setUnavailableItems(res.unavailableItems || []);
+        setIsVerifyingAvailability(false);
+      }
+    }).catch(() => {
+      if (!cancelled) setIsVerifyingAvailability(false);
+    });
+    return () => { cancelled = true; };
+  }, [items]);
+
+  const handleRemoveUnavailableItems = () => {
+    const idsToRemove = new Set(unavailableItems.map(u => String(u.id)));
+    items.forEach(i => {
+      if (idsToRemove.has(String(i.id))) {
+        removeItem(i.id);
+      }
+    });
+    setUnavailableItems([]);
+    showToast('Bag updated', 'Unavailable items have been removed.', 'success');
+  };
 
   // Product grid state
   const [products, setProducts]     = useState([]);
@@ -398,6 +432,15 @@ export default function MenuPage() {
     }
     const amountSnapshot = amountToPayNow;
     setProcessing(true);
+
+    const stockCheck = await verifyCartItemsAvailability(itemsSnapshot);
+    if (!stockCheck.isValid) {
+      setUnavailableItems(stockCheck.unavailableItems || []);
+      showToast('Cannot place order', stockCheck.errorSummary || 'Some items in your bag are no longer available.', 'error');
+      setProcessing(false);
+      return;
+    }
+
     let orderId;
     try {
       const payload = buildOrderPayload('bank_transfer', itemsSnapshot);
@@ -512,6 +555,14 @@ export default function MenuPage() {
       itemsSnapshot.push({ id: null, name: 'Free Guinea Fowl (Promo)', price: 0, qty: 1 });
     }
     setProcessing(true);
+
+    const stockCheck = await verifyCartItemsAvailability(itemsSnapshot);
+    if (!stockCheck.isValid) {
+      setUnavailableItems(stockCheck.unavailableItems || []);
+      showToast('Cannot place order', stockCheck.errorSummary || 'Some items in your bag are no longer available.', 'error');
+      setProcessing(false);
+      return;
+    }
 
     trackAddPaymentInfo({
       total: Number(amountToPayNow),
@@ -852,6 +903,50 @@ export default function MenuPage() {
             </div>
           </div>
 
+          {/* Unavailable items alert banner */}
+          {unavailableItems.length > 0 && (
+            <div style={{
+              margin: '12px 14px 0',
+              borderRadius: 14,
+              border: '1.5px solid #f87171',
+              background: '#fef2f2',
+              padding: '12px 16px',
+              boxShadow: '0 2px 8px rgba(239, 68, 68, 0.08)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 8, flex: 1, minWidth: 200 }}>
+                  <AlertTriangle size={18} color="#b91c1c" style={{ flexShrink: 0, marginTop: 2 }} />
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: '0.85rem', color: '#991b1b', marginBottom: 2 }}>
+                      Some items are no longer available
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#b91c1c', lineHeight: 1.35 }}>
+                      {unavailableItems.map(u => u.message).join(' · ')}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRemoveUnavailableItems}
+                  style={{
+                    background: '#b91c1c',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '6px 12px',
+                    fontSize: '0.75rem',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0
+                  }}
+                >
+                  Remove items
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Cart Items */}
           <div style={{ background: '#fff', margin: '12px 14px', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
             <div style={{ padding: '14px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -866,37 +961,46 @@ export default function MenuPage() {
               </div>
             ) : (
               <div>
-                {items.map((item, idx) => (
-                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: (idx < items.length - 1 || promoRewardItem) ? '1px solid #f5f5f5' : 'none' }}>
-                    <div style={{ position: 'relative', flexShrink: 0 }}>
-                      <div style={{ width: 56, height: 56, borderRadius: 12, overflow: 'hidden', background: '#f5f5f7', border: '1px solid #e5e5e5' }}>
-                        {item.image
-                          ? <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ccc' }}><Utensils size={20} /></div>
-                        }
+                {items.map((item, idx) => {
+                  const isUnavailable = unavailableItems.some(u => String(u.id) === String(item.id));
+                  return (
+                    <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: (idx < items.length - 1 || promoRewardItem) ? '1px solid #f5f5f5' : 'none', background: isUnavailable ? '#fff5f5' : 'transparent' }}>
+                      <div style={{ position: 'relative', flexShrink: 0 }}>
+                        <div style={{ width: 56, height: 56, borderRadius: 12, overflow: 'hidden', background: '#f5f5f7', border: isUnavailable ? '1px solid #fca5a5' : '1px solid #e5e5e5' }}>
+                          {item.image
+                            ? <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ccc' }}><Utensils size={20} /></div>
+                          }
+                        </div>
+                        <span style={{ position: 'absolute', top: -6, right: -6, background: '#c0201f', color: '#fff', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 900 }}>
+                          {item.qty}
+                        </span>
                       </div>
-                      <span style={{ position: 'absolute', top: -6, right: -6, background: '#c0201f', color: '#fff', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 900 }}>
-                        {item.qty}
-                      </span>
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
-                      <div style={{ fontSize: '0.8rem', color: '#888', marginTop: 2 }}>{fmt(item.price)} each</div>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
-                      <div style={{ fontWeight: 800, fontSize: '0.9rem', color: '#111' }}>{fmt(item.price * item.qty)}</div>
-                      <div style={{ display: 'flex', alignItems: 'center', background: '#f5f5f7', borderRadius: 8, border: '1px solid #e5e5e5', overflow: 'hidden' }}>
-                        <button onClick={() => updateQty(item.id, item.qty - 1)} style={{ width: 28, height: 28, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555' }}>
-                          {item.qty === 1 ? <Trash2 size={13} color="#ef4444" /> : <Minus size={13} />}
-                        </button>
-                        <span style={{ fontWeight: 800, fontSize: '0.82rem', minWidth: 20, textAlign: 'center', color: '#111' }}>{item.qty}</span>
-                        <button onClick={() => updateQty(item.id, item.qty + 1)} style={{ width: 28, height: 28, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555' }}>
-                          <Plus size={13} />
-                        </button>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: '0.9rem', color: isUnavailable ? '#991b1b' : '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
+                        {isUnavailable ? (
+                          <div style={{ display: 'inline-block', background: '#fee2e2', color: '#b91c1c', fontSize: '0.7rem', fontWeight: 800, padding: '2px 6px', borderRadius: 4, marginTop: 2 }}>
+                            Out of stock / Hidden
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '0.8rem', color: '#888', marginTop: 2 }}>{fmt(item.price)} each</div>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
+                        <div style={{ fontWeight: 800, fontSize: '0.9rem', color: isUnavailable ? '#991b1b' : '#111' }}>{fmt(item.price * item.qty)}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', background: '#f5f5f7', borderRadius: 8, border: '1px solid #e5e5e5', overflow: 'hidden' }}>
+                          <button onClick={() => updateQty(item.id, item.qty - 1)} style={{ width: 28, height: 28, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555' }}>
+                            {item.qty === 1 ? <Trash2 size={13} color="#ef4444" /> : <Minus size={13} />}
+                          </button>
+                          <span style={{ fontWeight: 800, fontSize: '0.82rem', minWidth: 20, textAlign: 'center', color: '#111' }}>{item.qty}</span>
+                          <button onClick={() => updateQty(item.id, item.qty + 1)} style={{ width: 28, height: 28, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555' }}>
+                            <Plus size={13} />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {promoRewardItem && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: 'rgba(34, 197, 94, 0.05)', borderTop: '1px dashed rgba(34, 197, 94, 0.3)' }}>
                     <div style={{ position: 'relative', flexShrink: 0 }}>
@@ -1257,7 +1361,8 @@ export default function MenuPage() {
 
             {/* Complete Order button */}
             {(() => {
-              const disabled = processing;
+              const hasUnavailable = unavailableItems.length > 0;
+              const disabled = processing || hasUnavailable;
               return (
             <div style={{ margin: '0 14px 12px' }}>
               <button
@@ -1266,7 +1371,9 @@ export default function MenuPage() {
                 style={{ width: '100%', padding: '16px', borderRadius: 14, background: disabled ? 'rgba(192,32,31,0.45)' : '#c0201f', color: '#fff', border: 'none', fontWeight: 900, fontSize: '1rem', cursor: disabled ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, letterSpacing: '-0.01em', transition: 'background 0.2s' }}>
                 {processing
                   ? <><Loader2 size={18} className="spin" /> Processing…</>
-                  : <><PaystackIcon size={20} /> Pay {fmt(amountToPayNow)} securely</>
+                  : hasUnavailable
+                    ? <>Unavailable items in bag — remove to pay</>
+                    : <><PaystackIcon size={20} /> Pay {fmt(amountToPayNow)} securely</>
                 }
               </button>
             </div>

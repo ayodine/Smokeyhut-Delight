@@ -16,6 +16,7 @@ import { trackInitiateCheckout, trackAddPaymentInfo, trackPurchase, updateSnapch
 import { getAttribution, formatAttributionForNotes } from '../../lib/attribution';
 import CheckoutDisclaimerModal from '../../components/CheckoutDisclaimerModal';
 import PromoProgressBanner from '../../components/PromoProgressBanner';
+import { verifyCartItemsAvailability } from '../../lib/productAvailability';
 import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Search, MapPin, Tag, X, Copy, Banknote, Send, ClipboardList, Utensils, AlertTriangle, Clock, Lightbulb, Gift } from 'lucide-react';
 
 const SUPABASE_URL        = import.meta.env.VITE_SUPABASE_URL;
@@ -50,10 +51,43 @@ const PaystackIcon = ({ size = 20 }) => (
 );
 
 export default function Checkout() {
-  const { items, total, clearCart, cartSessionId, promoteStage, captureContact, markConverted, promoRewardItem } = useCart();
+  const { items, total, clearCart, cartSessionId, promoteStage, captureContact, markConverted, promoRewardItem, removeItem } = useCart();
   const { showToast } = useToast();
   const { settings } = useSettings();
   const fmt = (n) => '₦' + Number(n).toLocaleString();
+
+  // Availability validation state
+  const [unavailableItems, setUnavailableItems] = useState([]);
+  const [isVerifyingAvailability, setIsVerifyingAvailability] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!items || items.length === 0) {
+      setUnavailableItems([]);
+      return;
+    }
+    setIsVerifyingAvailability(true);
+    verifyCartItemsAvailability(items).then(res => {
+      if (!cancelled) {
+        setUnavailableItems(res.unavailableItems || []);
+        setIsVerifyingAvailability(false);
+      }
+    }).catch(() => {
+      if (!cancelled) setIsVerifyingAvailability(false);
+    });
+    return () => { cancelled = true; };
+  }, [items]);
+
+  const handleRemoveUnavailableItems = () => {
+    const idsToRemove = new Set(unavailableItems.map(u => String(u.id)));
+    items.forEach(i => {
+      if (idsToRemove.has(String(i.id))) {
+        removeItem(i.id);
+      }
+    });
+    setUnavailableItems([]);
+    showToast('Bag updated', 'Unavailable items have been removed.', 'success');
+  };
 
   // Delivery state
   const [deliveryType, setDeliveryType] = useState('delivery'); // 'delivery' | 'pickup'
@@ -442,7 +476,13 @@ export default function Checkout() {
 
 
 
-  const checkStock = async (_itemsSnapshot) => {
+  const checkStock = async (itemsSnapshot) => {
+    const res = await verifyCartItemsAvailability(itemsSnapshot);
+    if (!res.isValid) {
+      setUnavailableItems(res.unavailableItems || []);
+      return res.unavailableItems;
+    }
+    setUnavailableItems([]);
     return null;
   };
 
@@ -492,7 +532,7 @@ export default function Checkout() {
     const stockFailures = await checkStock(itemsSnapshot);
     if (stockFailures?.length) {
       const msg = stockFailures
-        .map(i => i.available === 0 ? `${i.name} is out of stock` : `Only ${i.available} left of ${i.name}`)
+        .map(i => i.message || (i.availableStock === 0 ? `${i.name} is out of stock` : `Only ${i.availableStock} left of ${i.name}`))
         .join(' · ');
       showToast('Cannot place order', msg, 'error');
       setProcessing(false);
@@ -602,7 +642,7 @@ export default function Checkout() {
     const stockFailures = await checkStock(itemsSnapshot);
     if (stockFailures?.length) {
       const msg = stockFailures
-        .map(i => i.available === 0 ? `${i.name} is out of stock` : `Only ${i.available} left of ${i.name}`)
+        .map(i => i.message || (i.availableStock === 0 ? `${i.name} is out of stock` : `Only ${i.availableStock} left of ${i.name}`))
         .join(' · ');
       showToast('Cannot place order', msg, 'error');
       setProcessing(false);
@@ -723,27 +763,92 @@ export default function Checkout() {
           </div>
         </div>
 
+        {/* Unavailable items alert banner */}
+        {unavailableItems.length > 0 && (
+          <div style={{
+            marginBottom: 16,
+            borderRadius: 14,
+            border: '1.5px solid #f87171',
+            background: '#fef2f2',
+            padding: '14px 16px',
+            boxShadow: '0 2px 8px rgba(239, 68, 68, 0.08)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 10, flex: 1, minWidth: 240 }}>
+                <AlertTriangle size={20} color="#b91c1c" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '0.9rem', color: '#991b1b', marginBottom: 4 }}>
+                    Some items in your bag are no longer available
+                  </div>
+                  <div style={{ fontSize: '0.82rem', color: '#b91c1c', lineHeight: 1.4 }}>
+                    {unavailableItems.map(u => u.message).join(' · ')}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleRemoveUnavailableItems}
+                style={{
+                  background: '#b91c1c',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  padding: '8px 14px',
+                  fontSize: '0.8rem',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0
+                }}
+              >
+                Remove unavailable items
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Order Items */}
         <div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 14 }}>
           <div style={{ padding: '14px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontWeight: 800, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.07em', color: '#888' }}>Order Summary</span>
             <span style={{ fontWeight: 800, fontSize: '0.78rem', color: '#c0201f' }}>{fmt(total)}</span>
           </div>
-          {items.map((item, idx) => (
-            <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: (idx < items.length - 1 || promoRewardItem) ? '1px solid #f5f5f5' : 'none' }}>
-              <div style={{ position: 'relative', flexShrink: 0 }}>
-                <div style={{ width: 52, height: 52, borderRadius: 10, overflow: 'hidden', background: '#f5f5f7', border: '1px solid #e5e5e5' }}>
-                  {item.image ? <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Utensils size={20} color="#ccc" /></div>}
+          {items.map((item, idx) => {
+            const isUnavailable = unavailableItems.some(u => String(u.id) === String(item.id));
+            return (
+              <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: (idx < items.length - 1 || promoRewardItem) ? '1px solid #f5f5f5' : 'none', background: isUnavailable ? '#fff5f5' : 'transparent' }}>
+                <div style={{ position: 'relative', flexShrink: 0 }}>
+                  <div style={{ width: 52, height: 52, borderRadius: 10, overflow: 'hidden', background: '#f5f5f7', border: isUnavailable ? '1px solid #fca5a5' : '1px solid #e5e5e5' }}>
+                    {item.image ? <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Utensils size={20} color="#ccc" /></div>}
+                  </div>
+                  <span style={{ position: 'absolute', top: -6, right: -6, background: '#c0201f', color: '#fff', borderRadius: '50%', width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 900 }}>{item.qty}</span>
                 </div>
-                <span style={{ position: 'absolute', top: -6, right: -6, background: '#c0201f', color: '#fff', borderRadius: '50%', width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 900 }}>{item.qty}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.88rem', color: isUnavailable ? '#991b1b' : '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
+                  {isUnavailable ? (
+                    <div style={{ display: 'inline-block', background: '#fee2e2', color: '#b91c1c', fontSize: '0.7rem', fontWeight: 800, padding: '2px 6px', borderRadius: 4, marginTop: 2 }}>
+                      No longer available (Out of stock)
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.78rem', color: '#888', marginTop: 2 }}>{fmt(item.price)} each</div>
+                  )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                  <div style={{ fontWeight: 800, fontSize: '0.9rem', color: isUnavailable ? '#991b1b' : '#111' }}>{fmt(item.price * item.qty)}</div>
+                  {isUnavailable && (
+                    <button
+                      type="button"
+                      onClick={() => removeItem(item.id)}
+                      title="Remove item"
+                      style={{ background: 'none', border: 'none', color: '#b91c1c', cursor: 'pointer', padding: 4 }}
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
-                <div style={{ fontSize: '0.78rem', color: '#888', marginTop: 2 }}>{fmt(item.price)} each</div>
-              </div>
-              <div style={{ fontWeight: 800, fontSize: '0.9rem', color: '#111', flexShrink: 0 }}>{fmt(item.price * item.qty)}</div>
-            </div>
-          ))}
+            );
+          })}
 
           {/* Render Unlocked Free Promo Reward Item */}
           {promoRewardItem && (
@@ -1094,13 +1199,16 @@ export default function Checkout() {
 
         {/* Complete Order button */}
         {(() => {
-          const disabled = processing;
+          const hasUnavailable = unavailableItems.length > 0;
+          const disabled = processing || hasUnavailable;
           return (
         <button
           onClick={() => handlePaystack()}
           disabled={disabled}
           style={{ width: '100%', padding: '16px', borderRadius: 14, background: disabled ? 'rgba(192,32,31,0.45)' : '#c0201f', color: '#fff', border: 'none', fontWeight: 900, fontSize: '1rem', cursor: disabled ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, letterSpacing: '-0.01em', transition: 'background 0.2s' }}>
-          {processing ? <><Loader2 size={18} className="spin" /> Processing…</> : (
+          {processing ? <><Loader2 size={18} className="spin" /> Processing…</> : hasUnavailable ? (
+            <>Unavailable items in bag — remove to pay</>
+          ) : (
             <><PaystackIcon size={20} /> Pay {fmt(amountToPayNow)} securely</>
           )}
         </button>
