@@ -896,13 +896,6 @@ export default function Orders() {
             setSavingBulk(false);
             return;
           }
-          const failures = Object.entries(qtyNeeded).filter(([id, qty]) => { const p = stockMap[id]; return p && p.stock !== null && p.stock < qty; });
-          if (failures.length) {
-            const msg = failures.map(([id]) => { const p = stockMap[id]; return p.stock === 0 ? `${p.name} is out of stock` : `Insufficient stock for ${p.name} (need ${qtyNeeded[id]}, have ${p.stock})`; }).join(' · ');
-            showToast('Stock check failed', msg, 'error');
-            setSavingBulk(false);
-            return;
-          }
         }
       }
 

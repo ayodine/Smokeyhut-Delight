@@ -28,9 +28,9 @@ describe('verifyCartItemsAvailability', () => {
     expect(res.unavailableItems).toEqual([]);
   });
 
-  it('validates active products with adequate stock', async () => {
+  it('validates active products regardless of stock number (e.g. stock: 0)', async () => {
     const mockDb = createMockSupabase([
-      { id: 101, name: 'Smoked Guinea Fowl', is_active: true, deleted_at: null, stock: 15 },
+      { id: 101, name: 'Smoked Guinea Fowl', is_active: true, deleted_at: null, stock: 0 },
       { id: 102, name: 'Jollof Rice', is_active: true, deleted_at: null, stock: null },
     ]);
 
@@ -87,20 +87,18 @@ describe('verifyCartItemsAvailability', () => {
     expect(res.unavailableItems[0].message).toContain('Ghost Product is no longer available');
   });
 
-  it('identifies insufficient stock when total requested exceeds stock', async () => {
+  it('allows high quantity orders for active products even if stock column has 0', async () => {
     const mockDb = createMockSupabase([
-      { id: 101, name: 'Party Pack', is_active: true, deleted_at: null, stock: 2 },
+      { id: 101, name: 'Party Pack', is_active: true, deleted_at: null, stock: 0 },
     ]);
 
     const items = [
-      { id: 101, name: 'Party Pack', qty: 2 },
-      { id: 101, name: 'Party Pack', qty: 2 }, // Duplicate line item -> sum is 4
+      { id: 101, name: 'Party Pack', qty: 10 },
     ];
 
     const res = await verifyCartItemsAvailability(items, mockDb);
-    expect(res.isValid).toBe(false);
-    expect(res.unavailableItems[0].reason).toBe('out_of_stock');
-    expect(res.unavailableItems[0].message).toContain('Only 2 left of Party Pack (you have 4 in bag)');
+    expect(res.isValid).toBe(true);
+    expect(res.unavailableItems.length).toBe(0);
   });
 
   it('handles database query errors gracefully by failing safely', async () => {

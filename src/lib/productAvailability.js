@@ -5,7 +5,10 @@ import { publicSupabase } from './supabase';
  * Validates whether items are:
  * 1. Active (is_active !== false)
  * 2. Not soft-deleted (deleted_at IS NULL)
- * 3. In stock (stock === null or stock >= requested quantity)
+ *
+ * NOTE: The store does NOT use product numerical stock.
+ * Hidden at the backend (is_active === false) means out of stock.
+ * Visible (is_active !== false) means available.
  *
  * @param {Array} items - Cart items with { id, name, qty, ... }
  * @param {object} supabaseClient - Supabase client instance (defaults to publicSupabase)
@@ -38,12 +41,11 @@ export async function verifyCartItemsAvailability(items = [], supabaseClient = p
   try {
     const { data: dbProducts, error } = await supabaseClient
       .from('products')
-      .select('id, name, is_active, deleted_at, stock')
+      .select('id, name, is_active, deleted_at')
       .in('id', productIds);
 
     if (error) {
       console.error('Error verifying product availability:', error);
-      // If error occurs, fail open or closed? In e-commerce checkout verification, fail closed to prevent dead orders.
       return {
         isValid: false,
         unavailableItems: [{
@@ -91,18 +93,6 @@ export async function verifyCartItemsAvailability(items = [], supabaseClient = p
           reason: 'hidden',
           message: `${dbProd.name || name} is currently out of stock / unavailable`,
           availableStock: 0,
-          requestedQty: requested
-        });
-      } else if (dbProd.stock !== null && dbProd.stock !== undefined && Number(dbProd.stock) < requested) {
-        const stockNum = Number(dbProd.stock);
-        unavailableItems.push({
-          id: dbProd.id,
-          name: dbProd.name || name,
-          reason: 'out_of_stock',
-          message: stockNum <= 0
-            ? `${dbProd.name || name} is out of stock`
-            : `Only ${stockNum} left of ${dbProd.name || name} (you have ${requested} in bag)`,
-          availableStock: stockNum,
           requestedQty: requested
         });
       }
