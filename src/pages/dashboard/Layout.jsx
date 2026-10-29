@@ -368,7 +368,7 @@ export default function DashboardLayout() {
             )}
           </div>
         </header>
-        <div className="dash-content">
+        <div className={`dash-content ${location.pathname === '/admin/pos' ? 'pos-dash-content' : ''}`}>
           {isRouteAllowed
             ? <Outlet context={{ selectedStore }} />
             : (userRole && firstAllowedPath ? <Navigate to={firstAllowedPath} replace /> : null)

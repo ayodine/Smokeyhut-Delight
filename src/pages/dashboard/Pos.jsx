@@ -755,22 +755,25 @@ export default function Pos() {
     <div className="pos-container" style={{
       display: 'flex',
       flexDirection: 'column',
-      gap: 16,
-      minHeight: 'calc(100vh - 120px)',
-      fontFamily: "'DM Sans', sans-serif"
+      gap: 12,
+      height: 'calc(100vh - 80px)',
+      maxHeight: 'calc(100vh - 80px)',
+      fontFamily: "'DM Sans', sans-serif",
+      overflow: 'hidden'
     }}>
       {/* ── 1. POS TOP STATUS BAR ── */}
       <div style={{
         background: 'var(--card-bg, #FFFFFF)',
         border: '1px solid var(--border-subtle, rgba(0,0,0,0.08))',
-        borderRadius: 16,
-        padding: '16px 20px',
+        borderRadius: 14,
+        padding: '10px 16px',
         display: 'flex',
         flexWrap: 'wrap',
         alignItems: 'center',
         justifyContent: 'space-between',
-        gap: 16,
-        boxShadow: 'var(--shadow, 0 2px 12px rgba(0,0,0,0.06))'
+        gap: 12,
+        flexShrink: 0,
+        boxShadow: 'var(--shadow, 0 1px 6px rgba(0,0,0,0.04))'
       }}>
         {/* Left: Store Title */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -827,19 +830,30 @@ export default function Pos() {
 
       {/* ── 2. MAIN POS WORKSPACE: CATALOG (LEFT) & BASKET (RIGHT) ── */}
       <div className="pos-main-grid" style={{
+        flex: 1,
+        minHeight: 0,
         display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1fr) 460px',
-        gap: 16,
-        alignItems: 'flex-start'
+        gridTemplateColumns: 'minmax(0, 1fr) 450px',
+        gap: 14,
+        alignItems: 'stretch',
+        overflow: 'hidden'
       }}>
         {/* ── LEFT COLUMN: PRODUCT SEARCH, CATEGORIES & TOUCH PRODUCT GRID ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+          height: '100%',
+          minHeight: 0,
+          overflow: 'hidden'
+        }}>
           {/* Product Items Search Bar (Above Categories) */}
           <div style={{
             position: 'relative',
             width: '100%',
             display: 'flex',
-            alignItems: 'center'
+            alignItems: 'center',
+            flexShrink: 0
           }}>
             <Search size={18} style={{ position: 'absolute', left: 16, color: 'var(--text-muted, #888)' }} />
             <input
@@ -971,9 +985,14 @@ export default function Pos() {
             </div>
           ) : (
             <div style={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: 'auto',
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-              gap: 14
+              gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))',
+              gap: 12,
+              paddingRight: 4,
+              paddingBottom: 16
             }}>
               {filteredProducts.map(product => {
                 const cardQty = getCardQty(product.id);
@@ -1214,16 +1233,14 @@ export default function Pos() {
 
         {/* ── RIGHT COLUMN: FIXED ORDER / BASKET & CHECKOUT CONSOLE (VIEWPORT PINNED) ── */}
         <div style={{
-          position: 'sticky',
-          top: 80,
-          height: 'calc(100vh - 100px)',
-          maxHeight: 'calc(100vh - 100px)',
+          height: '100%',
+          maxHeight: '100%',
           background: 'var(--card-bg, #FFFFFF)',
           border: '1px solid var(--border-subtle, rgba(0,0,0,0.08))',
-          borderRadius: 20,
+          borderRadius: 18,
           display: 'flex',
           flexDirection: 'column',
-          boxShadow: 'var(--shadow-lg, 0 16px 48px rgba(0,0,0,0.12))',
+          boxShadow: 'var(--shadow, 0 4px 20px rgba(0,0,0,0.06))',
           overflow: 'hidden'
         }}>
           {/* Basket Header */}
@@ -2266,7 +2283,7 @@ export default function Pos() {
                 ) : (
                   <>
                     <CheckCircle2 size={18} />
-                    <span>Place Order</span>
+                    <span>{cart.length > 0 ? `Charge ${fmt(grandTotal)}` : 'Charge ₦0'}</span>
                   </>
                 )}
               </button>

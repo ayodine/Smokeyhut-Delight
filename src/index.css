@@ -1328,6 +1328,14 @@ section { padding: 80px 20px; }
   max-width: 100%;
   box-sizing: border-box;
 }
+@media (min-width: 1025px) {
+  .pos-dash-content {
+    padding: 14px 20px !important;
+    height: calc(100vh - 65px) !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
+  }
+}
 .dash-menu-toggle { display: none; }
 .dash-sidebar-overlay { display: none; }
 
