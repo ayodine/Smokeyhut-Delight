@@ -1330,9 +1330,7 @@ section { padding: 80px 20px; }
 }
 @media (min-width: 1025px) {
   .pos-dash-content {
-    padding: 14px 20px !important;
-    height: calc(100vh - 65px) !important;
-    overflow: hidden !important;
+    padding: 20px 24px !important;
     box-sizing: border-box !important;
   }
 }

@@ -755,11 +755,9 @@ export default function Pos() {
     <div className="pos-container" style={{
       display: 'flex',
       flexDirection: 'column',
-      gap: 12,
-      height: 'calc(100vh - 80px)',
-      maxHeight: 'calc(100vh - 80px)',
-      fontFamily: "'DM Sans', sans-serif",
-      overflow: 'hidden'
+      gap: 16,
+      minHeight: 'calc(100vh - 100px)',
+      fontFamily: "'DM Sans', sans-serif"
     }}>
       {/* ── 1. POS TOP STATUS BAR ── */}
       <div style={{
@@ -830,22 +828,17 @@ export default function Pos() {
 
       {/* ── 2. MAIN POS WORKSPACE: CATALOG (LEFT) & BASKET (RIGHT) ── */}
       <div className="pos-main-grid" style={{
-        flex: 1,
-        minHeight: 0,
         display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1fr) 450px',
-        gap: 14,
-        alignItems: 'stretch',
-        overflow: 'hidden'
+        gridTemplateColumns: 'minmax(0, 1fr) 460px',
+        gap: 16,
+        alignItems: 'flex-start'
       }}>
         {/* ── LEFT COLUMN: PRODUCT SEARCH, CATEGORIES & TOUCH PRODUCT GRID ── */}
         <div style={{
           display: 'flex',
           flexDirection: 'column',
-          gap: 10,
-          height: '100%',
-          minHeight: 0,
-          overflow: 'hidden'
+          gap: 12,
+          minWidth: 0
         }}>
           {/* Product Items Search Bar (Above Categories) */}
           <div style={{
@@ -985,14 +978,10 @@ export default function Pos() {
             </div>
           ) : (
             <div style={{
-              flex: 1,
-              minHeight: 0,
-              overflowY: 'auto',
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))',
-              gap: 12,
-              paddingRight: 4,
-              paddingBottom: 16
+              gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))',
+              gap: 16,
+              paddingBottom: 24
             }}>
               {filteredProducts.map(product => {
                 const cardQty = getCardQty(product.id);
@@ -1022,7 +1011,10 @@ export default function Pos() {
                     {/* Image Area with Badges */}
                     <div style={{
                       position: 'relative',
-                      height: 140,
+                      width: '100%',
+                      height: 155,
+                      minHeight: 155,
+                      flexShrink: 0,
                       background: 'var(--black2, #F3F0EA)',
                       display: 'flex',
                       alignItems: 'center',
@@ -1036,22 +1028,32 @@ export default function Pos() {
                           style={{
                             width: '100%',
                             height: '100%',
-                            objectFit: 'cover'
+                            objectFit: 'cover',
+                            display: 'block'
                           }}
                           loading="lazy"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            const fallback = e.currentTarget.nextElementSibling;
+                            if (fallback) fallback.style.display = 'flex';
+                          }}
                         />
-                      ) : (
-                        <div style={{
-                          display: 'flex',
+                      ) : null}
+                      <div
+                        style={{
+                          display: product.image ? 'none' : 'flex',
                           flexDirection: 'column',
                           alignItems: 'center',
+                          justifyContent: 'center',
                           gap: 6,
-                          color: 'var(--text-muted, #888)'
-                        }}>
-                          <UtensilsCrossed size={36} style={{ opacity: 0.4 }} />
-                          <span style={{ fontSize: '0.72rem', fontWeight: 600 }}>Smokey Hut</span>
-                        </div>
-                      )}
+                          color: 'var(--text-muted, #888)',
+                          width: '100%',
+                          height: '100%'
+                        }}
+                      >
+                        <UtensilsCrossed size={36} style={{ opacity: 0.4 }} />
+                        <span style={{ fontSize: '0.72rem', fontWeight: 600 }}>Smokey Hut</span>
+                      </div>
 
                       {/* Stock Badge */}
                       <div style={{
@@ -1094,7 +1096,7 @@ export default function Pos() {
 
                     {/* Content Area */}
                     <div style={{
-                      padding: 14,
+                      padding: '14px 14px 16px',
                       display: 'flex',
                       flexDirection: 'column',
                       flex: 1,
@@ -1129,7 +1131,7 @@ export default function Pos() {
                       </div>
 
                       {/* Price & Quantity Controls */}
-                      <div>
+                      <div style={{ marginTop: 'auto' }}>
                         <div style={{
                           fontSize: '1.15rem',
                           fontWeight: 900,
@@ -1141,14 +1143,15 @@ export default function Pos() {
                         </div>
 
                         {/* Stepper + Quick Add Button */}
-                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                           <div style={{
                             display: 'flex',
                             alignItems: 'center',
                             background: 'var(--black2, #F3F0EA)',
                             borderRadius: 10,
-                            padding: '2px',
-                            border: '1px solid var(--border-subtle, rgba(0,0,0,0.06))'
+                            padding: '3px',
+                            border: '1px solid var(--border-subtle, rgba(0,0,0,0.06))',
+                            flexShrink: 0
                           }}>
                             <button
                               onClick={() => setCardQty(product.id, -1)}
@@ -1203,12 +1206,12 @@ export default function Pos() {
                             disabled={isOutOfStock}
                             style={{
                               flex: 1,
-                              height: 34,
+                              height: 36,
                               borderRadius: 10,
                               border: 'none',
                               background: isOutOfStock ? '#ccc' : 'var(--red, #C0201F)',
                               color: '#fff',
-                              fontSize: '0.85rem',
+                              fontSize: '0.86rem',
                               fontWeight: 800,
                               display: 'flex',
                               alignItems: 'center',
@@ -1233,8 +1236,10 @@ export default function Pos() {
 
         {/* ── RIGHT COLUMN: FIXED ORDER / BASKET & CHECKOUT CONSOLE (VIEWPORT PINNED) ── */}
         <div style={{
-          height: '100%',
-          maxHeight: '100%',
+          position: 'sticky',
+          top: 80,
+          height: 'calc(100vh - 100px)',
+          maxHeight: 'calc(100vh - 100px)',
           background: 'var(--card-bg, #FFFFFF)',
           border: '1px solid var(--border-subtle, rgba(0,0,0,0.08))',
           borderRadius: 18,
@@ -2283,7 +2288,7 @@ export default function Pos() {
                 ) : (
                   <>
                     <CheckCircle2 size={18} />
-                    <span>{cart.length > 0 ? `Charge ${fmt(grandTotal)}` : 'Charge ₦0'}</span>
+                    <span>{cart.length > 0 ? `Charge ${fmt(grandTotal)} to Place Order` : 'Charge ₦0 to Place Order'}</span>
                   </>
                 )}
               </button>
