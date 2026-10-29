@@ -16,7 +16,7 @@ const ROLE_INFO = {
 };
 
 const GRANTABLE_PAGES = [
-  'Overview', 'Orders', 'Abandoned Carts', 'Shipping', 'Payments',
+  'Overview', 'Orders', 'POS', 'Abandoned Carts', 'Shipping', 'Payments',
   'Stores', 'Products', 'Customers', 'Zones', 'Coupons', 'Promo Offers',
   'Sales Report', 'Expenses', 'Inventory',
   'Settings',

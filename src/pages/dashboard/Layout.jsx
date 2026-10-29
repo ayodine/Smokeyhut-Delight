@@ -8,7 +8,6 @@ import {
   DollarSign, TrendingUp, Receipt, Archive, ChevronDown, Boxes,
   ChevronLeft, ChevronRight, Shield, Briefcase, Bike, User
 } from 'lucide-react';
-import AdminChatBubble from '../../components/AdminChatBubble';
 import CustomSelect from '../../components/CustomSelect';
 
 const ROLE_METADATA = {
@@ -27,6 +26,7 @@ const allNavItems = [
     type: 'group', icon: Package, label: 'Orders & Sales', roles: ['Admin', 'Manager', 'Rider', 'Staff'],
     children: [
       { to: '/admin/orders',          icon: Package,      label: 'Orders',          roles: ['Admin', 'Manager', 'Staff'] },
+      { to: '/admin/pos',             icon: Store,        label: 'POS',             roles: ['Admin', 'Manager', 'Staff'] },
       { to: '/admin/abandoned-carts', icon: ShoppingCart, label: 'Abandoned Carts', roles: ['Admin', 'Manager', 'Staff'] },
       { to: '/admin/shipping',        icon: Truck,        label: 'Shipping',        roles: ['Admin', 'Manager', 'Rider', 'Staff'] },
       { to: '/admin/payments',        icon: CreditCard,   label: 'Payments',        roles: ['Admin', 'Manager', 'Staff'] },
@@ -83,6 +83,9 @@ function passesPermission(label, role, userPermissions) {
   
   // If the user has specific permissions assigned, STRICTLY enforce them regardless of role
   if (perms.length > 0) {
+    if (label === 'POS') {
+      return perms.some(p => p.startsWith('POS:') || p.startsWith('Orders:'));
+    }
     return perms.some(p => p.startsWith(`${label}:`));
   }
   
@@ -372,7 +375,6 @@ export default function DashboardLayout() {
           }
         </div>
       </main>
-      <AdminChatBubble />
     </div>
   );
 }
