@@ -18,6 +18,7 @@ import { trackViewContent, trackInitiateCheckout, trackAddPaymentInfo, trackPurc
 import { getAttribution, formatAttributionForNotes } from '../../lib/attribution';
 import PromoProgressBanner from '../../components/PromoProgressBanner';
 import { verifyCartItemsAvailability } from '../../lib/productAvailability';
+import StorefrontCalendar from '../../components/StorefrontCalendar';
 import {
   ShoppingCart, X, Truck, Store as StoreIcon, Loader2, MapPin,
   MessageCircle, Banknote, Plus, Minus, Trash2, Tag, Copy, CheckCircle,
@@ -139,7 +140,6 @@ export default function MenuPage() {
   // Schedule Delivery for Later state
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduleDate, setScheduleDate] = useState('');
-  const [scheduleTime, setScheduleTime] = useState('12:00 PM - 02:00 PM');
 
   // Customer form
   const [form, setForm] = useState({ firstName: '', lastName: '', phone: '', email: '', address: '', city: 'Lagos', notes: '' });
@@ -338,7 +338,7 @@ export default function MenuPage() {
 
     let orderNotes = (promoApplied ? '[via WhatsApp Menu] [Delivery Promo]' : '[via WhatsApp Menu]') + (effectivePromoReward ? ` [Promo: ${effectivePromoReward.name}]` : '');
     if (isScheduled && scheduleDate) {
-      orderNotes += ` [Scheduled Delivery: ${scheduleDate} ${scheduleTime || ''}] [Rescheduled]`;
+      orderNotes += ` [Scheduled Delivery: ${scheduleDate}] [Rescheduled]`;
     }
     if (attrNote) {
       orderNotes += ` ${attrNote}`;
@@ -403,16 +403,12 @@ export default function MenuPage() {
     }
     if (isScheduled) {
       if (!scheduleDate) {
-        showToast('Scheduled Date required', 'Please select a delivery date for your scheduled order', 'error');
+        showToast('Delivery Date required', 'Please select a delivery date for your scheduled order', 'error');
         return false;
       }
       const todayStr = new Date().toISOString().split('T')[0];
       if (scheduleDate < todayStr) {
         showToast('Invalid Date', 'Scheduled delivery date cannot be in the past', 'error');
-        return false;
-      }
-      if (!scheduleTime) {
-        showToast('Delivery Time required', 'Please select a delivery time window', 'error');
         return false;
       }
     }
@@ -1152,143 +1148,83 @@ export default function MenuPage() {
                   ))
                 )}
 
-                {/* Delivery / Pickup Timing (Deliver ASAP vs Schedule for Later) */}
+                {/* Schedule Delivery Toggle Switch */}
                 <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #f0f0f0' }}>
-                  <div style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#888', marginBottom: 8 }}>
-                    {isPickup ? 'Pickup Timing' : 'Delivery Timing'}
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: isScheduled ? 12 : 0 }}>
-                    <button
-                      type="button"
-                      onClick={() => setIsScheduled(false)}
-                      style={{
-                        padding: '10px 12px',
+                  <div
+                    onClick={() => {
+                      const next = !isScheduled;
+                      setIsScheduled(next);
+                      if (next && !scheduleDate) {
+                        const todayStr = new Date().toISOString().split('T')[0];
+                        setScheduleDate(todayStr);
+                      }
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      padding: '4px 0',
+                      userSelect: 'none'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{
+                        width: 34,
+                        height: 34,
                         borderRadius: 10,
-                        border: `1.5px solid ${!isScheduled ? 'var(--red)' : '#e5e5e5'}`,
-                        background: !isScheduled ? 'rgba(192,32,31,0.04)' : '#fafafa',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        transition: 'all 0.18s'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: '0.84rem', color: !isScheduled ? 'var(--red)' : '#111' }}>
-                        <Clock size={15} color={!isScheduled ? 'var(--red)' : '#888'} />
-                        {isPickup ? 'Pickup ASAP' : 'Deliver ASAP'}
+                        background: isScheduled ? 'rgba(192,32,31,0.08)' : '#f5f5f7',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.2s ease'
+                      }}>
+                        <Calendar size={17} color={isScheduled ? 'var(--red)' : '#666'} />
                       </div>
-                      <div style={{ fontSize: '0.73rem', color: '#777', marginTop: 3 }}>
-                        Ready in 45–60 mins
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#111' }}>
+                          Schedule {isPickup ? 'pickup' : 'delivery'} for later
+                        </div>
+                        <div style={{ fontSize: '0.74rem', color: '#777', marginTop: 1 }}>
+                          {isScheduled ? 'Order will be delivered on selected date' : 'Default: delivered today / as normal'}
+                        </div>
                       </div>
-                    </button>
+                    </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsScheduled(true);
-                        if (!scheduleDate) {
-                          const todayStr = new Date().toISOString().split('T')[0];
-                          setScheduleDate(todayStr);
-                        }
-                        if (!scheduleTime) {
-                          setScheduleTime('12:00 PM - 02:00 PM');
-                        }
-                      }}
-                      style={{
-                        padding: '10px 12px',
+                    {/* Toggle Switch */}
+                    <div style={{
+                      position: 'relative',
+                      width: 44,
+                      height: 24,
+                      borderRadius: 12,
+                      background: isScheduled ? 'var(--red)' : '#e5e5e5',
+                      transition: 'background 0.2s ease',
+                      flexShrink: 0
+                    }}>
+                      <div style={{
+                        position: 'absolute',
+                        top: 2,
+                        left: isScheduled ? 22 : 2,
+                        width: 20,
+                        height: 20,
                         borderRadius: 10,
-                        border: `1.5px solid ${isScheduled ? 'var(--red)' : '#e5e5e5'}`,
-                        background: isScheduled ? 'rgba(192,32,31,0.04)' : '#fafafa',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        transition: 'all 0.18s'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: '0.84rem', color: isScheduled ? 'var(--red)' : '#111' }}>
-                        <Calendar size={15} color={isScheduled ? 'var(--red)' : '#888'} />
-                        Schedule for Later
-                      </div>
-                      <div style={{ fontSize: '0.73rem', color: '#777', marginTop: 3 }}>
-                        Select date & time slot
-                      </div>
-                    </button>
+                        background: '#fff',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                        transition: 'left 0.2s ease'
+                      }} />
+                    </div>
                   </div>
 
                   {isScheduled && (
-                    <div style={{ marginTop: 12, padding: 12, background: '#fafafa', border: '1px solid #e5e5e5', borderRadius: 12 }}>
-                      {/* Date Picker */}
-                      <div style={{ marginBottom: 12 }}>
-                        <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#444', marginBottom: 6 }}>
-                          Select Delivery Date:
-                        </label>
-                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                          <Calendar size={15} style={{ position: 'absolute', left: 12, color: '#888', pointerEvents: 'none' }} />
-                          <input
-                            type="date"
-                            min={new Date().toISOString().split('T')[0]}
-                            max={new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
-                            value={scheduleDate}
-                            onChange={(e) => setScheduleDate(e.target.value)}
-                            style={{
-                              width: '100%',
-                              padding: '10px 12px 10px 36px',
-                              borderRadius: 8,
-                              border: '1.5px solid #e5e5e5',
-                              background: '#fff',
-                              fontSize: '0.88rem',
-                              fontWeight: 600,
-                              color: '#111',
-                              outline: 'none',
-                              boxSizing: 'border-box'
-                            }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Time Slot Picker */}
-                      <div>
-                        <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#444', marginBottom: 6 }}>
-                          Select Delivery Window / Time Slot:
-                        </label>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 6, marginBottom: 8 }}>
-                          {[
-                            '11:00 AM - 01:00 PM',
-                            '01:00 PM - 03:00 PM',
-                            '03:00 PM - 05:00 PM',
-                            '05:00 PM - 07:00 PM',
-                            '07:00 PM - 09:00 PM',
-                          ].map((slot) => (
-                            <button
-                              key={slot}
-                              type="button"
-                              onClick={() => setScheduleTime(slot)}
-                              style={{
-                                padding: '7px 8px',
-                                borderRadius: 8,
-                                border: `1.5px solid ${scheduleTime === slot ? 'var(--red)' : '#e5e5e5'}`,
-                                background: scheduleTime === slot ? 'var(--red)' : '#fff',
-                                color: scheduleTime === slot ? '#fff' : '#333',
-                                fontSize: '0.75rem',
-                                fontWeight: scheduleTime === slot ? 700 : 500,
-                                cursor: 'pointer',
-                                textAlign: 'center',
-                                transition: 'all 0.15s'
-                              }}
-                            >
-                              {slot}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Summary Banner */}
-                      {scheduleDate && scheduleTime && (
-                        <div style={{ marginTop: 10, padding: '8px 12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <Clock size={15} color="#2563eb" style={{ flexShrink: 0 }} />
-                          <span style={{ fontSize: '0.78rem', color: '#1e40af', fontWeight: 600 }}>
-                            Scheduled for {new Date(`${scheduleDate}T00:00:00`).toLocaleDateString('en-NG', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} ({scheduleTime})
-                          </span>
-                        </div>
-                      )}
+                    <div style={{ marginTop: 14 }}>
+                      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#444', marginBottom: 8 }}>
+                        Select Preferred Delivery Date:
+                      </label>
+                      <StorefrontCalendar
+                        value={scheduleDate}
+                        onChange={(d) => setScheduleDate(d)}
+                        minDate={new Date().toISOString().split('T')[0]}
+                      />
                     </div>
                   )}
                 </div>
