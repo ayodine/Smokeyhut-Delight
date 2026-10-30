@@ -118,11 +118,11 @@ export default function StorefrontCalendar({
     <div
       style={{
         background: '#ffffff',
-        borderRadius: 22,
-        border: '1.5px solid #ebebeb',
-        boxShadow: '0 18px 45px rgba(0, 0, 0, 0.1), 0 4px 12px rgba(0, 0, 0, 0.05)',
-        padding: '24px 22px 20px',
-        width: 320,
+        borderRadius: 16,
+        border: '1px solid #e5e7eb',
+        boxShadow: '0 10px 25px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04)',
+        padding: '16px 14px 14px',
+        width: 260,
         maxWidth: '100%',
         boxSizing: 'border-box',
         fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
@@ -130,15 +130,15 @@ export default function StorefrontCalendar({
       }}
     >
       {/* Month Navigation Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, padding: '0 2px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, padding: '0 2px' }}>
         <button
           type="button"
           onClick={handlePrev}
           disabled={!canGoPrev}
           style={{
-            width: 40,
-            height: 40,
-            borderRadius: 14,
+            width: 30,
+            height: 30,
+            borderRadius: 8,
             border: 'none',
             background: '#f2f0eb',
             cursor: canGoPrev ? 'pointer' : 'not-allowed',
@@ -149,10 +149,10 @@ export default function StorefrontCalendar({
             transition: 'all 0.15s ease'
           }}
         >
-          <ChevronLeft size={20} strokeWidth={2.4} />
+          <ChevronLeft size={16} strokeWidth={2.4} />
         </button>
 
-        <span style={{ fontWeight: 800, fontSize: '1.18rem', color: '#111', letterSpacing: '-0.02em' }}>
+        <span style={{ fontWeight: 800, fontSize: '0.92rem', color: '#111', letterSpacing: '-0.01em' }}>
           {MONTHS[viewMonth]} {viewYear}
         </span>
 
@@ -161,9 +161,9 @@ export default function StorefrontCalendar({
           onClick={handleNext}
           disabled={!canGoNext}
           style={{
-            width: 40,
-            height: 40,
-            borderRadius: 14,
+            width: 30,
+            height: 30,
+            borderRadius: 8,
             border: 'none',
             background: '#f2f0eb',
             cursor: canGoNext ? 'pointer' : 'not-allowed',
@@ -174,17 +174,17 @@ export default function StorefrontCalendar({
             transition: 'all 0.15s ease'
           }}
         >
-          <ChevronRight size={20} strokeWidth={2.4} />
+          <ChevronRight size={16} strokeWidth={2.4} />
         </button>
       </div>
 
       {/* Weekday Labels (MO, TU, WE, TH, FR, SA, SU) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 0, marginBottom: 18, textAlign: 'center' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 0, marginBottom: 10, textAlign: 'center' }}>
         {DAYS.map((d) => (
           <div
             key={d}
             style={{
-              fontSize: '0.85rem',
+              fontSize: '0.68rem',
               fontWeight: 800,
               color: '#554f48',
               letterSpacing: '0.03em'
@@ -196,13 +196,13 @@ export default function StorefrontCalendar({
       </div>
 
       {/* Days Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '14px 0', textAlign: 'center' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px 0', textAlign: 'center' }}>
         {Array.from({ length: totalSlots }, (_, i) => {
           const dayNum = i - startOffset + 1;
           const inMonth = dayNum >= 1 && dayNum <= daysInMonth;
 
           if (!inMonth) {
-            return <div key={`empty-${i}`} style={{ height: 42 }} />;
+            return <div key={`empty-${i}`} style={{ height: 30 }} />;
           }
 
           const cellDate = new Date(viewYear, viewMonth, dayNum);
@@ -223,9 +223,9 @@ export default function StorefrontCalendar({
                   if (onClose) onClose();
                 }}
                 style={{
-                  width: 42,
-                  height: 42,
-                  borderRadius: 12,
+                  width: 30,
+                  height: 30,
+                  borderRadius: 8,
                   border: isSelected
                     ? '1.5px solid #fecaca'
                     : 'none',
@@ -236,7 +236,7 @@ export default function StorefrontCalendar({
                     ? '#c0201f'
                     : (isDisabled ? '#c2beb8' : '#1a1918'),
                   fontWeight: isSelected ? 800 : 600,
-                  fontSize: '1rem',
+                  fontSize: '0.82rem',
                   cursor: isDisabled ? 'not-allowed' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
@@ -255,8 +255,8 @@ export default function StorefrontCalendar({
       {/* Footer: Clear (left) and Today (right) */}
       <div
         style={{
-          marginTop: 24,
-          paddingTop: 16,
+          marginTop: 14,
+          paddingTop: 10,
           borderTop: '1px solid #eeeeee',
           display: 'flex',
           alignItems: 'center',
@@ -270,10 +270,10 @@ export default function StorefrontCalendar({
             background: 'none',
             border: 'none',
             cursor: 'pointer',
-            fontSize: '1.02rem',
+            fontSize: '0.82rem',
             fontWeight: 800,
             color: '#4e4c48',
-            padding: '4px 6px',
+            padding: '2px 4px',
             fontFamily: 'inherit'
           }}
         >
@@ -287,10 +287,10 @@ export default function StorefrontCalendar({
             background: 'none',
             border: 'none',
             cursor: 'pointer',
-            fontSize: '1.02rem',
+            fontSize: '0.82rem',
             fontWeight: 800,
             color: '#b91c1c',
-            padding: '4px 6px',
+            padding: '2px 4px',
             fontFamily: 'inherit'
           }}
         >
