@@ -566,7 +566,7 @@ export default function Orders() {
         getBaseCountQuery().eq('channel', 'whatsapp'),
         getBaseCountQuery().or('traffic_source.ilike.%snap%,notes.ilike.%[Source: Snapchat%'),
         getBaseCountQuery().or('traffic_source.ilike.%facebook%,traffic_source.ilike.%instagram%,traffic_source.ilike.%meta%,notes.ilike.%[Source: Facebook%,notes.ilike.%[Source: Instagram%'),
-        getBaseCountQuery().or('delivery_status.eq.Rescheduled,notes.ilike.%[Rescheduled]%'),
+        getBaseCountQuery().or('delivery_status.eq.Rescheduled,delivery_status.eq.Scheduled,notes.ilike.%[Rescheduled]%,notes.ilike.%[Scheduled Delivery%,scheduled_delivery_date.not.is.null'),
         supabase.from('products').select('id, name, price, is_active, stock').is('deleted_at', null).order('name'),
         supabase.from('stores').select('id, name').eq('is_active', true).order('id'),
         fetchFlatAreas(supabase),
@@ -590,7 +590,7 @@ export default function Orders() {
       if (p_start) q = q.gte('created_at', p_start);
       if (p_end) q = q.lte('created_at', p_end);
       if (filter === 'rescheduled') {
-        q = q.or('delivery_status.eq.Rescheduled,notes.ilike.%[Rescheduled]%');
+        q = q.or('delivery_status.eq.Rescheduled,delivery_status.eq.Scheduled,notes.ilike.%[Rescheduled]%,notes.ilike.%[Scheduled Delivery%,scheduled_delivery_date.not.is.null');
       } else if (filter !== 'all') {
         q = q.eq('status', filter);
       } else {
@@ -1693,9 +1693,9 @@ export default function Orders() {
                 <div style={{ background: '#fff', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 20, marginBottom: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                     <h4 style={{ fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text-muted)', margin: 0 }}>Delivery Schedule</h4>
-                    {(sel.delivery_status === 'Rescheduled' || sel.notes?.includes('[Rescheduled]')) && (
+                    {(sel.delivery_status === 'Rescheduled' || sel.delivery_status === 'Scheduled' || sel.scheduled_delivery_date || sel.notes?.includes('[Rescheduled]') || sel.notes?.includes('[Scheduled Delivery')) && (
                       <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '3px 9px', borderRadius: 20, background: '#fef3c7', color: '#92400e' }}>
-                        Rescheduled
+                        {sel.delivery_status === 'Scheduled' || (!sel.delivery_rescheduled_by && sel.scheduled_delivery_date) ? 'Scheduled Delivery' : 'Rescheduled'}
                       </span>
                     )}
                   </div>
