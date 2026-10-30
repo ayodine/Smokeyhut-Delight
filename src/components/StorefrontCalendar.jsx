@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
-const WEEKDAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
-const MONTH_NAMES = [
+const DAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
+const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
@@ -10,6 +10,7 @@ const MONTH_NAMES = [
 export default function StorefrontCalendar({
   value,
   onChange,
+  onClose,
   minDate,
   maxDate
 }) {
@@ -28,7 +29,7 @@ export default function StorefrontCalendar({
   const maxD = useMemo(() => {
     if (!maxDate) {
       const d = new Date(today);
-      d.setDate(d.getDate() + 30);
+      d.setDate(d.getDate() + 90);
       return d;
     }
     const d = new Date(`${maxDate}T00:00:00`);
@@ -46,7 +47,7 @@ export default function StorefrontCalendar({
 
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const rawFirstDay = new Date(viewYear, viewMonth, 1).getDay();
-  // Convert Sunday (0) to index 6, Monday (1) to index 0
+  // Monday is 0, Sunday is 6
   const startOffset = rawFirstDay === 0 ? 6 : rawFirstDay - 1;
   const totalSlots = Math.ceil((startOffset + daysInMonth) / 7) * 7;
 
@@ -64,6 +65,7 @@ export default function StorefrontCalendar({
 
   const handlePrev = (e) => {
     e.preventDefault();
+    e.stopPropagation();
     if (!canGoPrev) return;
     if (viewMonth === 0) {
       setViewYear(y => y - 1);
@@ -75,6 +77,7 @@ export default function StorefrontCalendar({
 
   const handleNext = (e) => {
     e.preventDefault();
+    e.stopPropagation();
     if (!canGoNext) return;
     if (viewMonth === 11) {
       setViewYear(y => y + 1);
@@ -92,33 +95,65 @@ export default function StorefrontCalendar({
     onChange(`${yyyy}-${mm}-${dd}`);
   };
 
+  const handleClear = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onChange('');
+    if (onClose) onClose();
+  };
+
+  const handleToday = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    onChange(`${yyyy}-${mm}-${dd}`);
+    setViewYear(yyyy);
+    setViewMonth(today.getMonth());
+    if (onClose) onClose();
+  };
+
   return (
-    <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e5e5', padding: 14, boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
+    <div
+      style={{
+        background: '#ffffff',
+        borderRadius: 22,
+        border: '1.5px solid #ebebeb',
+        boxShadow: '0 18px 45px rgba(0, 0, 0, 0.1), 0 4px 12px rgba(0, 0, 0, 0.05)',
+        padding: '24px 22px 20px',
+        width: 320,
+        maxWidth: '100%',
+        boxSizing: 'border-box',
+        fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+        userSelect: 'none'
+      }}
+    >
       {/* Month Navigation Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, padding: '0 2px' }}>
         <button
           type="button"
           onClick={handlePrev}
           disabled={!canGoPrev}
           style={{
-            width: 32,
-            height: 32,
-            borderRadius: 8,
-            border: '1px solid #e5e5e5',
-            background: canGoPrev ? '#fff' : '#f5f5f7',
+            width: 40,
+            height: 40,
+            borderRadius: 14,
+            border: 'none',
+            background: '#f2f0eb',
             cursor: canGoPrev ? 'pointer' : 'not-allowed',
-            color: canGoPrev ? '#111' : '#bbb',
+            color: canGoPrev ? '#2b2a27' : '#c4c2be',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            transition: 'all 0.15s'
+            transition: 'all 0.15s ease'
           }}
         >
-          <ChevronLeft size={16} />
+          <ChevronLeft size={20} strokeWidth={2.4} />
         </button>
 
-        <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#111' }}>
-          {MONTH_NAMES[viewMonth]} {viewYear}
+        <span style={{ fontWeight: 800, fontSize: '1.18rem', color: '#111', letterSpacing: '-0.02em' }}>
+          {MONTHS[viewMonth]} {viewYear}
         </span>
 
         <button
@@ -126,40 +161,48 @@ export default function StorefrontCalendar({
           onClick={handleNext}
           disabled={!canGoNext}
           style={{
-            width: 32,
-            height: 32,
-            borderRadius: 8,
-            border: '1px solid #e5e5e5',
-            background: canGoNext ? '#fff' : '#f5f5f7',
+            width: 40,
+            height: 40,
+            borderRadius: 14,
+            border: 'none',
+            background: '#f2f0eb',
             cursor: canGoNext ? 'pointer' : 'not-allowed',
-            color: canGoNext ? '#111' : '#bbb',
+            color: canGoNext ? '#2b2a27' : '#c4c2be',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            transition: 'all 0.15s'
+            transition: 'all 0.15s ease'
           }}
         >
-          <ChevronRight size={16} />
+          <ChevronRight size={20} strokeWidth={2.4} />
         </button>
       </div>
 
-      {/* Weekday Labels */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 6, textAlign: 'center' }}>
-        {WEEKDAYS.map((wd) => (
-          <div key={wd} style={{ fontSize: '0.72rem', fontWeight: 800, color: '#888', textTransform: 'uppercase' }}>
-            {wd}
+      {/* Weekday Labels (MO, TU, WE, TH, FR, SA, SU) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 0, marginBottom: 18, textAlign: 'center' }}>
+        {DAYS.map((d) => (
+          <div
+            key={d}
+            style={{
+              fontSize: '0.85rem',
+              fontWeight: 800,
+              color: '#554f48',
+              letterSpacing: '0.03em'
+            }}
+          >
+            {d}
           </div>
         ))}
       </div>
 
       {/* Days Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '14px 0', textAlign: 'center' }}>
         {Array.from({ length: totalSlots }, (_, i) => {
           const dayNum = i - startOffset + 1;
           const inMonth = dayNum >= 1 && dayNum <= daysInMonth;
 
           if (!inMonth) {
-            return <div key={`empty-${i}`} style={{ height: 36 }} />;
+            return <div key={`empty-${i}`} style={{ height: 42 }} />;
           }
 
           const cellDate = new Date(viewYear, viewMonth, dayNum);
@@ -169,50 +212,91 @@ export default function StorefrontCalendar({
           const isTooFar = maxD ? cellDate > maxD : false;
           const isDisabled = isPast || isTooFar;
           const isSelected = selectedD && cellDate.getTime() === selectedD.getTime();
-          const isCurrentToday = cellDate.getTime() === today.getTime();
 
           return (
-            <button
-              key={`day-${dayNum}`}
-              type="button"
-              disabled={isDisabled}
-              onClick={() => handleDaySelect(dayNum)}
-              style={{
-                height: 36,
-                borderRadius: 8,
-                border: isSelected ? 'none' : (isCurrentToday ? '1.5px solid rgba(192,32,31,0.3)' : '1px solid transparent'),
-                background: isSelected ? '#c0201f' : (isCurrentToday ? 'rgba(192,32,31,0.04)' : 'transparent'),
-                color: isSelected ? '#fff' : (isDisabled ? '#d1d5db' : '#111'),
-                fontWeight: isSelected ? 800 : (isCurrentToday ? 700 : 500),
-                fontSize: '0.82rem',
-                cursor: isDisabled ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'all 0.15s'
-              }}
-            >
-              {dayNum}
-            </button>
+            <div key={`day-${dayNum}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <button
+                type="button"
+                disabled={isDisabled}
+                onClick={() => {
+                  handleDaySelect(dayNum);
+                  if (onClose) onClose();
+                }}
+                style={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: 12,
+                  border: isSelected
+                    ? '1.5px solid #fecaca'
+                    : 'none',
+                  background: isSelected
+                    ? '#fff1f2'
+                    : 'transparent',
+                  color: isSelected
+                    ? '#c0201f'
+                    : (isDisabled ? '#c2beb8' : '#1a1918'),
+                  fontWeight: isSelected ? 800 : 600,
+                  fontSize: '1rem',
+                  cursor: isDisabled ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.15s ease',
+                  padding: 0
+                }}
+              >
+                {dayNum}
+              </button>
+            </div>
           );
         })}
       </div>
 
-      {/* Selected Date Indicator Banner */}
-      {selectedD && (
-        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <CalendarIcon size={14} color="#c0201f" />
-            <span style={{ fontSize: '0.78rem', color: '#111', fontWeight: 700 }}>
-              {selectedD.toLocaleDateString('en-NG', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
-            </span>
-          </div>
-          <span style={{ fontSize: '0.7rem', fontWeight: 800, padding: '2px 8px', borderRadius: 12, background: 'rgba(34,197,94,0.1)', color: '#16a34a' }}>
-            Selected
-          </span>
-        </div>
-      )}
+      {/* Footer: Clear (left) and Today (right) */}
+      <div
+        style={{
+          marginTop: 24,
+          paddingTop: 16,
+          borderTop: '1px solid #eeeeee',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
+        }}
+      >
+        <button
+          type="button"
+          onClick={handleClear}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: '1.02rem',
+            fontWeight: 800,
+            color: '#4e4c48',
+            padding: '4px 6px',
+            fontFamily: 'inherit'
+          }}
+        >
+          Clear
+        </button>
+
+        <button
+          type="button"
+          onClick={handleToday}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: '1.02rem',
+            fontWeight: 800,
+            color: '#b91c1c',
+            padding: '4px 6px',
+            fontFamily: 'inherit'
+          }}
+        >
+          Today
+        </button>
+      </div>
     </div>
   );
 }
-

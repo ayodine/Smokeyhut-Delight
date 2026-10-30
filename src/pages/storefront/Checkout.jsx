@@ -915,7 +915,7 @@ export default function Checkout() {
         </div>
 
         {/* Delivery Section */}
-        <div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 14 }}>
+        <div style={{ background: '#fff', borderRadius: 16, overflow: 'visible', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 14, position: 'relative', zIndex: 30 }}>
           <div style={{ padding: '14px 16px', borderBottom: '1px solid #f0f0f0' }}>
             <span style={{ fontWeight: 800, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.07em', color: '#888' }}>Delivery</span>
           </div>
@@ -1088,7 +1088,6 @@ export default function Checkout() {
                   {/* Selected Date Summary / Trigger Pill */}
                   <div
                     onClick={() => {
-                      setTempScheduleDate(scheduleDate || new Date().toISOString().split('T')[0]);
                       setIsCalendarOpen(prev => !prev);
                     }}
                     style={{
@@ -1127,7 +1126,6 @@ export default function Checkout() {
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setTempScheduleDate(scheduleDate || new Date().toISOString().split('T')[0]);
                         setIsCalendarOpen(prev => !prev);
                       }}
                       style={{
@@ -1145,7 +1143,7 @@ export default function Checkout() {
                     </button>
                   </div>
 
-                  {/* Pop Modal without Overlay */}
+                  {/* Pop Modal without Overlay matching DashCalendar Design Reference */}
                   {isCalendarOpen && (
                     <div
                       ref={calendarModalRef}
@@ -1153,82 +1151,16 @@ export default function Checkout() {
                         position: 'absolute',
                         top: 'calc(100% + 8px)',
                         left: 0,
-                        right: 0,
                         zIndex: 40,
-                        background: '#ffffff',
-                        borderRadius: 14,
-                        border: '1px solid #e5e7eb',
-                        boxShadow: '0 12px 32px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.06)',
-                        padding: '14px',
                         animation: 'fadeIn 0.15s ease-out'
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, paddingBottom: 8, borderBottom: '1px solid #f0f0f0' }}>
-                        <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#111' }}>
-                          Select Preferred Date
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setIsCalendarOpen(false)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            fontSize: '0.78rem',
-                            fontWeight: 600,
-                            color: '#888',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-
                       <StorefrontCalendar
-                        value={tempScheduleDate}
-                        onChange={(d) => setTempScheduleDate(d)}
+                        value={scheduleDate}
+                        onChange={(d) => setScheduleDate(d)}
+                        onClose={() => setIsCalendarOpen(false)}
                         minDate={new Date().toISOString().split('T')[0]}
                       />
-
-                      <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                        <button
-                          type="button"
-                          onClick={() => setIsCalendarOpen(false)}
-                          style={{
-                            padding: '8px 14px',
-                            background: '#f3f4f6',
-                            color: '#4b5563',
-                            border: 'none',
-                            borderRadius: 8,
-                            fontSize: '0.8rem',
-                            fontWeight: 600,
-                            cursor: 'pointer'
-                          }}
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (tempScheduleDate) {
-                              setScheduleDate(tempScheduleDate);
-                            }
-                            setIsCalendarOpen(false);
-                          }}
-                          style={{
-                            padding: '8px 16px',
-                            background: '#c0201f',
-                            color: '#ffffff',
-                            border: 'none',
-                            borderRadius: 8,
-                            fontSize: '0.8rem',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            boxShadow: '0 2px 6px rgba(192,32,31,0.25)'
-                          }}
-                        >
-                          Save Date
-                        </button>
-                      </div>
                     </div>
                   )}
                 </div>
