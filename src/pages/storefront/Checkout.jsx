@@ -143,6 +143,24 @@ export default function Checkout() {
   // Schedule Delivery for Later state
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduleDate, setScheduleDate] = useState('');
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [tempScheduleDate, setTempScheduleDate] = useState('');
+  const calendarModalRef = useRef(null);
+
+  // Close calendar popup when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (calendarModalRef.current && !calendarModalRef.current.contains(event.target)) {
+        setIsCalendarOpen(false);
+      }
+    }
+    if (isCalendarOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isCalendarOpen]);
 
   // Auto-show disclaimer on initial checkout entry if not yet agreed in this session
   useEffect(() => {
@@ -991,14 +1009,22 @@ export default function Checkout() {
             )}
 
             {/* Schedule Delivery Toggle Switch */}
-            <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #f0f0f0' }}>
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #f0f0f0', position: 'relative' }}>
               <div
                 onClick={() => {
                   const next = !isScheduled;
                   setIsScheduled(next);
-                  if (next && !scheduleDate) {
-                    const todayStr = new Date().toISOString().split('T')[0];
-                    setScheduleDate(todayStr);
+                  if (next) {
+                    if (!scheduleDate) {
+                      const todayStr = new Date().toISOString().split('T')[0];
+                      setScheduleDate(todayStr);
+                      setTempScheduleDate(todayStr);
+                    } else {
+                      setTempScheduleDate(scheduleDate);
+                    }
+                    setIsCalendarOpen(true);
+                  } else {
+                    setIsCalendarOpen(false);
                   }
                 }}
                 style={{
@@ -1058,15 +1084,153 @@ export default function Checkout() {
               </div>
 
               {isScheduled && (
-                <div style={{ marginTop: 14 }}>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#444', marginBottom: 8 }}>
-                    Select Preferred Delivery Date:
-                  </label>
-                  <StorefrontCalendar
-                    value={scheduleDate}
-                    onChange={(d) => setScheduleDate(d)}
-                    minDate={new Date().toISOString().split('T')[0]}
-                  />
+                <div style={{ marginTop: 12, position: 'relative' }}>
+                  {/* Selected Date Summary / Trigger Pill */}
+                  <div
+                    onClick={() => {
+                      setTempScheduleDate(scheduleDate || new Date().toISOString().split('T')[0]);
+                      setIsCalendarOpen(prev => !prev);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 14px',
+                      background: '#fff',
+                      border: '1.5px solid #e5e5e5',
+                      borderRadius: 10,
+                      cursor: 'pointer',
+                      transition: 'border-color 0.2s'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <Calendar size={16} color="#c0201f" />
+                      <div>
+                        <div style={{ fontSize: '0.72rem', color: '#777', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          Delivery Date
+                        </div>
+                        <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#111' }}>
+                          {scheduleDate ? (
+                            new Date(`${scheduleDate}T00:00:00`).toLocaleDateString('en-GB', {
+                              weekday: 'short',
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric'
+                            })
+                          ) : (
+                            <span style={{ color: '#999' }}>Choose a date</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTempScheduleDate(scheduleDate || new Date().toISOString().split('T')[0]);
+                        setIsCalendarOpen(prev => !prev);
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        background: 'rgba(192,32,31,0.08)',
+                        color: '#c0201f',
+                        border: 'none',
+                        borderRadius: 8,
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {isCalendarOpen ? 'Close' : 'Change Date'}
+                    </button>
+                  </div>
+
+                  {/* Pop Modal without Overlay */}
+                  {isCalendarOpen && (
+                    <div
+                      ref={calendarModalRef}
+                      style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 8px)',
+                        left: 0,
+                        right: 0,
+                        zIndex: 40,
+                        background: '#ffffff',
+                        borderRadius: 14,
+                        border: '1px solid #e5e7eb',
+                        boxShadow: '0 12px 32px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.06)',
+                        padding: '14px',
+                        animation: 'fadeIn 0.15s ease-out'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, paddingBottom: 8, borderBottom: '1px solid #f0f0f0' }}>
+                        <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#111' }}>
+                          Select Preferred Date
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setIsCalendarOpen(false)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            fontSize: '0.78rem',
+                            fontWeight: 600,
+                            color: '#888',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+
+                      <StorefrontCalendar
+                        value={tempScheduleDate}
+                        onChange={(d) => setTempScheduleDate(d)}
+                        minDate={new Date().toISOString().split('T')[0]}
+                      />
+
+                      <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                        <button
+                          type="button"
+                          onClick={() => setIsCalendarOpen(false)}
+                          style={{
+                            padding: '8px 14px',
+                            background: '#f3f4f6',
+                            color: '#4b5563',
+                            border: 'none',
+                            borderRadius: 8,
+                            fontSize: '0.8rem',
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (tempScheduleDate) {
+                              setScheduleDate(tempScheduleDate);
+                            }
+                            setIsCalendarOpen(false);
+                          }}
+                          style={{
+                            padding: '8px 16px',
+                            background: '#c0201f',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: 8,
+                            fontSize: '0.8rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 6px rgba(192,32,31,0.25)'
+                          }}
+                        >
+                          Save Date
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
