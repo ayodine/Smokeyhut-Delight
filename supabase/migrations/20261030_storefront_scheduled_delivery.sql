@@ -320,3 +320,4 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.create_storefront_order(jsonb) TO anon, authenticated, service_role;
+
