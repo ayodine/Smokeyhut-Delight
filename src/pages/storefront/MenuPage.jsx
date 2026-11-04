@@ -1285,10 +1285,10 @@ export default function MenuPage() {
                         Pre-Order Release Date: {cartPreorders.formattedLatestReleaseDate || cartPreorders.latestReleaseDate}
                       </div>
                       {cartPreorders.effectiveSchedulingMode === 'schedule_at_checkout' ? (
-                        <div>Please select your preferred delivery date below (on or after {cartPreorders.formattedLatestReleaseDate || cartPreorders.latestReleaseDate}).</div>
+                        <div>Choose your delivery date below (from {cartPreorders.formattedLatestReleaseDate || cartPreorders.latestReleaseDate} onwards).</div>
                       ) : (
                         <div>
-                          Place your pre-order now and select your delivery date from your Order / Account page once <strong>{cartPreorders.formattedLatestReleaseDate || cartPreorders.latestReleaseDate}</strong> arrives — or optionally choose an eligible date below.
+                          Pick your delivery date below, or we'll confirm your delivery date with you once released.
                         </div>
                       )}
                     </div>

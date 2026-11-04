@@ -161,11 +161,11 @@ export default function SameDayCutoffModal({ isOpen, product, onConfirm, onClose
                 <div style={{ fontSize: '0.82rem', lineHeight: 1.45, color: '#78350f' }}>
                   {preorder.schedulingMode === 'schedule_at_checkout' ? (
                     <>
-                      <strong>Delivery Date Selection at Checkout:</strong> You will choose your preferred delivery date during checkout (any date on or after <strong>{preorder.formattedReleaseDate}</strong>).
+                      <strong>Delivery Date Selection:</strong> Choose your preferred delivery date at checkout (from <strong>{preorder.formattedReleaseDate}</strong> onwards).
                     </>
                   ) : (
                     <>
-                      <strong>Delivery Date Selection on Release:</strong> Place your pre-order today to reserve your pack. Once <strong>{preorder.formattedReleaseDate}</strong> arrives, you can select or reschedule your exact delivery date from your Order / Account page.
+                      <strong>Pre-Order Fulfilment:</strong> Pre-order today to reserve your pack. Fulfilment begins on <strong>{preorder.formattedReleaseDate}</strong>.
                     </>
                   )}
                 </div>

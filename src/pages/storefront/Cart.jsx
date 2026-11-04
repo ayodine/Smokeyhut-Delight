@@ -165,8 +165,8 @@ export default function Cart() {
                 </div>
                 <div>
                   {cartPreorders.effectiveSchedulingMode === 'schedule_at_checkout'
-                    ? `You will select your preferred delivery date during checkout (any date on or after ${cartPreorders.formattedLatestReleaseDate || cartPreorders.latestReleaseDate}).`
-                    : `Place your pre-order today to reserve your pack. Once ${cartPreorders.formattedLatestReleaseDate || cartPreorders.latestReleaseDate} arrives, you can select your delivery date from your Order / Account page.`}
+                    ? `Choose your delivery date at checkout (from ${cartPreorders.formattedLatestReleaseDate || cartPreorders.latestReleaseDate} onwards).`
+                    : `Pre-order now to reserve your pack. You can pick a delivery date at checkout or confirm it once released.`}
                 </div>
                 {cartPreorders.isMixedCart && (
                   <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed #fcd34d', fontWeight: 700, color: '#92400e' }}>
