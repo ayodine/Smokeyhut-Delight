@@ -12,6 +12,14 @@ import BulkActionBar from '../../components/BulkActionBar';
 import DashCalendar from '../../components/DashCalendar';
 import ConfirmModal from '../../components/ConfirmModal';
 import { parseOrderAttribution } from '../../lib/attribution';
+import {
+  deriveAdminPreorderInfo,
+  matchesAdminPreorderFilter,
+  validatePreorderDeliveryDate,
+  formatReleaseDate,
+  PREORDER_ADMIN_FILTERS,
+  PREORDER_STATUS_OPTIONS,
+} from '../../lib/preorderUtils';
 
 const fmt = (n) => '₦' + Number(n).toLocaleString();
 const statuses = ['all', 'pending_payment', 'pending', 'processing', 'shipped', 'delivered', 'cancelled', 'rescheduled'];
@@ -252,6 +260,9 @@ export default function Orders() {
   const [confirmAction, setConfirmAction] = useState(null);
   const [cancelPrompt, setCancelPrompt] = useState(null); // { ids: string[], reason: string, onConfirm: (reason) => void }
   const [sourceFilter, setSourceFilter] = useState('all'); // 'all' | 'storefront' | 'whatsapp'
+  const [orderTab, setOrderTab] = useState('all'); // 'all' | 'preorders'
+  const [preorderFilter, setPreorderFilter] = useState('all');
+  const [allPreorders, setAllPreorders] = useState([]);
   const [newOrderAlert, setNewOrderAlert] = useState(null); // { id, name, total }
   
   // Reschedule Delivery state
@@ -271,6 +282,18 @@ export default function Orders() {
       setRescheduleErr('Delivery date cannot be in the past.');
       return;
     }
+    const preInfo = deriveAdminPreorderInfo(order);
+    if (preInfo.isPreorder && preInfo.releaseDate) {
+      const val = validatePreorderDeliveryDate({
+        selectedDate: rescheduleDate,
+        releaseDate: preInfo.releaseDate,
+        isAdminOverride: true,
+      });
+      if (!val.valid) {
+        setRescheduleErr(val.error);
+        return;
+      }
+    }
     setRescheduling(true);
     try {
       const oldDateFormatted = order.scheduled_delivery_date
@@ -283,18 +306,47 @@ export default function Orders() {
       const auditLog = `[Rescheduled] ${oldDateFormatted} → ${newDateFormatted} by ${adminName} at ${timeStr}`;
       const updatedNotes = order.notes ? `${order.notes}\n${auditLog}` : auditLog;
 
+      const existingHistory = Array.isArray(order.scheduling_history) ? order.scheduling_history : [];
+      const historyEntry = {
+        action: order.scheduled_delivery_date ? 'rescheduled' : 'initial_selection',
+        actor: `admin:${adminName}`,
+        previous_date: order.scheduled_delivery_date || null,
+        new_date: rescheduleDate,
+        timestamp: new Date().toISOString(),
+      };
+      const updatedHistory = [...existingHistory, historyEntry];
+
       const updatePayload = {
         scheduled_delivery_date: rescheduleDate,
         delivery_status: 'Rescheduled',
         delivery_rescheduled_at: new Date().toISOString(),
         delivery_rescheduled_by: adminName,
         notes: updatedNotes,
+        ...(preInfo.isPreorder ? {
+          preorder_status: 'date_selected',
+          preorder_date_conflict_flagged: false,
+          scheduling_history: updatedHistory,
+        } : {
+          scheduling_history: updatedHistory,
+        }),
       };
 
       const { error } = await supabase.from('orders').update(updatePayload).eq('id', order.id);
-      if (error) throw error;
+      if (error) {
+        // Fallback if new pre-order columns are not yet migrated
+        const fallbackPayload = {
+          scheduled_delivery_date: rescheduleDate,
+          delivery_status: 'Rescheduled',
+          delivery_rescheduled_at: new Date().toISOString(),
+          delivery_rescheduled_by: adminName,
+          notes: updatedNotes,
+        };
+        const { error: fbErr } = await supabase.from('orders').update(fallbackPayload).eq('id', order.id);
+        if (fbErr) throw fbErr;
+      }
 
       setOrders(prev => prev.map(o => o.id === order.id ? { ...o, ...updatePayload } : o));
+      setAllPreorders(prev => prev.map(o => o.id === order.id ? { ...o, ...updatePayload } : o));
       showToast('Delivery Rescheduled', `Delivery date updated to ${newDateFormatted}`, 'success');
       setShowReschedulePicker(false);
       setRescheduleDate('');
@@ -524,7 +576,7 @@ export default function Orders() {
 
   useEffect(() => {
     setPage(1);
-  }, [selectedStore, filter, sourceFilter, period, debouncedSearch, dateFilter]);
+  }, [selectedStore, filter, sourceFilter, period, debouncedSearch, dateFilter, orderTab, preorderFilter]);
 
   useEffect(() => {
     const isDateFilterIncomplete = dateFilter && dateFilter.start && !dateFilter.end;
@@ -536,7 +588,7 @@ export default function Orders() {
     } else {
       fetchData(false);
     }
-  }, [selectedStore, period, dateFilter, page, filter, sourceFilter, sortKey, sortDir, debouncedSearch]);
+  }, [selectedStore, period, dateFilter, page, filter, sourceFilter, sortKey, sortDir, debouncedSearch, orderTab, preorderFilter]);
 
   async function fetchData(isInitial = false) {
     if (isInitial) {
@@ -585,43 +637,86 @@ export default function Orders() {
         meta: metaRes.count || 0,
       });
 
-      let q = supabase.from('orders').select('*, order_items(*)', { count: 'exact' }).is('deleted_at', null);
-      if (storeFilter) q = q.or(`store_id.eq.${storeFilter},store_id.is.null`);
-      if (p_start) q = q.gte('created_at', p_start);
-      if (p_end) q = q.lte('created_at', p_end);
-      if (filter === 'rescheduled') {
-        q = q.or('delivery_status.eq.Rescheduled,delivery_status.eq.Scheduled,notes.ilike.%[Rescheduled]%,notes.ilike.%[Scheduled Delivery%,scheduled_delivery_date.not.is.null');
-      } else if (filter !== 'all') {
-        q = q.eq('status', filter);
+      // Fetch pre-orders dataset for the Pre-orders tab and badge counts
+      let preQuery = supabase
+        .from('orders')
+        .select('*, order_items(*)')
+        .is('deleted_at', null)
+        .or('is_preorder.eq.true,notes.ilike.%[Pre-Order:%')
+        .order('created_at', { ascending: false })
+        .limit(500);
+      if (storeFilter) preQuery = preQuery.or(`store_id.eq.${storeFilter},store_id.is.null`);
+      let { data: preData, error: preErr } = await preQuery;
+      if (preErr) {
+        // Fallback if is_preorder column is not yet migrated on remote DB
+        let fbPreQuery = supabase
+          .from('orders')
+          .select('*, order_items(*)')
+          .is('deleted_at', null)
+          .ilike('notes', '%[Pre-Order:%')
+          .order('created_at', { ascending: false })
+          .limit(500);
+        if (storeFilter) fbPreQuery = fbPreQuery.or(`store_id.eq.${storeFilter},store_id.is.null`);
+        const fbRes = await fbPreQuery;
+        preData = fbRes.data || [];
+      }
+      const normalizedPreorders = (preData || []).map(o => {
+        const info = deriveAdminPreorderInfo(o);
+        return { ...o, is_preorder: info.isPreorder, preorder_release_date: o.preorder_release_date || info.releaseDate };
+      });
+      setAllPreorders(normalizedPreorders);
+
+      if (orderTab === 'preorders') {
+        let filteredPre = normalizedPreorders.filter(o => matchesAdminPreorderFilter(o, preorderFilter));
+        if (debouncedSearch.trim()) {
+          const sv = debouncedSearch.trim().toLowerCase();
+          filteredPre = filteredPre.filter(o =>
+            String(o.id || '').toLowerCase().includes(sv) ||
+            String(o.customer_name || '').toLowerCase().includes(sv) ||
+            String(o.customer_phone || '').toLowerCase().includes(sv)
+          );
+        }
+        setTotalCount(filteredPre.length);
+        setOrders(filteredPre.slice((page - 1) * PER_PAGE, page * PER_PAGE));
       } else {
-        q = q.neq('status', 'pending_payment'); // hide unpaid Paystack orders from the default view
-      }
-      if (sourceFilter === 'storefront') {
-        q = q.eq('channel', 'storefront');
-      } else if (sourceFilter === 'whatsapp') {
-        q = q.eq('channel', 'whatsapp');
-      } else if (sourceFilter === 'snapchat') {
-        q = q.or('traffic_source.ilike.%snap%,notes.ilike.%[Source: Snapchat%');
-      } else if (sourceFilter === 'meta') {
-        q = q.or('traffic_source.ilike.%facebook%,traffic_source.ilike.%instagram%,traffic_source.ilike.%meta%,notes.ilike.%[Source: Facebook%,notes.ilike.%[Source: Instagram%');
-      }
+        let q = supabase.from('orders').select('*, order_items(*)', { count: 'exact' }).is('deleted_at', null);
+        if (storeFilter) q = q.or(`store_id.eq.${storeFilter},store_id.is.null`);
+        if (p_start) q = q.gte('created_at', p_start);
+        if (p_end) q = q.lte('created_at', p_end);
+        if (filter === 'rescheduled') {
+          q = q.or('delivery_status.eq.Rescheduled,delivery_status.eq.Scheduled,notes.ilike.%[Rescheduled]%,notes.ilike.%[Scheduled Delivery%,scheduled_delivery_date.not.is.null');
+        } else if (filter !== 'all') {
+          q = q.eq('status', filter);
+        } else {
+          q = q.neq('status', 'pending_payment'); // hide unpaid Paystack orders from the default view
+        }
+        if (sourceFilter === 'storefront') {
+          q = q.eq('channel', 'storefront');
+        } else if (sourceFilter === 'whatsapp') {
+          q = q.eq('channel', 'whatsapp');
+        } else if (sourceFilter === 'snapchat') {
+          q = q.or('traffic_source.ilike.%snap%,notes.ilike.%[Source: Snapchat%');
+        } else if (sourceFilter === 'meta') {
+          q = q.or('traffic_source.ilike.%facebook%,traffic_source.ilike.%instagram%,traffic_source.ilike.%meta%,notes.ilike.%[Source: Facebook%,notes.ilike.%[Source: Instagram%');
+        }
 
-      if (debouncedSearch.trim()) {
-        const searchVal = debouncedSearch.trim();
-        q = q.or(`id.ilike.%${searchVal}%,customer_name.ilike.%${searchVal}%,customer_phone.ilike.%${searchVal}%`);
-      }
+        if (debouncedSearch.trim()) {
+          const searchVal = debouncedSearch.trim();
+          q = q.or(`id.ilike.%${searchVal}%,customer_name.ilike.%${searchVal}%,customer_phone.ilike.%${searchVal}%`);
+        }
 
-      q = q.order(sortKey === 'items' ? 'created_at' : sortKey, { ascending: sortDir === 'asc' });
-      q = q.range((page - 1) * PER_PAGE, page * PER_PAGE - 1);
+        q = q.order(sortKey === 'items' ? 'created_at' : sortKey, { ascending: sortDir === 'asc' });
+        q = q.range((page - 1) * PER_PAGE, page * PER_PAGE - 1);
 
-      const { data, count, error } = await q;
-      if (!error && data) {
-        setOrders(data);
-        setTotalCount(count || 0);
-      } else {
-        console.error('[Orders] Error loading paginated orders:', error);
-        setOrders([]);
-        setTotalCount(0);
+        const { data, count, error } = await q;
+        if (!error && data) {
+          setOrders(data);
+          setTotalCount(count || 0);
+        } else {
+          console.error('[Orders] Error loading paginated orders:', error);
+          setOrders([]);
+          setTotalCount(0);
+        }
       }
 
       if (productsRes.data) setProducts(productsRes.data);
@@ -1338,17 +1433,52 @@ export default function Orders() {
         </div>
       </div>
 
-      {/* Status Filters */}
-      <div className="dash-filters" style={{ marginBottom: 16 }}>
-        {statuses.map(s => (
-          <button key={s} className={`dash-filter-btn${filter === s ? ' active' : ''}`} onClick={() => setFilter(s)}>
-            {s === 'all' ? `All (${statusCounts.all || 0})`
-              : s === 'pending_payment' ? `Awaiting Payment (${statusCounts.pending_payment || 0})`
-              : s === 'rescheduled' ? `Rescheduled Delivery (${statusCounts.rescheduled || 0})`
-              : `${s.charAt(0).toUpperCase() + s.slice(1)} (${statusCounts[s] || 0})`}
+      {/* Top-Level View Switcher: All Orders vs Pre-orders */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+        <div className="dash-filters" style={{ marginBottom: 0 }}>
+          <button
+            className={`dash-filter-btn${orderTab === 'all' ? ' active' : ''}`}
+            onClick={() => setOrderTab('all')}
+          >
+            All Orders ({statusCounts.all || 0})
           </button>
-        ))}
+          <button
+            className={`dash-filter-btn${orderTab === 'preorders' ? ' active' : ''}`}
+            onClick={() => setOrderTab('preorders')}
+          >
+            Pre-orders ({allPreorders.filter(o => matchesAdminPreorderFilter(o, 'all')).length})
+          </button>
+        </div>
       </div>
+
+      {/* Status Filters (or 11 Operational Pre-Order Stage Filters when Pre-orders tab is active) */}
+      {orderTab === 'preorders' ? (
+        <div className="dash-filters" style={{ marginBottom: 16 }}>
+          {PREORDER_ADMIN_FILTERS.map(pf => {
+            const count = allPreorders.filter(o => matchesAdminPreorderFilter(o, pf.key)).length;
+            return (
+              <button
+                key={pf.key}
+                className={`dash-filter-btn${preorderFilter === pf.key ? ' active' : ''}`}
+                onClick={() => setPreorderFilter(pf.key)}
+              >
+                {pf.label} ({count})
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="dash-filters" style={{ marginBottom: 16 }}>
+          {statuses.map(s => (
+            <button key={s} className={`dash-filter-btn${filter === s ? ' active' : ''}`} onClick={() => setFilter(s)}>
+              {s === 'all' ? `All (${statusCounts.all || 0})`
+                : s === 'pending_payment' ? `Awaiting Payment (${statusCounts.pending_payment || 0})`
+                : s === 'rescheduled' ? `Rescheduled Delivery (${statusCounts.rescheduled || 0})`
+                : `${s.charAt(0).toUpperCase() + s.slice(1)} (${statusCounts[s] || 0})`}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="dash-card" style={{ position: 'relative', overflow: 'hidden' }}>
         {/* Inline table loading overlay */}
@@ -1424,12 +1554,40 @@ export default function Orders() {
                           style={{ cursor: 'pointer', width: 16, height: 16, accentColor: 'var(--red)' }}
                         />
                       </td>
-                      <td style={{ fontWeight: 700, color: 'var(--red)' }}>{order.id}</td>
+                      <td style={{ fontWeight: 700, color: 'var(--red)' }}>
+                        <div>{order.id}</div>
+                        {(() => {
+                          const preInfo = deriveAdminPreorderInfo(order);
+                          const isDed = Boolean(order.requires_dedicated_dispatch || /\[Dedicated Dispatch/i.test(order.notes || ''));
+                          if (!preInfo.isPreorder && !isDed) return null;
+                          return (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                              {preInfo.isPreorder && (
+                                <span className="status-badge info" style={{ fontSize: '0.64rem', padding: '1px 6px' }}>
+                                  Pre-Order
+                                </span>
+                              )}
+                              {isDed && (
+                                <span className="status-badge pending" style={{ fontSize: '0.64rem', padding: '1px 6px' }} title="Dedicated dispatch box (2× delivery fee)">
+                                  Dedicated Dispatch (2×)
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </td>
                       <td>
                         <div style={{ fontWeight: 700 }}>{order.customer_name}</div>
                         <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{order.customer_phone}</div>
                       </td>
-                      <td>{itemsCount} item{itemsCount !== 1 ? 's' : ''}</td>
+                      <td>
+                        <div>{itemsCount} item{itemsCount !== 1 ? 's' : ''}</div>
+                        {orderTab === 'preorders' && order.order_items?.length > 0 && (
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {order.order_items.map(it => `${it.qty}× ${it.name}`).join(', ')}
+                          </div>
+                        )}
+                      </td>
                       <td style={{ fontWeight: 700 }}>
                         {fmt(order.total || 0)}
                         {order.coupon_code && (
@@ -1476,10 +1634,48 @@ export default function Orders() {
                           );
                         })()}
                       </td>
-                      <td><span className={`status-badge ${order.status}`}>{order.status}</span></td>
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                          <span className={`status-badge ${order.status}`}>{order.status}</span>
+                          {(() => {
+                            const preInfo = deriveAdminPreorderInfo(order);
+                            if (!preInfo.isPreorder) return null;
+                            return (
+                              <>
+                                <span className={`status-badge ${preInfo.badgeClass}`} style={{ fontSize: '0.66rem', padding: '2px 7px' }}>
+                                  {preInfo.stageLabel}
+                                </span>
+                                {preInfo.isOverdue && (
+                                  <span className="status-badge cancelled" style={{ fontSize: '0.64rem', padding: '1px 6px' }}>
+                                    Overdue / Attention
+                                  </span>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </div>
+                      </td>
                       <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
                         <div>{new Date(order.created_at).toLocaleDateString()}</div>
                         <div style={{ fontSize: '0.75rem', marginTop: 2 }}>{new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
+                        {(() => {
+                          const preInfo = deriveAdminPreorderInfo(order);
+                          if (!preInfo.isPreorder) return null;
+                          return (
+                            <div style={{ marginTop: 5, fontSize: '0.72rem', lineHeight: 1.35 }}>
+                              {preInfo.formattedReleaseDate && (
+                                <div style={{ color: 'var(--text)', fontWeight: 700 }}>
+                                  Release: {preInfo.formattedReleaseDate}
+                                </div>
+                              )}
+                              <div style={{ color: preInfo.hasSelectedDate ? '#16a34a' : '#d97706', fontWeight: 700 }}>
+                                {preInfo.hasSelectedDate
+                                  ? `Delivery: ${preInfo.formattedSelectedDate}`
+                                  : 'Delivery date not yet selected'}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </td>
                     </tr>
                   </React.Fragment>
@@ -1688,6 +1884,135 @@ export default function Orders() {
                     )}
                   </div>
                 </div>
+
+                {/* ── Pre-Order Fulfilment & Snapshot ── */}
+                {(() => {
+                  const preInfo = deriveAdminPreorderInfo(sel);
+                  if (!preInfo.isPreorder) return null;
+                  const historyList = Array.isArray(sel.scheduling_history) ? sel.scheduling_history : [];
+                  return (
+                    <div style={{ background: 'rgba(59,130,246,0.04)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: 12, padding: 20, marginBottom: 20 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+                        <h4 style={{ fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: 0.5, color: '#1d4ed8', margin: 0, fontWeight: 800 }}>
+                          Pre-Order Fulfilment & Snapshot
+                        </h4>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <span className={`status-badge ${preInfo.badgeClass}`}>{preInfo.stageLabel}</span>
+                          {preInfo.isOverdue && <span className="status-badge cancelled">Overdue / Attention</span>}
+                        </div>
+                      </div>
+
+                      {sel.preorder_date_conflict_flagged && (
+                        <div style={{ background: '#fee2e2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 12px', marginBottom: 12, fontSize: '0.8rem', color: '#991b1b', fontWeight: 700 }}>
+                          ⚠️ Release-date conflict: Product release date was moved later than the customer's selected delivery date. Please coordinate with the customer and select a new delivery date.
+                        </div>
+                      )}
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, fontSize: '0.85rem', marginBottom: 14 }}>
+                        <div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Release / Processing Date</div>
+                          <div style={{ fontWeight: 800, color: 'var(--text)', marginTop: 2 }}>
+                            {preInfo.formattedReleaseDate || '—'}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Customer Delivery Date</div>
+                          <div style={{ fontWeight: 800, color: preInfo.hasSelectedDate ? '#16a34a' : '#d97706', marginTop: 2 }}>
+                            {preInfo.hasSelectedDate ? preInfo.formattedSelectedDate : 'Awaiting selection'}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Payment Status</div>
+                          <div style={{ fontWeight: 800, color: sel.status === 'pending_payment' ? '#d97706' : '#16a34a', marginTop: 2 }}>
+                            {sel.status === 'pending_payment' ? 'Awaiting Payment' : 'Paid'}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Fulfilment Status</div>
+                          <div style={{ fontWeight: 800, color: 'var(--text)', marginTop: 2, textTransform: 'capitalize' }}>
+                            {sel.status}
+                          </div>
+                        </div>
+                      </div>
+
+                      {canManageOrder && (
+                        <div style={{ marginBottom: 14 }}>
+                          <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6 }}>
+                            Update Pre-Order Operational Stage
+                          </label>
+                          <CustomSelect
+                            value={sel.preorder_status || preInfo.stageKey}
+                            onChange={async (e) => {
+                              const nextPreStatus = e.target.value;
+                              const updates = { preorder_status: nextPreStatus };
+                              if (nextPreStatus === 'processing') updates.status = 'processing';
+                              else if (nextPreStatus === 'dispatched') updates.status = 'shipped';
+                              else if (nextPreStatus === 'delivered') updates.status = 'delivered';
+                              const { error } = await supabase.from('orders').update(updates).eq('id', sel.id);
+                              if (error && updates.status) {
+                                await supabase.from('orders').update({ status: updates.status }).eq('id', sel.id);
+                              }
+                              setOrders(prev => prev.map(o => o.id === sel.id ? { ...o, ...updates } : o));
+                              setAllPreorders(prev => prev.map(o => o.id === sel.id ? { ...o, ...updates } : o));
+                              showToast('Pre-Order Stage Updated', `Updated to ${nextPreStatus.replace(/_/g, ' ')}`, 'success');
+                            }}
+                            options={PREORDER_STATUS_OPTIONS}
+                          />
+                        </div>
+                      )}
+
+                      {historyList.length > 0 && (
+                        <div style={{ borderTop: '1px dashed rgba(59,130,246,0.25)', paddingTop: 10 }}>
+                          <div style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', color: '#1d4ed8', marginBottom: 6 }}>
+                            Delivery Date Audit History ({historyList.length})
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 140, overflowY: 'auto' }}>
+                            {historyList.map((h, idx) => (
+                              <div key={idx} style={{ fontSize: '0.76rem', background: '#fff', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '6px 10px' }}>
+                                <div style={{ fontWeight: 700, color: 'var(--text)' }}>
+                                  {h.previous_date ? `${h.previous_date} → ` : ''}{h.new_date}
+                                </div>
+                                <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>
+                                  By {h.actor || 'customer'} • {h.timestamp ? new Date(h.timestamp).toLocaleString() : ''}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* ── Dispatch-Capacity Surcharge Snapshot ── */}
+                {(() => {
+                  const isDed = Boolean(sel.requires_dedicated_dispatch || /\[Dedicated Dispatch/i.test(sel.notes || ''));
+                  if (!isDed) return null;
+                  const baseFee = sel.base_delivery_fee ? Number(sel.base_delivery_fee) : Math.round((Number(sel.delivery_fee) || 0) / 2);
+                  return (
+                    <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12, padding: 16, marginBottom: 20 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <h4 style={{ fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: 0.5, color: '#92400e', margin: 0, fontWeight: 800 }}>
+                          Dedicated Dispatch Surcharge (2×)
+                        </h4>
+                        <span className="status-badge pending">2 Dispatch Boxes</span>
+                      </div>
+                      <div style={{ fontSize: '0.82rem', color: '#78350f', lineHeight: 1.45, marginBottom: 10 }}>
+                        Order exceeds the single-rider dispatch box capacity (5 packs) and requires 2 dispatch boxes / a dedicated dispatch arrangement.
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: '0.82rem', background: '#fff', padding: '10px 12px', borderRadius: 8, border: '1px solid #fde68a' }}>
+                        <div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Base Zone Delivery Fee</div>
+                          <div style={{ fontWeight: 700 }}>{fmt(baseFee)}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Dedicated Dispatch Fee (2×)</div>
+                          <div style={{ fontWeight: 800, color: 'var(--red)' }}>{fmt(sel.delivery_fee || 0)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* ── Delivery Schedule ── */}
                 <div style={{ background: '#fff', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 20, marginBottom: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>

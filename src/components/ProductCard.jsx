@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useCart } from '../context/CartContext';
 import { useToast } from '../context/ToastContext';
-import { Drumstick, Plus, ShoppingBag, Clock } from 'lucide-react';
+import { Drumstick, Plus, ShoppingBag, Clock, Calendar } from 'lucide-react';
 import { getCutoffState } from '../lib/deliveryCutoff';
+import { getPreorderState } from '../lib/preorderUtils';
 import SameDayCutoffModal from './SameDayCutoffModal';
 
 const fmt = (n) => '₦' + Number(n).toLocaleString();
@@ -17,9 +18,23 @@ function ProductCard({ product, variant }) {
   const [showCutoffModal, setShowCutoffModal] = useState(false);
 
   const cutoff = getCutoffState(product);
+  const preorder = getPreorderState(product);
+
+  const isOutOfStock = product.is_active === false || (preorder.isPreorderEnabled && !preorder.isPreorderActive);
 
   const handleAdd = (e) => {
     if (e && e.stopPropagation) e.stopPropagation();
+    if (isOutOfStock) return;
+    if (preorder.isPreorderEnabled) {
+      if (!preorder.isPreorderActive) return;
+      addItem({ ...product, is_preorder: true });
+      showToast(
+        `${product.name} pre-ordered!`,
+        preorder.formattedReleaseDate ? `Available from ${preorder.formattedReleaseDate}` : 'Check your cart',
+        'success'
+      );
+      return;
+    }
     if (cutoff.hasCutoff) {
       setShowCutoffModal(true);
       return;
@@ -28,8 +43,23 @@ function ProductCard({ product, variant }) {
     showToast(`${product.name} added!`, 'Check your cart', 'success');
   };
 
+  const handleOpenDetails = (e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    setShowCutoffModal(true);
+  };
+
   const handleConfirmCutoff = () => {
     setShowCutoffModal(false);
+    if (preorder.isPreorderEnabled) {
+      if (!preorder.isPreorderActive) return;
+      addItem({ ...product, is_preorder: true });
+      showToast(
+        `${product.name} pre-ordered!`,
+        preorder.formattedReleaseDate ? `Available from ${preorder.formattedReleaseDate}` : 'Check your cart',
+        'success'
+      );
+      return;
+    }
     addItem(product);
     showToast(`${product.name} added!`, 'Check your cart', 'success');
   };
@@ -41,7 +71,12 @@ function ProductCard({ product, variant }) {
   const discountPct = hasDiscount
     ? Math.round((1 - Number(product.price) / Number(product.compare_price)) * 100)
     : 0;
-  const isOutOfStock = product.is_active === false;
+
+  const ctaText = product.is_active === false
+    ? 'Out of Stock'
+    : preorder.isPreorderEnabled
+      ? preorder.ctaLabel
+      : 'Add to Cart';
 
   /* ── Shopify-style white card (matches reference UI) ── */
   if (variant === 'shopify') {
@@ -54,10 +89,22 @@ function ProductCard({ product, variant }) {
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        opacity: isOutOfStock ? 0.7 : 1,
+        opacity: isOutOfStock ? 0.72 : 1,
       }}>
         {/* Image */}
-        <div style={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', background: '#f0f0f0', overflow: 'hidden', borderRadius: 6 }}>
+        <div
+          onClick={preorder.isPreorderEnabled ? handleOpenDetails : undefined}
+          style={{
+            position: 'relative',
+            width: '100%',
+            aspectRatio: '1 / 1',
+            background: '#f0f0f0',
+            overflow: 'hidden',
+            borderRadius: 6,
+            cursor: preorder.isPreorderEnabled ? 'pointer' : 'default',
+            border: preorder.isPreorderActive ? '2px solid #f59e0b' : 'none',
+          }}
+        >
           {hasImage
             ? <img src={product.image} alt={product.name} loading="lazy" decoding="async"
                 style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
@@ -67,13 +114,18 @@ function ProductCard({ product, variant }) {
           }
           {/* Badges overlay */}
           <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {isOutOfStock && (
+            {product.is_active === false && (
               <span style={{ background: '#111', color: '#fff', fontSize: '0.65rem', fontWeight: 800, padding: '3px 8px', borderRadius: 3, textTransform: 'uppercase' }}>Sold Out</span>
+            )}
+            {preorder.isPreorderEnabled && product.is_active !== false && (
+              <span style={{ background: preorder.isPreorderActive ? '#b45309' : '#374151', color: '#fff', fontSize: '0.65rem', fontWeight: 800, padding: '3px 8px', borderRadius: 3, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                {preorder.badgeLabel || 'PRE-ORDER'}
+              </span>
             )}
             {hasDiscount && !isOutOfStock && (
               <span style={{ background: '#c0201f', color: '#fff', fontSize: '0.65rem', fontWeight: 800, padding: '3px 8px', borderRadius: 3 }}>{discountPct}% OFF</span>
             )}
-            {product.badge && !isOutOfStock && !hasDiscount && (
+            {product.badge && !isOutOfStock && !hasDiscount && !preorder.isPreorderEnabled && (
               <span style={{ background: '#c0201f', color: '#fff', fontSize: '0.65rem', fontWeight: 800, padding: '3px 8px', borderRadius: 3, textTransform: 'capitalize' }}>{product.badge}</span>
             )}
           </div>
@@ -82,27 +134,56 @@ function ProductCard({ product, variant }) {
         {/* Info */}
         <div style={{ padding: '10px 4px 14px', display: 'flex', flexDirection: 'column', flex: 1 }}>
           <div style={{ fontWeight: 500, fontSize: '0.92rem', color: '#111', marginBottom: 4, lineHeight: 1.35 }}>{product.name}</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
             <span style={{ fontWeight: 700, fontSize: '1rem', color: '#111' }}>{fmt(product.price)}</span>
             {hasDiscount && (
               <span style={{ textDecoration: 'line-through', color: '#aaa', fontSize: '0.82rem' }}>{fmt(product.compare_price)}</span>
             )}
           </div>
-          {cutoff.hasCutoff && (
+          {preorder.isPreorderEnabled && (
+            <div
+              onClick={handleOpenDetails}
+              style={{
+                fontSize: '0.73rem',
+                color: '#78350f',
+                background: '#fffbeb',
+                border: '1px solid #fde68a',
+                borderRadius: 6,
+                padding: '6px 8px',
+                marginBottom: 10,
+                lineHeight: 1.35,
+                cursor: 'pointer',
+              }}
+            >
+              <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Calendar size={12} color="#b45309" style={{ flexShrink: 0 }} />
+                <span>Available from {preorder.formattedReleaseDate || preorder.releaseDate}</span>
+              </div>
+              {preorder.customerMessage && (
+                <div style={{ marginTop: 3, color: '#92400e', fontWeight: 500 }}>
+                  {preorder.customerMessage}
+                </div>
+              )}
+              <div style={{ marginTop: 3, fontSize: '0.68rem', fontWeight: 700, color: '#b45309', textDecoration: 'underline' }}>
+                Pre-order & delivery details →
+              </div>
+            </div>
+          )}
+          {!preorder.isPreorderEnabled && cutoff.hasCutoff && (
             <div style={{ fontSize: '0.72rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '4px 8px', marginBottom: 10, fontWeight: 600, lineHeight: 1.3, display: 'flex', alignItems: 'center', gap: 4 }}>
               <Clock size={12} color="#92400e" style={{ flexShrink: 0 }} /> Orders for this product stop by {cutoff.cutoffLabel} for same day delivery
             </div>
           )}
-          {/* Full-width Add to Cart button */}
+          {/* Full-width CTA button */}
           <button
             onClick={isOutOfStock ? undefined : handleAdd}
             disabled={isOutOfStock}
-            aria-label={isOutOfStock ? `${product.name} is out of stock` : `Add ${product.name} to cart`}
+            aria-label={isOutOfStock ? `${product.name} is unavailable` : `${ctaText} ${product.name}`}
             style={{
               width: '100%',
               padding: '11px 0',
               borderRadius: 6,
-              background: isOutOfStock ? '#ccc' : '#c0201f',
+              background: isOutOfStock ? '#ccc' : preorder.isPreorderActive ? '#b45309' : '#c0201f',
               color: '#fff',
               border: 'none',
               fontWeight: 700,
@@ -112,16 +193,17 @@ function ProductCard({ product, variant }) {
               transition: 'background 0.15s',
               marginTop: 'auto'
             }}
-            onMouseEnter={e => { if (!isOutOfStock) e.currentTarget.style.background = '#a01818'; }}
-            onMouseLeave={e => { if (!isOutOfStock) e.currentTarget.style.background = '#c0201f'; }}
+            onMouseEnter={e => { if (!isOutOfStock) e.currentTarget.style.background = preorder.isPreorderActive ? '#92400e' : '#a01818'; }}
+            onMouseLeave={e => { if (!isOutOfStock) e.currentTarget.style.background = preorder.isPreorderActive ? '#b45309' : '#c0201f'; }}
           >
-            {isOutOfStock ? 'Out of Stock' : 'Add to Cart'}
+            {ctaText}
           </button>
         </div>
       </div>
       <SameDayCutoffModal
         isOpen={showCutoffModal}
         product={product}
+        mode={preorder.isPreorderEnabled ? 'preorder' : undefined}
         onConfirm={handleConfirmCutoff}
         onClose={() => setShowCutoffModal(false)}
       />
@@ -133,15 +215,30 @@ function ProductCard({ product, variant }) {
   if (variant === 'menu') {
     return (
       <>
-      <div className="product-card" style={isOutOfStock ? { opacity: 0.65, filter: 'grayscale(0.3)' } : {}}>
-        {(product.badge || hasDiscount || isOutOfStock) && (
+      <div
+        className="product-card"
+        style={{
+          ...(isOutOfStock ? { opacity: 0.65, filter: 'grayscale(0.3)' } : {}),
+          ...(preorder.isPreorderActive ? { border: '1.5px solid #f59e0b' } : {}),
+        }}
+      >
+        {(product.badge || hasDiscount || isOutOfStock || preorder.isPreorderEnabled) && (
           <div className="product-badges">
-            {isOutOfStock && <div className="product-badge out-of-stock">Out of Stock</div>}
-            {product.badge && !isOutOfStock && <div className={`product-badge ${product.badge}`}>{product.badge}</div>}
+            {product.is_active === false && <div className="product-badge out-of-stock">Out of Stock</div>}
+            {preorder.isPreorderEnabled && product.is_active !== false && (
+              <div className="product-badge" style={{ background: preorder.isPreorderActive ? '#b45309' : '#374151', color: '#fff' }}>
+                {preorder.badgeLabel || 'PRE-ORDER'}
+              </div>
+            )}
+            {product.badge && !isOutOfStock && !preorder.isPreorderEnabled && <div className={`product-badge ${product.badge}`}>{product.badge}</div>}
             {hasDiscount && <div className="product-badge off">{discountPct}% OFF</div>}
           </div>
         )}
-        <div className="product-img" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+        <div
+          className="product-img"
+          onClick={preorder.isPreorderEnabled ? handleOpenDetails : undefined}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', cursor: preorder.isPreorderEnabled ? 'pointer' : 'default' }}
+        >
           {hasImage ? <img src={product.image} alt={product.name} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             : isEmojiStr || product.emoji ? <div>{product.image || product.emoji}</div>
             : <Drumstick size={48} color="#fca5a5" />}
@@ -149,7 +246,21 @@ function ProductCard({ product, variant }) {
         <div className="product-info">
           <div className="product-name">{product.name}</div>
           <div className="product-desc-text">{product.shortDesc || product.desc}</div>
-          {cutoff.hasCutoff && (
+          {preorder.isPreorderEnabled && (
+            <div
+              onClick={handleOpenDetails}
+              style={{ fontSize: '0.7rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '4px 6px', fontWeight: 700, marginTop: 4, cursor: 'pointer' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Calendar size={11} color="#b45309" style={{ flexShrink: 0 }} />
+                <span>Available from {preorder.formattedReleaseDate || preorder.releaseDate}</span>
+              </div>
+              {preorder.customerMessage && (
+                <div style={{ fontWeight: 500, marginTop: 2 }}>{preorder.customerMessage}</div>
+              )}
+            </div>
+          )}
+          {!preorder.isPreorderEnabled && cutoff.hasCutoff && (
             <div style={{ fontSize: '0.7rem', color: '#92400e', fontWeight: 600, marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
               <Clock size={12} color="#92400e" style={{ flexShrink: 0 }} /> Orders for this product stop by {cutoff.cutoffLabel} for same day delivery
             </div>
@@ -165,17 +276,39 @@ function ProductCard({ product, variant }) {
                 <div className="product-price">{fmt(product.price)}{product.category === 'combo' && <small>combo deal</small>}</div>
               )}
             </div>
-            <button className="add-cart-btn" onClick={isOutOfStock ? undefined : handleAdd} disabled={isOutOfStock}
-              aria-label={isOutOfStock ? `${product.name} is out of stock` : `Add ${product.name} to cart`}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: isOutOfStock ? 0.4 : 1, cursor: isOutOfStock ? 'not-allowed' : 'pointer' }}>
-              <Plus size={16} />
-            </button>
+            {preorder.isPreorderEnabled ? (
+              <button
+                onClick={isOutOfStock ? undefined : handleAdd}
+                disabled={isOutOfStock}
+                aria-label={`${ctaText} ${product.name}`}
+                style={{
+                  padding: '6px 10px',
+                  borderRadius: 8,
+                  background: isOutOfStock ? '#9ca3af' : '#b45309',
+                  color: '#fff',
+                  border: 'none',
+                  fontSize: '0.72rem',
+                  fontWeight: 800,
+                  cursor: isOutOfStock ? 'not-allowed' : 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {ctaText}
+              </button>
+            ) : (
+              <button className="add-cart-btn" onClick={isOutOfStock ? undefined : handleAdd} disabled={isOutOfStock}
+                aria-label={isOutOfStock ? `${product.name} is out of stock` : `Add ${product.name} to cart`}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: isOutOfStock ? 0.4 : 1, cursor: isOutOfStock ? 'not-allowed' : 'pointer' }}>
+                <Plus size={16} />
+              </button>
+            )}
           </div>
         </div>
       </div>
       <SameDayCutoffModal
         isOpen={showCutoffModal}
         product={product}
+        mode={preorder.isPreorderEnabled ? 'preorder' : undefined}
         onConfirm={handleConfirmCutoff}
         onClose={() => setShowCutoffModal(false)}
       />
@@ -186,15 +319,30 @@ function ProductCard({ product, variant }) {
   /* ── Default themed card (home, etc.) ── */
   return (
     <>
-    <div className="product-card" style={isOutOfStock ? { opacity: 0.65, filter: 'grayscale(0.3)' } : {}}>
-      {(product.badge || hasDiscount || isOutOfStock) && (
+    <div
+      className="product-card"
+      style={{
+        ...(isOutOfStock ? { opacity: 0.65, filter: 'grayscale(0.3)' } : {}),
+        ...(preorder.isPreorderActive ? { border: '1.5px solid #f59e0b' } : {}),
+      }}
+    >
+      {(product.badge || hasDiscount || isOutOfStock || preorder.isPreorderEnabled) && (
         <div className="product-badges">
-          {isOutOfStock && <div className="product-badge out-of-stock">Out of Stock</div>}
-          {product.badge && !isOutOfStock && <div className={`product-badge ${product.badge}`}>{product.badge}</div>}
+          {product.is_active === false && <div className="product-badge out-of-stock">Out of Stock</div>}
+          {preorder.isPreorderEnabled && product.is_active !== false && (
+            <div className="product-badge" style={{ background: preorder.isPreorderActive ? '#b45309' : '#374151', color: '#fff' }}>
+              {preorder.badgeLabel || 'PRE-ORDER'}
+            </div>
+          )}
+          {product.badge && !isOutOfStock && !preorder.isPreorderEnabled && <div className={`product-badge ${product.badge}`}>{product.badge}</div>}
           {hasDiscount && <div className="product-badge off">{discountPct}% OFF</div>}
         </div>
       )}
-      <div className="product-img" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      <div
+        className="product-img"
+        onClick={preorder.isPreorderEnabled ? handleOpenDetails : undefined}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', cursor: preorder.isPreorderEnabled ? 'pointer' : 'default' }}
+      >
         {hasImage ? <img src={product.image} alt={product.name} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           : isEmojiStr || product.emoji ? <div>{product.image || product.emoji}</div>
           : <Drumstick size={64} color="#fca5a5" />}
@@ -202,7 +350,21 @@ function ProductCard({ product, variant }) {
       <div className="product-info">
         <div className="product-name">{product.name}</div>
         <div className="product-desc-text">{product.shortDesc || product.desc}</div>
-        {cutoff.hasCutoff && (
+        {preorder.isPreorderEnabled && (
+          <div
+            onClick={handleOpenDetails}
+            style={{ fontSize: '0.72rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '5px 8px', fontWeight: 700, marginTop: 6, cursor: 'pointer' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Calendar size={12} color="#b45309" style={{ flexShrink: 0 }} />
+              <span>Available from {preorder.formattedReleaseDate || preorder.releaseDate}</span>
+            </div>
+            {preorder.customerMessage && (
+              <div style={{ fontWeight: 500, marginTop: 2 }}>{preorder.customerMessage}</div>
+            )}
+          </div>
+        )}
+        {!preorder.isPreorderEnabled && cutoff.hasCutoff && (
           <div style={{ fontSize: '0.7rem', color: '#92400e', fontWeight: 600, marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
             <Clock size={12} color="#92400e" style={{ flexShrink: 0 }} /> Orders for this product stop by {cutoff.cutoffLabel} for same day delivery
           </div>
@@ -218,17 +380,39 @@ function ProductCard({ product, variant }) {
               <div className="product-price">{fmt(product.price)}{product.category === 'combo' && <small>combo deal</small>}</div>
             )}
           </div>
-          <button className="add-cart-btn" onClick={isOutOfStock ? undefined : handleAdd} disabled={isOutOfStock}
-            aria-label={isOutOfStock ? `${product.name} is out of stock` : `Add ${product.name} to cart`}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: isOutOfStock ? 0.4 : 1, cursor: isOutOfStock ? 'not-allowed' : 'pointer' }}>
-            <Plus size={16} />
-          </button>
+          {preorder.isPreorderEnabled ? (
+            <button
+              onClick={isOutOfStock ? undefined : handleAdd}
+              disabled={isOutOfStock}
+              aria-label={`${ctaText} ${product.name}`}
+              style={{
+                padding: '7px 12px',
+                borderRadius: 8,
+                background: isOutOfStock ? '#9ca3af' : '#b45309',
+                color: '#fff',
+                border: 'none',
+                fontSize: '0.76rem',
+                fontWeight: 800,
+                cursor: isOutOfStock ? 'not-allowed' : 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {ctaText}
+            </button>
+          ) : (
+            <button className="add-cart-btn" onClick={isOutOfStock ? undefined : handleAdd} disabled={isOutOfStock}
+              aria-label={isOutOfStock ? `${product.name} is out of stock` : `Add ${product.name} to cart`}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: isOutOfStock ? 0.4 : 1, cursor: isOutOfStock ? 'not-allowed' : 'pointer' }}>
+              <Plus size={16} />
+            </button>
+          )}
         </div>
       </div>
     </div>
     <SameDayCutoffModal
       isOpen={showCutoffModal}
       product={product}
+      mode={preorder.isPreorderEnabled ? 'preorder' : undefined}
       onConfirm={handleConfirmCutoff}
       onClose={() => setShowCutoffModal(false)}
     />

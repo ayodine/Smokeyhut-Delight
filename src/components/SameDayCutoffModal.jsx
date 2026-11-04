@@ -1,11 +1,16 @@
 import React from 'react';
-import { X, Clock, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { X, Clock, AlertCircle, CheckCircle2, Calendar, Truck, Sparkles } from 'lucide-react';
 import { getCutoffState } from '../lib/deliveryCutoff';
+import { getPreorderState } from '../lib/preorderUtils';
 
-export default function SameDayCutoffModal({ isOpen, product, onConfirm, onClose }) {
+const fmt = (n) => '₦' + Number(n || 0).toLocaleString();
+
+export default function SameDayCutoffModal({ isOpen, product, onConfirm, onClose, mode }) {
   if (!isOpen || !product) return null;
 
   const cutoff = getCutoffState(product);
+  const preorder = getPreorderState(product);
+  const isPreorderMode = mode === 'preorder' || preorder.isPreorderEnabled;
   const isPast = cutoff.isPastCutoff;
 
   return (
@@ -34,7 +39,9 @@ export default function SameDayCutoffModal({ isOpen, product, onConfirm, onClose
           left: '50%',
           transform: 'translate(-50%, -50%)',
           width: '92%',
-          maxWidth: 440,
+          maxWidth: isPreorderMode ? 480 : 440,
+          maxHeight: '90vh',
+          overflowY: 'auto',
           background: '#fff',
           borderRadius: 20,
           padding: '28px 24px',
@@ -75,28 +82,32 @@ export default function SameDayCutoffModal({ isOpen, product, onConfirm, onClose
               width: 48,
               height: 48,
               borderRadius: 14,
-              background: isPast ? '#fef2f2' : '#fffbeb',
-              border: `1.5px solid ${isPast ? '#fecaca' : '#fde68a'}`,
+              background: isPreorderMode ? '#fffbeb' : isPast ? '#fef2f2' : '#fffbeb',
+              border: `1.5px solid ${isPreorderMode ? '#fde68a' : isPast ? '#fecaca' : '#fde68a'}`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               flexShrink: 0,
             }}
           >
-            <Clock size={24} color={isPast ? '#dc2626' : '#d97706'} />
+            {isPreorderMode ? (
+              <Calendar size={24} color="#b45309" />
+            ) : (
+              <Clock size={24} color={isPast ? '#dc2626' : '#d97706'} />
+            )}
           </div>
           <div>
             <span
               style={{
                 fontSize: '0.72rem',
                 fontWeight: 800,
-                color: isPast ? '#dc2626' : '#d97706',
+                color: isPreorderMode ? '#b45309' : isPast ? '#dc2626' : '#d97706',
                 textTransform: 'uppercase',
                 letterSpacing: '0.06em',
                 display: 'block',
               }}
             >
-              Same-Day Delivery Notice
+              {isPreorderMode ? 'Pre-Order Product Details' : 'Same-Day Delivery Notice'}
             </span>
             <h3
               id="cutoff-modal-title"
@@ -110,41 +121,124 @@ export default function SameDayCutoffModal({ isOpen, product, onConfirm, onClose
             >
               {product.name}
             </h3>
-          </div>
-        </div>
-
-        {/* Cutoff timing details */}
-        <div
-          style={{
-            background: isPast ? '#fff5f5' : '#fafafb',
-            border: `1.5px solid ${isPast ? '#fed7d7' : '#e5e7eb'}`,
-            borderRadius: 14,
-            padding: '14px 16px',
-            marginBottom: 20,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-            {isPast ? (
-              <AlertCircle size={18} color="#dc2626" style={{ flexShrink: 0, marginTop: 2 }} />
-            ) : (
-              <CheckCircle2 size={18} color="#166534" style={{ flexShrink: 0, marginTop: 2 }} />
-            )}
-            <div style={{ fontSize: '0.88rem', lineHeight: 1.5, color: '#374151' }}>
-              {isPast ? (
-                <>
-                  Orders for this product stop by <strong>{cutoff.cutoffLabel}</strong> for same-day delivery.
-                  Because it is past {cutoff.cutoffLabel}, this item will be scheduled for{' '}
-                  <strong style={{ color: '#dc2626' }}>tomorrow's delivery</strong>.
-                </>
-              ) : (
-                <>
-                  Orders for this product must be placed before <strong>{cutoff.cutoffLabel}</strong> for same-day dispatch.
-                  Orders placed after {cutoff.cutoffLabel} will be delivered the next day.
-                </>
-              )}
+            <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#c0201f', marginTop: 2 }}>
+              {fmt(product.price)}
             </div>
           </div>
         </div>
+
+        {isPreorderMode ? (
+          <>
+            {(product.description || product.desc || product.short_desc || product.shortDesc) && (
+              <p style={{ fontSize: '0.86rem', color: '#4b5563', lineHeight: 1.55, margin: '0 0 14px' }}>
+                {product.description || product.desc || product.short_desc || product.shortDesc}
+              </p>
+            )}
+
+            {/* Pre-Order Release & Scheduling Card */}
+            <div
+              style={{
+                background: '#fffbeb',
+                border: '1.5px solid #fde68a',
+                borderRadius: 14,
+                padding: '14px 16px',
+                marginBottom: 14,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+                <Sparkles size={18} color="#b45309" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div style={{ fontSize: '0.86rem', lineHeight: 1.5, color: '#78350f' }}>
+                  <strong>Release / Processing Date:</strong>{' '}
+                  {preorder.formattedReleaseDate || preorder.releaseDate}
+                  <div style={{ fontSize: '0.78rem', color: '#92400e', marginTop: 2 }}>
+                    This is the earliest date we begin smoking, processing, and fulfilling your pre-order.
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, paddingTop: 10, borderTop: '1px dashed #fcd34d' }}>
+                <Calendar size={17} color="#b45309" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div style={{ fontSize: '0.82rem', lineHeight: 1.45, color: '#78350f' }}>
+                  {preorder.schedulingMode === 'schedule_at_checkout' ? (
+                    <>
+                      <strong>Delivery Date Selection at Checkout:</strong> You will choose your preferred delivery date during checkout (any date on or after <strong>{preorder.formattedReleaseDate}</strong>).
+                    </>
+                  ) : (
+                    <>
+                      <strong>Delivery Date Selection on Release:</strong> Place your pre-order today to reserve your pack. Once <strong>{preorder.formattedReleaseDate}</strong> arrives, you can select or reschedule your exact delivery date from your Order / Account page.
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {preorder.customerMessage && (
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed #fcd34d', fontSize: '0.82rem', color: '#92400e', fontWeight: 600 }}>
+                  {preorder.customerMessage}
+                </div>
+              )}
+
+              {preorder.remainingCapacity !== null && (
+                <div style={{ marginTop: 8, fontSize: '0.76rem', fontWeight: 800, color: '#b45309' }}>
+                  Remaining Pre-Order Allocation: {preorder.remainingCapacity} pack{preorder.remainingCapacity === 1 ? '' : 's'}
+                </div>
+              )}
+            </div>
+
+            {/* Dispatch-Capacity Rule Notice if enabled on this product */}
+            {Boolean(product.dispatch_surcharge_enabled) && (
+              <div
+                style={{
+                  background: '#fafafb',
+                  border: '1.5px solid #e5e7eb',
+                  borderRadius: 12,
+                  padding: '11px 14px',
+                  marginBottom: 18,
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 10,
+                }}
+              >
+                <Truck size={17} color="#374151" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div style={{ fontSize: '0.78rem', lineHeight: 1.45, color: '#4b5563' }}>
+                  <strong>Dispatch Box Capacity Notice:</strong> Orders {product.dispatch_threshold_operator || '>'} {product.dispatch_threshold_qty || 5} {product.dispatch_threshold_unit || 'packs'} exceed a standard dispatch box and require a dedicated dispatch trip at <strong>{product.dispatch_fee_multiplier || 2}×</strong> the standard zone delivery fee.
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          /* Cutoff timing details */
+          <div
+            style={{
+              background: isPast ? '#fff5f5' : '#fafafb',
+              border: `1.5px solid ${isPast ? '#fed7d7' : '#e5e7eb'}`,
+              borderRadius: 14,
+              padding: '14px 16px',
+              marginBottom: 20,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+              {isPast ? (
+                <AlertCircle size={18} color="#dc2626" style={{ flexShrink: 0, marginTop: 2 }} />
+              ) : (
+                <CheckCircle2 size={18} color="#166534" style={{ flexShrink: 0, marginTop: 2 }} />
+              )}
+              <div style={{ fontSize: '0.88rem', lineHeight: 1.5, color: '#374151' }}>
+                {isPast ? (
+                  <>
+                    Orders for this product stop by <strong>{cutoff.cutoffLabel}</strong> for same-day delivery.
+                    Because it is past {cutoff.cutoffLabel}, this item will be scheduled for{' '}
+                    <strong style={{ color: '#dc2626' }}>tomorrow's delivery</strong>.
+                  </>
+                ) : (
+                  <>
+                    Orders for this product must be placed before <strong>{cutoff.cutoffLabel}</strong> for same-day dispatch.
+                    Orders placed after {cutoff.cutoffLabel} will be delivered the next day.
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Action Buttons */}
         <div style={{ display: 'flex', gap: 10 }}>
@@ -169,21 +263,22 @@ export default function SameDayCutoffModal({ isOpen, product, onConfirm, onClose
           <button
             type="button"
             onClick={onConfirm}
+            disabled={isPreorderMode && !preorder.isPreorderActive}
             style={{
               flex: '1.4',
               padding: '13px 16px',
               borderRadius: 12,
-              background: '#c0201f',
+              background: isPreorderMode && !preorder.isPreorderActive ? '#9ca3af' : '#c0201f',
               color: '#fff',
               border: 'none',
               fontWeight: 800,
               fontSize: '0.92rem',
-              cursor: 'pointer',
+              cursor: isPreorderMode && !preorder.isPreorderActive ? 'not-allowed' : 'pointer',
               transition: 'background 0.15s',
               boxShadow: '0 4px 14px rgba(192,32,31,0.3)',
             }}
           >
-            I Understand
+            {isPreorderMode ? preorder.ctaLabel : 'I Understand'}
           </button>
         </div>
       </div>

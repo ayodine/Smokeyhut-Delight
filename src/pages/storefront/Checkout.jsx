@@ -17,6 +17,8 @@ import { getAttribution, formatAttributionForNotes } from '../../lib/attribution
 import CheckoutDisclaimerModal from '../../components/CheckoutDisclaimerModal';
 import PromoProgressBanner from '../../components/PromoProgressBanner';
 import { verifyCartItemsAvailability } from '../../lib/productAvailability';
+import { evaluateCartPreorders, validatePreorderDeliveryDate, formatReleaseDate } from '../../lib/preorderUtils';
+import { evaluateDispatchCapacitySurcharge } from '../../lib/dispatchPricing';
 import StorefrontCalendar from '../../components/StorefrontCalendar';
 import { ShoppingCart, Truck, CheckCircle, Store, Loader2, Search, MapPin, Tag, X, Copy, Banknote, Send, ClipboardList, Utensils, AlertTriangle, Clock, Lightbulb, Gift, Calendar } from 'lucide-react';
 
@@ -52,7 +54,7 @@ const PaystackIcon = ({ size = 20 }) => (
 );
 
 export default function Checkout() {
-  const { items, total, clearCart, cartSessionId, promoteStage, captureContact, markConverted, promoRewardItem, removeItem } = useCart();
+  const { items, total, clearCart, cartSessionId, promoteStage, captureContact, markConverted, promoRewardItem, removeItem, syncCartWithDbProducts } = useCart();
   const { showToast } = useToast();
   const { settings } = useSettings();
   const fmt = (n) => '₦' + Number(n).toLocaleString();
@@ -71,13 +73,14 @@ export default function Checkout() {
     verifyCartItemsAvailability(items).then(res => {
       if (!cancelled) {
         setUnavailableItems(res.unavailableItems || []);
+        if (res.dbProductsMap) syncCartWithDbProducts(res.dbProductsMap);
         setIsVerifyingAvailability(false);
       }
     }).catch(() => {
       if (!cancelled) setIsVerifyingAvailability(false);
     });
     return () => { cancelled = true; };
-  }, [items]);
+  }, [items, syncCartWithDbProducts]);
 
   const handleRemoveUnavailableItems = () => {
     const idsToRemove = new Set(unavailableItems.map(u => String(u.id)));
@@ -229,14 +232,53 @@ export default function Checkout() {
 
   const VAT = 200;
   const isPickup = deliveryType === 'pickup';
+  const baseZoneFee = isPickup ? 0 : (selectedMatch?.zone?.price ?? 0);
+
+  const cartPreorders = useMemo(() => evaluateCartPreorders(items), [items]);
+  const dispatchSurcharge = useMemo(
+    () => evaluateDispatchCapacitySurcharge(items, baseZoneFee, deliveryType),
+    [items, baseZoneFee, deliveryType]
+  );
+
+  const prevDispatchTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (dispatchSurcharge.triggered && !prevDispatchTriggeredRef.current && !isPickup) {
+      showToast(
+        `Dedicated Dispatch (${dispatchSurcharge.appliedMultiplier}× Delivery Fee)`,
+        dispatchSurcharge.customerMessage,
+        'info'
+      );
+    }
+    prevDispatchTriggeredRef.current = dispatchSurcharge.triggered;
+  }, [dispatchSurcharge.triggered, dispatchSurcharge.appliedMultiplier, dispatchSurcharge.customerMessage, isPickup, showToast]);
+
+  // Synchronize pre-order scheduling defaults when cartPreorders changes
+  useEffect(() => {
+    if (!cartPreorders.hasPreorder) return;
+    if (cartPreorders.effectiveSchedulingMode === 'schedule_at_checkout') {
+      setIsScheduled(true);
+      if (!scheduleDate || scheduleDate < cartPreorders.minDeliveryDate) {
+        setScheduleDate(cartPreorders.minDeliveryDate);
+        setTempScheduleDate(cartPreorders.minDeliveryDate);
+      }
+    } else if (scheduleDate && scheduleDate < cartPreorders.minDeliveryDate) {
+      setScheduleDate(cartPreorders.minDeliveryDate);
+      setTempScheduleDate(cartPreorders.minDeliveryDate);
+    }
+  }, [cartPreorders.hasPreorder, cartPreorders.effectiveSchedulingMode, cartPreorders.minDeliveryDate, scheduleDate]);
+
   const allFreeShipping = items.length > 0 && items.every(i => i.free_shipping === true);
   const qualifyingBirdCount = items.reduce((acc, i) => acc + (getPromoBirdCount(i) * (Number(i.qty) || 0)), 0);
-  const promoFreeDelivery = !isPickup && promoRewardItem?.is_free_delivery === true && qualifyingBirdCount >= 3;
-  const promoFee = !isPickup && selectedMatch
+  const promoFreeDelivery = !isPickup && !dispatchSurcharge.triggered && promoRewardItem?.is_free_delivery === true && qualifyingBirdCount >= 3;
+  const promoFee = !isPickup && !dispatchSurcharge.triggered && selectedMatch
     ? getPromoDeliveryFee(deliveryPromo, items, selectedMatch.area?.name || '', selectedMatch.zone.price)
     : null;
-  const promoApplied = promoFee !== null && !allFreeShipping;
-  const deliveryFee = isPickup ? 0 : (allFreeShipping || promoFreeDelivery ? 0 : (promoApplied ? promoFee : (selectedMatch?.zone.price ?? 0)));
+  const promoApplied = promoFee !== null && !allFreeShipping && !dispatchSurcharge.triggered;
+  const deliveryFee = isPickup
+    ? 0
+    : dispatchSurcharge.triggered
+      ? dispatchSurcharge.finalFee
+      : (allFreeShipping || promoFreeDelivery ? 0 : (promoApplied ? promoFee : baseZoneFee));
 
   // Dynamically recalculate discount based on current cart total & delivery fee
   const couponDiscount = useMemo(() => {
@@ -428,6 +470,12 @@ export default function Checkout() {
     const attrNote = formatAttributionForNotes(attr);
 
     let orderNotes = (promoApplied ? '[via Website] [Delivery Promo]' : '[via Website]') + (effectivePromoReward ? ` [Promo: ${effectivePromoReward.name}]` : '');
+    if (cartPreorders.hasPreorder) {
+      orderNotes += ` [Pre-Order: Release ${cartPreorders.latestReleaseDate}]`;
+    }
+    if (!isPickup && dispatchSurcharge.triggered) {
+      orderNotes += ` [Dedicated Dispatch ${dispatchSurcharge.appliedMultiplier}x]`;
+    }
     if (isScheduled && scheduleDate) {
       orderNotes += ` [Scheduled Delivery: ${scheduleDate}] [Rescheduled]`;
     }
@@ -448,6 +496,7 @@ export default function Checkout() {
       payment_method: method,
       total: amountToPayNow,
       delivery_fee: deliveryFee,
+      base_delivery_fee: baseZoneFee,
       coupon_code: appliedCoupon?.code || null,
       coupon_discount: couponDiscount,
       promo_id: effectivePromoReward?.promo_id || null,
@@ -460,15 +509,52 @@ export default function Checkout() {
       ad_click_id: attr?.ad_click_id || null,
       scheduled_delivery_date: isScheduled && scheduleDate ? scheduleDate : null,
       delivery_status: isScheduled && scheduleDate ? 'Rescheduled' : null,
+      is_preorder: cartPreorders.hasPreorder,
+      preorder_release_date: cartPreorders.latestReleaseDate || null,
       items: currentItems.map(i => ({
         id: i.id || null,
         name: i.name,
         price: i.price,
         qty: i.qty,
-        is_promo_reward: i.is_promo_reward || false
+        is_promo_reward: i.is_promo_reward || false,
+        is_preorder: Boolean(i.preorder_enabled || i.is_preorder),
+        preorder_release_date: i.preorder_release_date || null,
+        preorder_scheduling_mode: i.preorder_scheduling_mode || null,
       })),
       notes: orderNotes,
     };
+  };
+
+  const insertOrderItemsWithSnapshots = async (orderId, itemsSnapshot) => {
+    const richRows = itemsSnapshot.map(i => ({
+      order_id: orderId,
+      product_id: i.id || null,
+      name: i.name,
+      price: i.price,
+      qty: i.qty,
+      is_preorder: Boolean(i.preorder_enabled || i.is_preorder),
+      preorder_release_date: i.preorder_release_date || null,
+      preorder_snapshot: (i.preorder_enabled || i.is_preorder)
+        ? {
+            release_date: i.preorder_release_date || null,
+            scheduling_mode: i.preorder_scheduling_mode || 'schedule_after_release',
+            message: i.preorder_message || null,
+          }
+        : null,
+      dispatch_rule_snapshot: i.dispatch_surcharge_enabled
+        ? {
+            threshold_qty: i.dispatch_threshold_qty,
+            threshold_operator: i.dispatch_threshold_operator,
+            fee_multiplier: i.dispatch_fee_multiplier,
+          }
+        : null,
+    }));
+    const { error } = await publicSupabase.from('order_items').insert(richRows);
+    if (error) {
+      await publicSupabase.from('order_items').insert(
+        itemsSnapshot.map(i => ({ order_id: orderId, product_id: i.id || null, name: i.name, price: i.price, qty: i.qty }))
+      );
+    }
   };
 
   const validateForm = () => {
@@ -499,7 +585,13 @@ export default function Checkout() {
       showToast('Cart is empty', 'Add items to your cart first', 'error');
       return false;
     }
-    if (isScheduled) {
+    if (cartPreorders.hasPreorder) {
+      const preorderCheck = validatePreorderDeliveryDate(isScheduled ? scheduleDate : '', cartPreorders);
+      if (!preorderCheck.isValid) {
+        showToast('Pre-Order Delivery Date', preorderCheck.error, 'error');
+        return false;
+      }
+    } else if (isScheduled) {
       if (!scheduleDate) {
         showToast('Delivery Date required', 'Please select a delivery date for your scheduled order', 'error');
         return false;
@@ -585,9 +677,7 @@ export default function Checkout() {
       const { data, error } = await orderClient.rpc('create_storefront_order', { p: payload });
       if (error) throw error;
       orderId = data;
-      await publicSupabase.from('order_items').insert(
-        itemsSnapshot.map(i => ({ order_id: orderId, product_id: i.id || null, name: i.name, price: i.price, qty: i.qty }))
-      );
+      await insertOrderItemsWithSnapshots(orderId, itemsSnapshot);
     } catch (err) {
       showToast('Failed to place order', err.message, 'error');
       setProcessing(false);
@@ -637,7 +727,7 @@ export default function Checkout() {
   };
 
   const handlePaystack = async (skipCutoffGate = false) => {
-    if (skipCutoffGate !== true && anyItemPastCutoff(items) && !cutoffAck) {
+    if (skipCutoffGate !== true && !cartPreorders.hasPreorder && anyItemPastCutoff(items) && !cutoffAck) {
       setShowCutoffModal(true);
       return;
     }
@@ -701,9 +791,7 @@ export default function Checkout() {
       payload.status = 'pending_payment';
       const { data: orderId, error } = await orderClient.rpc('create_storefront_order', { p: payload });
       if (error) throw error;
-      await publicSupabase.from('order_items').insert(
-        itemsSnapshot.map(i => ({ order_id: orderId, product_id: i.id || null, name: i.name, price: i.price, qty: i.qty }))
-      );
+      await insertOrderItemsWithSnapshots(orderId, itemsSnapshot);
 
       const res = await fetch(`${SUPABASE_URL}/functions/v1/initialize-payment`, {
         method: 'POST',
@@ -863,7 +951,19 @@ export default function Checkout() {
                   <span style={{ position: 'absolute', top: -6, right: -6, background: '#c0201f', color: '#fff', borderRadius: '50%', width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 900 }}>{item.qty}</span>
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: '0.88rem', color: isUnavailable ? '#991b1b' : '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.88rem', color: isUnavailable ? '#991b1b' : '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
+                    {Boolean(item.preorder_enabled || item.is_preorder) && (
+                      <span style={{ background: '#b45309', color: '#fff', fontSize: '0.62rem', fontWeight: 800, padding: '1px 6px', borderRadius: 4, textTransform: 'uppercase' }}>
+                        Pre-Order
+                      </span>
+                    )}
+                  </div>
+                  {Boolean(item.preorder_enabled || item.is_preorder) && item.preorder_release_date && (
+                    <div style={{ fontSize: '0.73rem', color: '#b45309', fontWeight: 700, marginTop: 2 }}>
+                      Available from {formatReleaseDate(item.preorder_release_date)}
+                    </div>
+                  )}
                   {isUnavailable ? (
                     <div style={{ display: 'inline-block', background: '#fee2e2', color: '#b91c1c', fontSize: '0.7rem', fontWeight: 800, padding: '2px 6px', borderRadius: 4, marginTop: 2 }}>
                       No longer available (Out of stock)
@@ -912,6 +1012,11 @@ export default function Checkout() {
               </div>
             </div>
           )}
+          {cartPreorders.isMixedCart && (
+            <div style={{ padding: '12px 16px', background: '#fffbeb', borderTop: '1px solid #fde68a', fontSize: '0.78rem', color: '#78350f', fontWeight: 600, lineHeight: 1.45 }}>
+              <strong>Mixed Cart Fulfilment Notice:</strong> Your bag contains both pre-order and regular menu items. All items in this order will be prepared and delivered together on or after <strong>{cartPreorders.formattedLatestReleaseDate || cartPreorders.latestReleaseDate}</strong>.
+            </div>
+          )}
         </div>
 
         {/* Delivery Section */}
@@ -930,6 +1035,23 @@ export default function Checkout() {
               ))}
             </div>
 
+            {deliveryType === 'delivery' && dispatchSurcharge.triggered && (
+              <div style={{ marginBottom: 12, padding: '12px 14px', background: '#fef2f2', border: '1.5px solid #fca5a5', borderRadius: 12, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                <Truck size={18} color="#b91c1c" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div style={{ fontSize: '0.8rem', color: '#991b1b', lineHeight: 1.45 }}>
+                  <div style={{ fontWeight: 800, marginBottom: 3 }}>
+                    Dedicated Dispatch Required ({dispatchSurcharge.appliedMultiplier}× Delivery Fee)
+                  </div>
+                  <div>{dispatchSurcharge.customerMessage}</div>
+                  {selectedMatch && baseZoneFee > 0 && (
+                    <div style={{ marginTop: 6, fontWeight: 800, color: '#7f1d1d' }}>
+                      Standard Zone Fee: {fmt(baseZoneFee)} → Dedicated Dispatch ({dispatchSurcharge.appliedMultiplier}×): {fmt(deliveryFee)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {deliveryType === 'delivery' ? (
               <>
                 <div style={{ position: 'relative', marginBottom: 10 }}>
@@ -947,6 +1069,14 @@ export default function Checkout() {
                           style={{ padding: '11px 14px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid #f5f5f5', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div><div style={{ fontWeight: 700, color: '#111' }}>{m.area ? m.area.name : m.zone.name}</div><div style={{ fontSize: '0.75rem', color: '#888' }}>{m.zone.name}</div></div>
                           {(() => {
+                            if (dispatchSurcharge.triggered) {
+                              const surcharged = evaluateDispatchCapacitySurcharge(items, m.zone.price, 'delivery').finalFee;
+                              return (
+                                <span style={{ fontWeight: 800, fontSize: '0.82rem', color: '#b91c1c' }}>
+                                  {fmt(surcharged)} ({dispatchSurcharge.appliedMultiplier}×)
+                                </span>
+                              );
+                            }
                             const pf = getPromoDeliveryFee(deliveryPromo, items, m.area?.name || '', m.zone.price);
                             if (pf === null || allFreeShipping) return <span style={{ color: '#c0201f', fontWeight: 800, fontSize: '0.82rem' }}>{fmt(m.zone.price)}</span>;
                             return (
@@ -969,6 +1099,11 @@ export default function Checkout() {
                         <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#111' }}>{selectedMatch.area ? selectedMatch.area.name : selectedMatch.zone?.name}</span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {dispatchSurcharge.triggered && (
+                          <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#991b1b', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 6, padding: '2px 6px', textTransform: 'uppercase' }}>
+                            {dispatchSurcharge.appliedMultiplier}× Dedicated Dispatch
+                          </span>
+                        )}
                         {promoApplied && (
                           <>
                             <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#16a34a', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 6, padding: '2px 6px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Promo</span>
@@ -1010,15 +1145,36 @@ export default function Checkout() {
 
             {/* Schedule Delivery Toggle Switch */}
             <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #f0f0f0', position: 'relative' }}>
+              {cartPreorders.hasPreorder && (
+                <div style={{ marginBottom: 10, padding: '10px 12px', background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 10, fontSize: '0.78rem', color: '#78350f', lineHeight: 1.45 }}>
+                  <div style={{ fontWeight: 800, marginBottom: 2 }}>
+                    Pre-Order Release Date: {cartPreorders.formattedLatestReleaseDate || cartPreorders.latestReleaseDate}
+                  </div>
+                  {cartPreorders.effectiveSchedulingMode === 'schedule_at_checkout' ? (
+                    <div>Please select your preferred delivery date below (on or after {cartPreorders.formattedLatestReleaseDate || cartPreorders.latestReleaseDate}).</div>
+                  ) : (
+                    <div>
+                      You may place your pre-order now and select your exact delivery date from your Order / Account page once <strong>{cartPreorders.formattedLatestReleaseDate || cartPreorders.latestReleaseDate}</strong> arrives — or optionally choose an eligible date ({cartPreorders.formattedLatestReleaseDate || cartPreorders.latestReleaseDate} or later) below.
+                    </div>
+                  )}
+                </div>
+              )}
               <div
                 onClick={() => {
+                  if (cartPreorders.hasPreorder && cartPreorders.effectiveSchedulingMode === 'schedule_at_checkout') {
+                    setIsScheduled(true);
+                    setIsCalendarOpen(prev => !prev);
+                    return;
+                  }
                   const next = !isScheduled;
                   setIsScheduled(next);
                   if (next) {
-                    if (!scheduleDate) {
-                      const todayStr = new Date().toISOString().split('T')[0];
-                      setScheduleDate(todayStr);
-                      setTempScheduleDate(todayStr);
+                    const defaultDate = cartPreorders.hasPreorder
+                      ? cartPreorders.minDeliveryDate
+                      : new Date().toISOString().split('T')[0];
+                    if (!scheduleDate || scheduleDate < defaultDate) {
+                      setScheduleDate(defaultDate);
+                      setTempScheduleDate(defaultDate);
                     } else {
                       setTempScheduleDate(scheduleDate);
                     }
@@ -1051,10 +1207,18 @@ export default function Checkout() {
                   </div>
                   <div>
                     <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#111' }}>
-                      Schedule {isPickup ? 'pickup' : 'delivery'} for later
+                      {cartPreorders.hasPreorder
+                        ? (cartPreorders.effectiveSchedulingMode === 'schedule_at_checkout'
+                            ? `Select Pre-Order ${isPickup ? 'Pickup' : 'Delivery'} Date (Required)`
+                            : `Select Pre-Order ${isPickup ? 'Pickup' : 'Delivery'} Date Now (Optional)`)
+                        : `Schedule ${isPickup ? 'pickup' : 'delivery'} for later`}
                     </div>
                     <div style={{ fontSize: '0.74rem', color: '#777', marginTop: 1 }}>
-                      {isScheduled ? 'Order will be delivered on selected date' : 'Default: delivered today / as normal'}
+                      {cartPreorders.hasPreorder
+                        ? (isScheduled
+                            ? `Scheduled on or after ${cartPreorders.formattedLatestReleaseDate || cartPreorders.latestReleaseDate}`
+                            : `Default: select delivery date on or after ${cartPreorders.formattedLatestReleaseDate || cartPreorders.latestReleaseDate}`)
+                        : (isScheduled ? 'Order will be delivered on selected date' : 'Default: delivered today / as normal')}
                     </div>
                   </div>
                 </div>
@@ -1159,7 +1323,7 @@ export default function Checkout() {
                         value={scheduleDate}
                         onChange={(d) => setScheduleDate(d)}
                         onClose={() => setIsCalendarOpen(false)}
-                        minDate={new Date().toISOString().split('T')[0]}
+                        minDate={cartPreorders.hasPreorder ? cartPreorders.minDeliveryDate : new Date().toISOString().split('T')[0]}
                       />
                     </div>
                   )}
@@ -1297,14 +1461,18 @@ export default function Checkout() {
             {[
               ['Subtotal', fmt(total)],
               promoRewardItem && !promoRewardItem.is_free_delivery ? [`Promo Gift (${promoRewardItem.name})`, 'FREE (₦0)'] : null,
-              promoRewardItem?.is_free_delivery ? [`Promo (${promoRewardItem.name})`, 'FREE'] : null,
+              promoRewardItem?.is_free_delivery && !dispatchSurcharge.triggered ? [`Promo (${promoRewardItem.name})`, 'FREE'] : null,
               appliedCoupon ? (appliedCoupon.type === 'free_guinea_fowl' ? [`Promo (${appliedCoupon.code})`, '1 Free Guinea Fowl'] : (couponDiscount > 0 ? [`Discount (${appliedCoupon.code})`, `−${fmt(couponDiscount)}`] : null)) : null,
-              !isPickup && (promoApplied || promoFreeDelivery) ? ['Delivery Promo', deliveryFee === 0 ? 'Free' : fmt(deliveryFee)] : (!isPickup && deliveryFee > 0 ? ['Delivery Fee', fmt(deliveryFee)] : null),
+              !isPickup && dispatchSurcharge.triggered && deliveryFee > 0
+                ? [`Dedicated Dispatch Fee (${dispatchSurcharge.appliedMultiplier}× Zone Fee ${fmt(baseZoneFee)})`, fmt(deliveryFee)]
+                : (!isPickup && (promoApplied || promoFreeDelivery)
+                    ? ['Delivery Promo', deliveryFee === 0 ? 'Free' : fmt(deliveryFee)]
+                    : (!isPickup && deliveryFee > 0 ? ['Delivery Fee', fmt(deliveryFee)] : null)),
               ['VAT', fmt(VAT)],
             ].filter(Boolean).map(([label, value]) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: '0.85rem' }}>
                 <span style={{ color: '#888' }}>{label}</span>
-                <span style={{ fontWeight: 600, color: label.includes('Promo') || label.includes('FREE') ? '#16a34a' : '#111' }}>{value}</span>
+                <span style={{ fontWeight: 600, color: label.includes('Promo') || label.includes('FREE') ? '#16a34a' : label.includes('Dedicated Dispatch') ? '#b91c1c' : '#111' }}>{value}</span>
               </div>
             ))}
             <div style={{ height: 1, background: '#f0f0f0', margin: '10px 0' }} />

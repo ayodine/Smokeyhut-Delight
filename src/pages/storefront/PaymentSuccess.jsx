@@ -131,8 +131,15 @@ export default function PaymentSuccess() {
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}><CheckCircle size={64} color="#16a34a" /></div>
         <h2 style={{ fontWeight: 900 }}>Payment confirmed! 🎉</h2>
         <p style={{ color: '#555', margin: '10px 0 4px' }}>Your order <strong style={{ color: '#c0201f' }}>{orderId}</strong> is being prepared.</p>
-        <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>A confirmation email is on its way with your order details.</p>
-        <Link to="/shop" className="btn-primary">Back to Menu</Link>
+        <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>A confirmation email is on its way with your order details. If your order includes pre-ordered items, you can also view or schedule your delivery date anytime.</p>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <Link to="/shop" className="btn-primary">Back to Menu</Link>
+          {orderId && (
+            <Link to={`/account?order=${encodeURIComponent(orderId)}`} className="btn-secondary" style={{ textDecoration: 'none' }}>
+              Track Order / Schedule Pre-Order Delivery →
+            </Link>
+          )}
+        </div>
       </div></div>
     );
   }

@@ -111,6 +111,44 @@ serve(async (req) => {
       });
     }
 
+    // ── 3. Pre-order notifications (placed, date selected, rescheduled, release date changed) ──
+    if (
+      payload.type === 'preorder_placed' ||
+      payload.type === 'preorder_date_selected' ||
+      payload.type === 'preorder_date_rescheduled' ||
+      payload.type === 'preorder_release_date_changed'
+    ) {
+      if (RESEND_API_KEY && payload.customer_email) {
+        const orderId = payload.order_id;
+        const releaseDate = payload.release_date ?? 'TBD';
+        const deliveryDate = payload.scheduled_delivery_date ?? 'Pending customer selection';
+        let subject = 'Pre-Order Update';
+        let heading = 'Pre-Order Update';
+        let body = '';
+        if (payload.type === 'preorder_placed') {
+          subject = 'Pre-Order Confirmed';
+          heading = 'Your pre-order has been confirmed!';
+          body = `Thank you for your pre-order! Processing begins on <strong>${releaseDate}</strong>. Delivery date: <strong>${deliveryDate}</strong>.`;
+        } else if (payload.type === 'preorder_date_selected') {
+          subject = 'Pre-Order Delivery Date Scheduled';
+          heading = 'Delivery date scheduled';
+          body = `Your pre-order delivery date has been scheduled for <strong>${deliveryDate}</strong> (Release date: ${releaseDate}).`;
+        } else if (payload.type === 'preorder_date_rescheduled') {
+          subject = 'Pre-Order Delivery Date Updated';
+          heading = 'Delivery date rescheduled';
+          body = `Your pre-order delivery date has been updated to <strong>${deliveryDate}</strong>.`;
+        } else if (payload.type === 'preorder_release_date_changed') {
+          subject = 'Pre-Order Release Date Update';
+          heading = 'Important update about your pre-order release date';
+          body = `The release/processing date for an item in your pre-order has been updated to <strong>${releaseDate}</strong>. Please review or reschedule your preferred delivery date if needed.`;
+        }
+        await sendEmail(payload.customer_email, subject, buildEmail(heading, body, orderId));
+      }
+      return new Response(JSON.stringify({ ok: true, type: payload.type }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     return new Response(JSON.stringify({ ok: true }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

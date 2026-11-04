@@ -90,7 +90,7 @@ export function CartProvider({ children }) {
     setItems(prev => {
       const existing = prev.find(i => i.id === product.id);
       if (existing) {
-        return prev.map(i => i.id === product.id ? { ...i, qty: i.qty + 1 } : i);
+        return prev.map(i => i.id === product.id ? { ...i, ...product, qty: i.qty + 1 } : i);
       }
       return [...prev, { ...product, qty: 1 }];
     });
@@ -99,6 +99,56 @@ export function CartProvider({ children }) {
       id: product.id,
       name: product.name,
       price: product.price,
+    });
+  }, []);
+
+  const syncCartWithDbProducts = useCallback((dbProductsMap) => {
+    if (!dbProductsMap || typeof dbProductsMap.get !== 'function') return;
+    setItems(prev => {
+      let changed = false;
+      const next = prev.map(item => {
+        const dbProd = dbProductsMap.get(String(item.id));
+        if (!dbProd) return item;
+        const hasDbPreorderFields = dbProd.preorder_enabled !== undefined && (dbProd.preorder_enabled || dbProd.preorder_release_date);
+        const hasDbDispatchFields = dbProd.dispatch_surcharge_enabled !== undefined;
+        if (!hasDbPreorderFields && !hasDbDispatchFields) return item;
+
+        const nextPreorderEnabled = hasDbPreorderFields ? dbProd.preorder_enabled : item.preorder_enabled;
+        const nextPreorderRelease = hasDbPreorderFields ? dbProd.preorder_release_date : item.preorder_release_date;
+        const nextPreorderMode = hasDbPreorderFields ? dbProd.preorder_scheduling_mode : item.preorder_scheduling_mode;
+        const nextPreorderMsg = hasDbPreorderFields ? dbProd.preorder_message : item.preorder_message;
+
+        const shouldUpdate =
+          item.preorder_enabled !== nextPreorderEnabled ||
+          item.preorder_release_date !== nextPreorderRelease ||
+          item.preorder_scheduling_mode !== nextPreorderMode ||
+          item.preorder_message !== nextPreorderMsg ||
+          (hasDbDispatchFields && item.dispatch_surcharge_enabled !== dbProd.dispatch_surcharge_enabled);
+        if (!shouldUpdate) return item;
+        changed = true;
+        return {
+          ...item,
+          preorder_enabled: nextPreorderEnabled,
+          preorder_open_at: dbProd.preorder_open_at ?? item.preorder_open_at,
+          preorder_release_date: nextPreorderRelease,
+          preorder_close_at: dbProd.preorder_close_at ?? item.preorder_close_at,
+          preorder_status: dbProd.preorder_status ?? item.preorder_status,
+          preorder_scheduling_mode: nextPreorderMode,
+          preorder_max_capacity: dbProd.preorder_max_capacity ?? item.preorder_max_capacity,
+          preorder_reserved_qty: dbProd.preorder_reserved_qty ?? item.preorder_reserved_qty,
+          preorder_message: nextPreorderMsg,
+          is_preorder: Boolean(nextPreorderEnabled || item.is_preorder),
+          dispatch_surcharge_enabled: dbProd.dispatch_surcharge_enabled ?? item.dispatch_surcharge_enabled,
+          dispatch_threshold_qty: dbProd.dispatch_threshold_qty ?? item.dispatch_threshold_qty,
+          dispatch_threshold_unit: dbProd.dispatch_threshold_unit ?? item.dispatch_threshold_unit,
+          dispatch_threshold_operator: dbProd.dispatch_threshold_operator ?? item.dispatch_threshold_operator,
+          dispatch_fee_multiplier: dbProd.dispatch_fee_multiplier ?? item.dispatch_fee_multiplier,
+          dispatch_fixed_surcharge: dbProd.dispatch_fixed_surcharge ?? item.dispatch_fixed_surcharge,
+          dispatch_aggregation_mode: dbProd.dispatch_aggregation_mode ?? item.dispatch_aggregation_mode,
+          dispatch_customer_message: dbProd.dispatch_customer_message ?? item.dispatch_customer_message,
+        };
+      });
+      return changed ? next : prev;
     });
   }, []);
 
@@ -122,6 +172,7 @@ export function CartProvider({ children }) {
       removeItem,
       updateQty,
       clearCart,
+      syncCartWithDbProducts,
       sessionId,
       promoteStage,
       captureContact,
@@ -141,6 +192,7 @@ export function CartProvider({ children }) {
       removeItem,
       updateQty,
       clearCart,
+      syncCartWithDbProducts,
       sessionId,
       promoteStage,
       captureContact,

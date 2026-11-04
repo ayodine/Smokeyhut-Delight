@@ -1,10 +1,12 @@
 import { publicSupabase } from './supabase';
+import { getPreorderState } from './preorderUtils';
 
 /**
  * Checks cart items directly against live database products (bypassing client-side caches).
  * Validates whether items are:
  * 1. Active (is_active !== false)
  * 2. Not soft-deleted (deleted_at IS NULL)
+ * 3. If pre-order enabled: within the open pre-order window and within max pre-order capacity
  *
  * NOTE: The store does NOT use product numerical stock.
  * Hidden at the backend (is_active === false) means out of stock.
@@ -12,7 +14,7 @@ import { publicSupabase } from './supabase';
  *
  * @param {Array} items - Cart items with { id, name, qty, ... }
  * @param {object} supabaseClient - Supabase client instance (defaults to publicSupabase)
- * @returns {Promise<{ isValid: boolean, unavailableItems: Array<{ id: any, name: string, reason: string, message: string, availableStock: number|null, requestedQty: number }>, errorSummary: string }>}
+ * @returns {Promise<{ isValid: boolean, unavailableItems: Array<{ id: any, name: string, reason: string, message: string, availableStock: number|null, requestedQty: number }>, errorSummary: string, dbProductsMap?: Map<string, any> }>}
  */
 export async function verifyCartItemsAvailability(items = [], supabaseClient = publicSupabase) {
   if (!items || !items.length) {
@@ -24,11 +26,13 @@ export async function verifyCartItemsAvailability(items = [], supabaseClient = p
   const itemNames = {};
 
   items.forEach(item => {
-    if (item && item.id !== null && item.id !== undefined && item.id !== '') {
+    if (item && item.id !== null && item.id !== undefined && item.id !== '' && !item.is_promo_reward) {
       const idStr = String(item.id);
-      qtyNeeded[idStr] = (qtyNeeded[idStr] || 0) + Number(item.qty || 1);
-      if (!itemNames[idStr] && item.name) {
-        itemNames[idStr] = item.name;
+      if (/^\d+$/.test(idStr)) {
+        qtyNeeded[idStr] = (qtyNeeded[idStr] || 0) + Number(item.qty || 1);
+        if (!itemNames[idStr] && item.name) {
+          itemNames[idStr] = item.name;
+        }
       }
     }
   });
@@ -41,7 +45,7 @@ export async function verifyCartItemsAvailability(items = [], supabaseClient = p
   try {
     const { data: dbProducts, error } = await supabaseClient
       .from('products')
-      .select('id, name, is_active, deleted_at')
+      .select('*')
       .in('id', productIds);
 
     if (error) {
@@ -95,13 +99,46 @@ export async function verifyCartItemsAvailability(items = [], supabaseClient = p
           availableStock: 0,
           requestedQty: requested
         });
+      } else if (dbProd.preorder_enabled) {
+        const pState = getPreorderState(dbProd);
+        if (pState.windowState === 'upcoming') {
+          unavailableItems.push({
+            id: dbProd.id,
+            name: dbProd.name || name,
+            reason: 'preorder_upcoming',
+            message: `Pre-orders for ${dbProd.name || name} have not opened yet`,
+            availableStock: 0,
+            requestedQty: requested
+          });
+        } else if (pState.windowState === 'closed' || pState.windowState === 'completed') {
+          unavailableItems.push({
+            id: dbProd.id,
+            name: dbProd.name || name,
+            reason: 'preorder_closed',
+            message: `The pre-order window for ${dbProd.name || name} has closed`,
+            availableStock: 0,
+            requestedQty: requested
+          });
+        } else if (pState.windowState === 'capacity_full' || (pState.remainingCapacity !== null && requested > pState.remainingCapacity)) {
+          unavailableItems.push({
+            id: dbProd.id,
+            name: dbProd.name || name,
+            reason: 'preorder_capacity_full',
+            message: pState.remainingCapacity && pState.remainingCapacity > 0
+              ? `Only ${pState.remainingCapacity} pre-order slot(s) remaining for ${dbProd.name || name}`
+              : `Pre-order capacity for ${dbProd.name || name} has been reached`,
+            availableStock: pState.remainingCapacity || 0,
+            requestedQty: requested
+          });
+        }
       }
     }
 
     return {
       isValid: unavailableItems.length === 0,
       unavailableItems,
-      errorSummary: unavailableItems.map(u => u.message).join(' · ')
+      errorSummary: unavailableItems.map(u => u.message).join(' · '),
+      dbProductsMap: prodMap
     };
   } catch (err) {
     console.error('Unexpected error checking product availability:', err);

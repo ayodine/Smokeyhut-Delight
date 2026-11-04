@@ -22,6 +22,7 @@ const EMPTY_KPIS = {
 };
 
 import { useAuth } from '../../context/AuthContext';
+import { deriveAdminPreorderInfo } from '../../lib/preorderUtils';
 
 export default function Shipping() {
   const { userRole, userPermissions } = useAuth();
@@ -58,7 +59,7 @@ export default function Shipping() {
 
     let tableQuery = supabase
       .from('orders')
-      .select('id, customer_name, customer_phone, delivery_address, total, delivery_fee, status, created_at, notes')
+      .select('id, customer_name, customer_phone, delivery_address, total, delivery_fee, status, created_at, notes, scheduled_delivery_date')
       .is('deleted_at', null)
       .not('status', 'in', '("cancelled")')
       .order('created_at', { ascending: false });
@@ -291,7 +292,28 @@ export default function Shipping() {
                 const next = STATUS_FLOW[order.status];
                 return (
                   <tr key={order.id}>
-                    <td style={{ fontWeight: 700, color: 'var(--red)', whiteSpace: 'nowrap' }}>{order.id}</td>
+                    <td style={{ fontWeight: 700, color: 'var(--red)', whiteSpace: 'nowrap' }}>
+                      <div>{order.id}</div>
+                      {(() => {
+                        const preInfo = deriveAdminPreorderInfo(order);
+                        const isDed = Boolean(order.requires_dedicated_dispatch || /\[Dedicated Dispatch/i.test(order.notes || ''));
+                        if (!preInfo.isPreorder && !isDed) return null;
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 4 }}>
+                            {isDed && (
+                              <span className="status-badge pending" style={{ fontSize: '0.62rem', padding: '1px 6px' }} title="Requires 2 dispatch boxes / dedicated rider (2× delivery fee)">
+                                Dedicated Dispatch (2×)
+                              </span>
+                            )}
+                            {preInfo.isPreorder && (
+                              <span className="status-badge info" style={{ fontSize: '0.62rem', padding: '1px 6px' }}>
+                                Pre-Order {preInfo.hasSelectedDate ? `• ${preInfo.formattedSelectedDate}` : preInfo.formattedReleaseDate ? `• Rel: ${preInfo.formattedReleaseDate}` : ''}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td>
                       <div style={{ fontWeight: 600 }}>{order.customer_name}</div>
                       <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{order.customer_phone}</div>

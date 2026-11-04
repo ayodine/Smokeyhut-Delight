@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useCart } from '../context/CartContext';
 import { useNavigate } from 'react-router-dom';
-import { ShoppingCart, Trash2, Clock, Gift, AlertTriangle } from 'lucide-react';
+import { ShoppingCart, Trash2, Clock, Gift, AlertTriangle, Calendar, Truck } from 'lucide-react';
 import { anyItemPastCutoff } from '../lib/deliveryCutoff';
 import { verifyCartItemsAvailability } from '../lib/productAvailability';
+import { evaluateCartPreorders, formatReleaseDate } from '../lib/preorderUtils';
+import { evaluateDispatchCapacitySurcharge } from '../lib/dispatchPricing';
 import PromoProgressBanner from './PromoProgressBanner';
 
 export default function CartSidebar({ isOpen, onClose }) {
-  const { items, updateQty, removeItem, total, itemCount, promoRewardItem } = useCart();
+  const { items, updateQty, removeItem, total, itemCount, promoRewardItem, syncCartWithDbProducts } = useCart();
   const navigate = useNavigate();
 
   const [unavailableItems, setUnavailableItems] = useState([]);
@@ -19,10 +21,16 @@ export default function CartSidebar({ isOpen, onClose }) {
       return;
     }
     verifyCartItemsAvailability(items).then(res => {
-      if (!cancelled) setUnavailableItems(res.unavailableItems || []);
+      if (!cancelled) {
+        setUnavailableItems(res.unavailableItems || []);
+        if (res.dbProductsMap) syncCartWithDbProducts(res.dbProductsMap);
+      }
     });
     return () => { cancelled = true; };
-  }, [isOpen, items]);
+  }, [isOpen, items, syncCartWithDbProducts]);
+
+  const cartPreorders = useMemo(() => evaluateCartPreorders(items), [items]);
+  const dispatchSurcharge = useMemo(() => evaluateDispatchCapacitySurcharge(items, 0, 'delivery'), [items]);
 
   const fmt = (n) => '₦' + Number(n).toLocaleString();
 
@@ -67,7 +75,19 @@ export default function CartSidebar({ isOpen, onClose }) {
                       )}
                     </div>
                     <div className="cart-item-info">
-                      <div className="cart-item-name">{item.name}</div>
+                      <div className="cart-item-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span>{item.name}</span>
+                        {Boolean(item.preorder_enabled || item.is_preorder) && (
+                          <span style={{ fontSize: '0.62rem', fontWeight: 800, background: '#b45309', color: '#fff', padding: '1px 5px', borderRadius: 4, textTransform: 'uppercase' }}>
+                            Pre-Order
+                          </span>
+                        )}
+                      </div>
+                      {Boolean(item.preorder_enabled || item.is_preorder) && item.preorder_release_date && (
+                        <div style={{ fontSize: '0.7rem', color: '#b45309', fontWeight: 600, marginTop: 2 }}>
+                          Available from {formatReleaseDate(item.preorder_release_date)}
+                        </div>
+                      )}
                       {isUnavailable ? (
                         <span style={{ display: 'inline-block', fontSize: '0.68rem', fontWeight: 800, color: '#b91c1c', background: '#fee2e2', padding: '1px 5px', borderRadius: 4, marginTop: 2 }}>
                           Out of stock / Hidden
@@ -116,7 +136,29 @@ export default function CartSidebar({ isOpen, onClose }) {
                 <span>FREE (₦0)</span>
               </div>
             )}
-            {anyItemPastCutoff(items) && (
+            {cartPreorders.hasPreorder && (
+              <div style={{ fontSize: '0.76rem', color: '#78350f', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 10px', marginBottom: 8, fontWeight: 600, display: 'flex', alignItems: 'flex-start', gap: 6, lineHeight: 1.4 }}>
+                <Calendar size={14} color="#b45309" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div>
+                  <div><strong>Pre-Order Release:</strong> {cartPreorders.formattedLatestReleaseDate || cartPreorders.latestReleaseDate}</div>
+                  {cartPreorders.isMixedCart && (
+                    <div style={{ fontSize: '0.72rem', color: '#92400e', marginTop: 2 }}>
+                      Mixed cart: all items in this order will be fulfilled together on or after the pre-order release date.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            {dispatchSurcharge.triggered && (
+              <div style={{ fontSize: '0.76rem', color: '#991b1b', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '8px 10px', marginBottom: 8, fontWeight: 600, display: 'flex', alignItems: 'flex-start', gap: 6, lineHeight: 1.4 }}>
+                <Truck size={14} color="#b91c1c" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div>
+                  <strong>Dedicated Dispatch ({dispatchSurcharge.appliedMultiplier}× Delivery Fee):</strong>{' '}
+                  {dispatchSurcharge.customerMessage}
+                </div>
+              </div>
+            )}
+            {!cartPreorders.hasPreorder && anyItemPastCutoff(items) && (
               <div style={{ fontSize: '0.78rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 10px', marginBottom: 8, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Clock size={14} color="#92400e" style={{ flexShrink: 0 }} /> Some items have passed today's cutoff and will be delivered tomorrow.
               </div>

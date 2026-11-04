@@ -3,9 +3,15 @@ import { Link } from 'react-router-dom';
 import ProductCard from '../../components/ProductCard';
 import PromoProgressBanner from '../../components/PromoProgressBanner';
 import OrderingGuidePopup from '../../components/OrderingGuidePopup';
-import { Clock, Flame, ShoppingCart, Leaf, Truck, Award, Store, Camera } from 'lucide-react';
+import SameDayCutoffModal from '../../components/SameDayCutoffModal';
+import { Clock, Flame, ShoppingCart, Leaf, Truck, Award, Store, Camera, Calendar, Sparkles } from 'lucide-react';
 import { getProducts } from '../../lib/productsCache';
+import { getActiveHomepagePromotions } from '../../lib/preorderUtils';
+import { useCart } from '../../context/CartContext';
+import { useToast } from '../../context/ToastContext';
 import { useSEO } from '../../hooks/useSEO';
+
+const fmt = (n) => '₦' + Number(n || 0).toLocaleString();
 
 function Countdown() {
   const [time, setTime] = useState({ h: '00', m: '00', s: '00' });
@@ -139,11 +145,27 @@ export default function Home() {
     path: '/',
   });
 
+  const { addItem } = useCart();
+  const { showToast } = useToast();
   const [bestsellers, setBestsellers] = useState([]);
+  const [promotedPreorders, setPromotedPreorders] = useState([]);
+  const [selectedPromoProduct, setSelectedPromoProduct] = useState(null);
 
   useEffect(() => {
-    getProducts().then(({ products }) => setBestsellers(products.slice(0, 6)));
+    getProducts().then(({ products }) => {
+      setBestsellers(products.slice(0, 6));
+      setPromotedPreorders(getActiveHomepagePromotions(products));
+    });
   }, []);
+
+  const handlePromoPreorderNow = (promo) => {
+    addItem({ ...promo.product, is_preorder: true });
+    showToast(
+      `${promo.product.name} pre-ordered!`,
+      promo.formattedReleaseDate ? `Available from ${promo.formattedReleaseDate}` : 'Check your cart',
+      'success'
+    );
+  };
 
   return (
     <div>
@@ -173,6 +195,129 @@ export default function Home() {
       </section>
 
       <Countdown />
+
+      {/* DYNAMIC HOMEPAGE PRE-ORDER PROMOTIONS */}
+      {promotedPreorders.length > 0 && (
+        <section className="products-section" style={{ paddingTop: 48, paddingBottom: 16 }}>
+          <div className="container">
+            {promotedPreorders.map((promo) => (
+              <div
+                key={promo.product.id}
+                style={{
+                  background: 'linear-gradient(135deg, #1b0a08 0%, #2d110e 100%)',
+                  border: '1.5px solid rgba(245, 197, 24, 0.35)',
+                  borderRadius: 20,
+                  padding: '28px 28px',
+                  marginBottom: 24,
+                  color: '#fff',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                  gap: 28,
+                  alignItems: 'center',
+                  boxShadow: '0 16px 40px rgba(0, 0, 0, 0.16)',
+                }}
+              >
+                <div>
+                  <div
+                    className="section-tag"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      background: 'rgba(245, 197, 24, 0.16)',
+                      color: '#F5C518',
+                      border: '1px solid rgba(245, 197, 24, 0.4)',
+                      marginBottom: 12,
+                    }}
+                  >
+                    <Sparkles size={13} /> Limited Pre-Order Release
+                  </div>
+                  <h2
+                    className="section-title"
+                    style={{ color: '#fff', margin: '0 0 10px', fontSize: 'clamp(1.45rem, 3vw, 2.1rem)', lineHeight: 1.2 }}
+                  >
+                    {promo.headline}
+                  </h2>
+                  <p style={{ color: 'rgba(255,255,255,0.82)', fontSize: '0.96rem', lineHeight: 1.6, margin: '0 0 16px' }}>
+                    {promo.description}
+                  </p>
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      background: 'rgba(255,255,255,0.08)',
+                      border: '1px solid rgba(255,255,255,0.16)',
+                      borderRadius: 10,
+                      padding: '8px 14px',
+                      marginBottom: 18,
+                      fontSize: '0.85rem',
+                      fontWeight: 700,
+                      color: '#fde68a',
+                    }}
+                  >
+                    <Calendar size={15} color="#F5C518" />
+                    <span>Available for processing &amp; fulfilment from {promo.formattedReleaseDate || promo.releaseDate}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '1.35rem', fontWeight: 900, color: '#F5C518' }}>
+                      {fmt(promo.product.price)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handlePromoPreorderNow(promo)}
+                      className="btn-primary"
+                      style={{ background: '#c0201f', color: '#fff', border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8 }}
+                    >
+                      <ShoppingCart size={17} /> {promo.ctaLabel || 'Pre-order Now'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPromoProduct(promo.product)}
+                      className="btn-secondary"
+                      style={{ borderColor: 'rgba(255,255,255,0.35)', color: '#fff', background: 'transparent', cursor: 'pointer' }}
+                    >
+                      Pre-order Details →
+                    </button>
+                  </div>
+                </div>
+
+                {promo.product.image && promo.product.image.length > 5 && (
+                  <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    <img
+                      src={promo.product.image}
+                      alt={promo.product.name}
+                      style={{
+                        width: '100%',
+                        maxWidth: 320,
+                        aspectRatio: '4 / 3',
+                        objectFit: 'cover',
+                        borderRadius: 16,
+                        border: '2px solid rgba(245, 197, 24, 0.35)',
+                        boxShadow: '0 12px 30px rgba(0,0,0,0.35)',
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <SameDayCutoffModal
+        isOpen={Boolean(selectedPromoProduct)}
+        product={selectedPromoProduct}
+        mode="preorder"
+        onConfirm={() => {
+          if (selectedPromoProduct) {
+            addItem({ ...selectedPromoProduct, is_preorder: true });
+            showToast(`${selectedPromoProduct.name} pre-ordered!`, 'Check your cart', 'success');
+          }
+          setSelectedPromoProduct(null);
+        }}
+        onClose={() => setSelectedPromoProduct(null)}
+      />
 
       {/* BESTSELLERS */}
       <section className="products-section">
