@@ -285,46 +285,30 @@ export default function Products() {
       same_day_cutoff: form.cutoff || null,
       // Pre-order fields
       preorder_enabled: Boolean(form.preorder_enabled),
-      preorder_open_at: form.preorder_enabled && form.preorder_open_at ? new Date(form.preorder_open_at).toISOString() : null,
+      preorder_open_at: null,
       preorder_release_date: form.preorder_enabled && form.preorder_release_date ? form.preorder_release_date : null,
       preorder_close_at: form.preorder_enabled && form.preorder_close_at ? new Date(form.preorder_close_at).toISOString() : null,
-      preorder_status: form.preorder_enabled ? (form.preorder_status || 'open') : 'scheduled',
-      preorder_scheduling_mode: form.preorder_enabled ? (form.preorder_scheduling_mode || 'schedule_after_release') : 'schedule_after_release',
-      preorder_max_capacity: form.preorder_enabled && form.preorder_max_capacity !== '' ? Number(form.preorder_max_capacity) : null,
+      preorder_status: form.preorder_enabled ? 'open' : 'scheduled',
+      preorder_scheduling_mode: 'schedule_at_checkout',
+      preorder_max_capacity: null,
       preorder_message: form.preorder_enabled && form.preorder_message.trim() ? form.preorder_message.trim() : null,
       // Homepage promo fields
       homepage_promo_enabled: Boolean(form.preorder_enabled && form.homepage_promo_enabled),
-      homepage_promo_headline: form.preorder_enabled && form.homepage_promo_enabled && form.homepage_promo_headline.trim()
-        ? form.homepage_promo_headline.trim()
-        : null,
-      homepage_promo_description: form.preorder_enabled && form.homepage_promo_enabled && form.homepage_promo_description.trim()
-        ? form.homepage_promo_description.trim()
-        : null,
-      homepage_promo_cta_label: form.preorder_enabled && form.homepage_promo_enabled && form.homepage_promo_cta_label.trim()
-        ? form.homepage_promo_cta_label.trim()
-        : 'Pre-order Now',
-      homepage_promo_start_at: form.preorder_enabled && form.homepage_promo_enabled && form.homepage_promo_start_at
-        ? new Date(form.homepage_promo_start_at).toISOString()
-        : null,
-      homepage_promo_end_at: form.preorder_enabled && form.homepage_promo_enabled && form.homepage_promo_end_at
-        ? new Date(form.homepage_promo_end_at).toISOString()
-        : null,
-      homepage_promo_priority: form.preorder_enabled && form.homepage_promo_enabled
-        ? (Number(form.homepage_promo_priority) || 0)
-        : 0,
+      homepage_promo_headline: null,
+      homepage_promo_description: null,
+      homepage_promo_cta_label: 'Pre-order Now',
+      homepage_promo_start_at: null,
+      homepage_promo_end_at: null,
+      homepage_promo_priority: 0,
       // Dispatch-capacity fields
       dispatch_surcharge_enabled: Boolean(form.dispatch_surcharge_enabled),
       dispatch_threshold_qty: form.dispatch_surcharge_enabled ? (Number(form.dispatch_threshold_qty) || 5) : 5,
-      dispatch_threshold_unit: form.dispatch_surcharge_enabled ? (form.dispatch_threshold_unit || 'packs') : 'packs',
-      dispatch_threshold_operator: form.dispatch_surcharge_enabled ? (form.dispatch_threshold_operator || 'gt') : 'gt',
-      dispatch_fee_multiplier: form.dispatch_surcharge_enabled ? (Number(form.dispatch_fee_multiplier) || 2) : 2,
-      dispatch_fixed_surcharge: form.dispatch_surcharge_enabled && form.dispatch_fixed_surcharge !== ''
-        ? Number(form.dispatch_fixed_surcharge)
-        : null,
-      dispatch_aggregation_mode: form.dispatch_surcharge_enabled ? (form.dispatch_aggregation_mode || 'per_item') : 'per_item',
-      dispatch_customer_message: form.dispatch_surcharge_enabled && form.dispatch_customer_message.trim()
-        ? form.dispatch_customer_message.trim()
-        : DEFAULT_DISPATCH_CAPACITY_MESSAGE,
+      dispatch_threshold_unit: 'packs',
+      dispatch_threshold_operator: 'gt',
+      dispatch_fee_multiplier: 2,
+      dispatch_fixed_surcharge: null,
+      dispatch_aggregation_mode: 'per_item',
+      dispatch_customer_message: DEFAULT_DISPATCH_CAPACITY_MESSAGE,
     };
 
     try {
@@ -834,7 +818,7 @@ export default function Products() {
                   </div>
                   <div>
                     <div style={{ fontWeight: 800, fontSize: '0.9rem', color: 'var(--text)' }}>Enable Pre-order</div>
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', lineHeight: 1.35 }}>Allow customers to pre-order this product in advance with a release date</div>
+                    <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', lineHeight: 1.35 }}>Allow customers to pre-order this product in advance</div>
                   </div>
                 </div>
                 <Switch
@@ -844,24 +828,7 @@ export default function Products() {
               </div>
 
               {form.preorder_enabled && (
-                <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  {/* 1. Core Status & Release Schedule */}
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span>Pre-order Status</span>
-                    </label>
-                    <CustomSelect
-                      value={form.preorder_status}
-                      onChange={set('preorder_status')}
-                      options={[
-                        { value: 'open', label: 'Open (Accepting Pre-orders)' },
-                        { value: 'scheduled', label: 'Scheduled (Follows Opening Date)' },
-                        { value: 'closed', label: 'Closed (Paused)' },
-                        { value: 'completed', label: 'Completed' },
-                      ]}
-                    />
-                  </div>
-
+                <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <span>Release Date <span style={{ color: 'var(--red)' }}>*</span></span>
@@ -873,195 +840,64 @@ export default function Products() {
                       onChange={set('preorder_release_date')}
                       placeholder="Select release date"
                     />
-                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'block', marginTop: 6, lineHeight: 1.4 }}>
-                      Earliest date customer delivery can begin.
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'block', marginTop: 5 }}>
+                      Earliest date customers can schedule delivery.
                     </span>
                   </div>
 
-                  {/* 2. Pre-order Availability Window */}
-                  <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    <div style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>
-                      Availability Window
-                    </div>
-
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span>Pre-order Opening Date & Time</span>
-                        <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: '0.72rem', textTransform: 'none' }}>Optional</span>
-                      </label>
-                      <DashDateTimePicker
-                        includeTime={true}
-                        allowClear={true}
-                        value={form.preorder_open_at}
-                        onChange={set('preorder_open_at')}
-                        placeholder="Select opening date & time"
-                      />
-                      <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)', display: 'block', marginTop: 5 }}>
-                        Leave blank to accept pre-orders immediately while status is Open.
-                      </span>
-                    </div>
-
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span>Pre-order Closing Date & Time</span>
-                        <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: '0.72rem', textTransform: 'none' }}>Optional</span>
-                      </label>
-                      <DashDateTimePicker
-                        includeTime={true}
-                        allowClear={true}
-                        value={form.preorder_close_at}
-                        onChange={set('preorder_close_at')}
-                        placeholder="Select closing date & time"
-                      />
-                      <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)', display: 'block', marginTop: 5 }}>
-                        Automatically closes pre-order purchasing after this date and time.
-                      </span>
-                    </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>Pre-order Closing Date</span>
+                      <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: '0.72rem', textTransform: 'none' }}>Optional</span>
+                    </label>
+                    <DashDateTimePicker
+                      includeTime={true}
+                      allowClear={true}
+                      value={form.preorder_close_at}
+                      onChange={set('preorder_close_at')}
+                      placeholder="Select closing date & time"
+                    />
                   </div>
 
-                  {/* 3. Fulfilment, Scheduling & Capacity */}
-                  <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    <div style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>
-                      Fulfilment & Capacity
-                    </div>
-
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label>Customer Delivery Scheduling Mode</label>
-                      <CustomSelect
-                        value={form.preorder_scheduling_mode}
-                        onChange={set('preorder_scheduling_mode')}
-                        options={[
-                          { value: 'schedule_after_release', label: 'Schedule after release date (Default)' },
-                          { value: 'schedule_at_checkout', label: 'Schedule at checkout (on/after release date)' },
-                        ]}
-                      />
-                    </div>
-
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span>Maximum Pre-order Capacity</span>
-                        <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: '0.72rem', textTransform: 'none' }}>Optional</span>
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={form.preorder_max_capacity}
-                        onChange={set('preorder_max_capacity')}
-                        placeholder="Unlimited — no cap on pre-order units"
-                      />
-                      {editing && form.preorder_reserved_qty > 0 && (
-                        <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)', display: 'block', marginTop: 5 }}>
-                          Currently reserved: <strong>{form.preorder_reserved_qty}</strong> unit(s)
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span>Customer-Facing Pre-order Message</span>
-                        <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: '0.72rem', textTransform: 'none' }}>Optional</span>
-                      </label>
-                      <input
-                        value={form.preorder_message}
-                        onChange={set('preorder_message')}
-                        placeholder="e.g. Pre-order now for December festive batch — limited birds available!"
-                      />
-                    </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>Short Pre-order Note</span>
+                      <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: '0.72rem', textTransform: 'none' }}>Optional</span>
+                    </label>
+                    <input
+                      value={form.preorder_message}
+                      onChange={set('preorder_message')}
+                      placeholder="e.g. December festive batch — limited birds available"
+                    />
                   </div>
 
-                  {/* 4. Nested Homepage Promotion Toggle (Single-Column Layered) */}
-                  <div style={{ background: 'var(--white)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: '14px' }}>
-                    <div
-                      onClick={() => setForm(prev => ({ ...prev, homepage_promo_enabled: !prev.homepage_promo_enabled }))}
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, cursor: 'pointer', userSelect: 'none' }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <Megaphone size={16} color="var(--red)" style={{ flexShrink: 0 }} />
-                        <div>
-                          <div style={{ fontWeight: 800, fontSize: '0.86rem', color: 'var(--text)' }}>Homepage Promotion Banner</div>
-                          <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>Feature this pre-order prominently on the storefront homepage</div>
-                        </div>
+                  {/* Simple 1-Click Homepage Promotion Toggle */}
+                  <div
+                    onClick={() => setForm(prev => ({ ...prev, homepage_promo_enabled: !prev.homepage_promo_enabled }))}
+                    style={{
+                      background: 'var(--white)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: 10,
+                      padding: '12px 14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 10,
+                      cursor: 'pointer',
+                      userSelect: 'none',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <Megaphone size={16} color="var(--red)" style={{ flexShrink: 0 }} />
+                      <div>
+                        <div style={{ fontWeight: 800, fontSize: '0.86rem', color: 'var(--text)' }}>Feature on Homepage</div>
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>Highlight this pre-order on the storefront homepage</div>
                       </div>
-                      <Switch
-                        checked={form.homepage_promo_enabled}
-                        onChange={(v) => setForm(prev => ({ ...prev, homepage_promo_enabled: v }))}
-                      />
                     </div>
-
-                    {form.homepage_promo_enabled && (
-                      <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 14 }}>
-                        <div className="form-group" style={{ marginBottom: 0 }}>
-                          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <span>Promotion Headline</span>
-                            <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: '0.72rem', textTransform: 'none' }}>Optional</span>
-                          </label>
-                          <input
-                            value={form.homepage_promo_headline}
-                            onChange={set('homepage_promo_headline')}
-                            placeholder={form.name || 'Pre-Order Special'}
-                          />
-                        </div>
-
-                        <div className="form-group" style={{ marginBottom: 0 }}>
-                          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <span>Promotion Description</span>
-                            <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: '0.72rem', textTransform: 'none' }}>Optional</span>
-                          </label>
-                          <input
-                            value={form.homepage_promo_description}
-                            onChange={set('homepage_promo_description')}
-                            placeholder="Short promotional copy shown on the homepage banner"
-                          />
-                        </div>
-
-                        <div className="form-group" style={{ marginBottom: 0 }}>
-                          <label>CTA Button Label</label>
-                          <input
-                            value={form.homepage_promo_cta_label}
-                            onChange={set('homepage_promo_cta_label')}
-                            placeholder="Pre-order Now"
-                          />
-                        </div>
-
-                        <div className="form-group" style={{ marginBottom: 0 }}>
-                          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <span>Promo Display Start Date & Time</span>
-                            <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: '0.72rem', textTransform: 'none' }}>Optional</span>
-                          </label>
-                          <DashDateTimePicker
-                            includeTime={true}
-                            allowClear={true}
-                            value={form.homepage_promo_start_at}
-                            onChange={set('homepage_promo_start_at')}
-                            placeholder="Select promo start date & time"
-                          />
-                        </div>
-
-                        <div className="form-group" style={{ marginBottom: 0 }}>
-                          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <span>Promo Display End Date & Time</span>
-                            <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: '0.72rem', textTransform: 'none' }}>Optional</span>
-                          </label>
-                          <DashDateTimePicker
-                            includeTime={true}
-                            allowClear={true}
-                            value={form.homepage_promo_end_at}
-                            onChange={set('homepage_promo_end_at')}
-                            placeholder="Select promo end date & time"
-                          />
-                        </div>
-
-                        <div className="form-group" style={{ marginBottom: 0 }}>
-                          <label>Display Priority</label>
-                          <input
-                            type="number"
-                            value={form.homepage_promo_priority}
-                            onChange={set('homepage_promo_priority')}
-                            placeholder="0 (Higher number appears first)"
-                          />
-                        </div>
-                      </div>
-                    )}
+                    <Switch
+                      checked={form.homepage_promo_enabled}
+                      onChange={(v) => setForm(prev => ({ ...prev, homepage_promo_enabled: v }))}
+                    />
                   </div>
                 </div>
               )}
@@ -1079,7 +915,7 @@ export default function Products() {
                   </div>
                   <div>
                     <div style={{ fontWeight: 800, fontSize: '0.9rem', color: 'var(--text)' }}>Dispatch-Capacity Delivery Surcharge</div>
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', lineHeight: 1.35 }}>Double or adjust delivery fee when large pack quantities occupy a full rider dispatch box</div>
+                    <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', lineHeight: 1.35 }}>Automatically double (2×) delivery fee when large quantities require a full rider box</div>
                   </div>
                 </div>
                 <Switch
@@ -1089,21 +925,9 @@ export default function Products() {
               </div>
 
               {form.dispatch_surcharge_enabled && (
-                <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-subtle)' }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Threshold Condition</label>
-                    <CustomSelect
-                      value={form.dispatch_threshold_operator}
-                      onChange={set('dispatch_threshold_operator')}
-                      options={[
-                        { value: 'gt', label: 'Greater than (>) — e.g. > 5 packs' },
-                        { value: 'gte', label: 'Greater than or equal (≥) — e.g. ≥ 5 packs' },
-                      ]}
-                    />
-                  </div>
-
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Threshold Quantity</label>
+                    <label>Max Packs Per Rider Box</label>
                     <input
                       type="number"
                       min="1"
@@ -1111,67 +935,9 @@ export default function Products() {
                       onChange={set('dispatch_threshold_qty')}
                       placeholder="5"
                     />
-                  </div>
-
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Unit Type</label>
-                    <CustomSelect
-                      value={form.dispatch_threshold_unit}
-                      onChange={set('dispatch_threshold_unit')}
-                      options={[
-                        { value: 'packs', label: 'Packs' },
-                        { value: 'birds', label: 'Birds' },
-                        { value: 'items', label: 'Items' },
-                      ]}
-                    />
-                  </div>
-
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Delivery Fee Multiplier (e.g. 2 for 2×)</label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      min="1"
-                      value={form.dispatch_fee_multiplier}
-                      onChange={set('dispatch_fee_multiplier')}
-                      placeholder="2"
-                    />
-                  </div>
-
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span>Extra Fixed Surcharge (₦)</span>
-                      <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: '0.72rem', textTransform: 'none' }}>Optional</span>
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={form.dispatch_fixed_surcharge}
-                      onChange={set('dispatch_fixed_surcharge')}
-                      placeholder="0"
-                    />
-                  </div>
-
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Cart Count Mode</label>
-                    <CustomSelect
-                      value={form.dispatch_aggregation_mode}
-                      onChange={set('dispatch_aggregation_mode')}
-                      options={[
-                        { value: 'per_item', label: 'Per Product in Cart' },
-                        { value: 'combined_compatible', label: 'Combined Across Compatible Items' },
-                      ]}
-                    />
-                  </div>
-
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Customer Dispatch-Box Warning Message</label>
-                    <textarea
-                      value={form.dispatch_customer_message}
-                      onChange={set('dispatch_customer_message')}
-                      style={{ height: 78 }}
-                      placeholder={DEFAULT_DISPATCH_CAPACITY_MESSAGE}
-                    />
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'block', marginTop: 5 }}>
+                      Orders above this quantity (e.g. more than {form.dispatch_threshold_qty || 5} packs) automatically double (2×) the delivery fee.
+                    </span>
                   </div>
                 </div>
               )}
