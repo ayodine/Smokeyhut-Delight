@@ -153,7 +153,7 @@ export function validateProductPreorderConfig(form) {
 
   if (form.preorder_enabled) {
     if (!form.preorder_release_date || !String(form.preorder_release_date).trim()) {
-      errors.push('Release / processing date is required when Pre-order is enabled.');
+      errors.push('Release date is required when Pre-order is enabled.');
     }
 
     const releaseDateStr = form.preorder_release_date ? String(form.preorder_release_date).slice(0, 10) : '';
@@ -162,7 +162,7 @@ export function validateProductPreorderConfig(form) {
     if (form.preorder_open_at && !isNaN(releaseEndMs)) {
       const openMs = new Date(form.preorder_open_at).getTime();
       if (!isNaN(openMs) && openMs > releaseEndMs) {
-        errors.push('Pre-order opening date/time cannot be later than the release/processing date.');
+        errors.push('Pre-order opening date/time cannot be later than the release date.');
       }
     }
 

@@ -1910,7 +1910,7 @@ export default function Orders() {
 
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, fontSize: '0.85rem', marginBottom: 14 }}>
                         <div>
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Release / Processing Date</div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Release Date</div>
                           <div style={{ fontWeight: 800, color: 'var(--text)', marginTop: 2 }}>
                             {preInfo.formattedReleaseDate || '—'}
                           </div>

@@ -864,17 +864,17 @@ export default function Products() {
 
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span>Release / Processing Date <span style={{ color: 'var(--red)' }}>*</span></span>
+                      <span>Release Date <span style={{ color: 'var(--red)' }}>*</span></span>
                     </label>
                     <DashDateTimePicker
                       includeTime={false}
                       allowClear={false}
                       value={form.preorder_release_date}
                       onChange={set('preorder_release_date')}
-                      placeholder="Select release / processing date"
+                      placeholder="Select release date"
                     />
                     <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'block', marginTop: 6, lineHeight: 1.4 }}>
-                      Earliest date processing/fulfilment and customer delivery can begin.
+                      Earliest date customer delivery can begin.
                     </span>
                   </div>
 

@@ -145,29 +145,17 @@ export default function SameDayCutoffModal({ isOpen, product, onConfirm, onClose
                 marginBottom: 14,
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
-                <Sparkles size={18} color="#b45309" style={{ flexShrink: 0, marginTop: 2 }} />
-                <div style={{ fontSize: '0.86rem', lineHeight: 1.5, color: '#78350f' }}>
-                  <strong>Release / Processing Date:</strong>{' '}
-                  {preorder.formattedReleaseDate || preorder.releaseDate}
-                  <div style={{ fontSize: '0.78rem', color: '#92400e', marginTop: 2 }}>
-                    This is the earliest date we begin smoking, processing, and fulfilling your pre-order.
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <Calendar size={18} color="#b45309" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div style={{ fontSize: '0.84rem', lineHeight: 1.45, color: '#78350f' }}>
+                  <div style={{ fontWeight: 800, marginBottom: 2 }}>
+                    Release Date: {preorder.formattedReleaseDate || preorder.releaseDate}
                   </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, paddingTop: 10, borderTop: '1px dashed #fcd34d' }}>
-                <Calendar size={17} color="#b45309" style={{ flexShrink: 0, marginTop: 2 }} />
-                <div style={{ fontSize: '0.82rem', lineHeight: 1.45, color: '#78350f' }}>
-                  {preorder.schedulingMode === 'schedule_at_checkout' ? (
-                    <>
-                      <strong>Delivery Date Selection:</strong> Choose your preferred delivery date at checkout (from <strong>{preorder.formattedReleaseDate}</strong> onwards).
-                    </>
-                  ) : (
-                    <>
-                      <strong>Pre-Order Fulfilment:</strong> Pre-order today to reserve your pack. Fulfilment begins on <strong>{preorder.formattedReleaseDate}</strong>.
-                    </>
-                  )}
+                  <div>
+                    {preorder.schedulingMode === 'schedule_at_checkout'
+                      ? `Pre-order now and choose your delivery date at checkout (from ${preorder.formattedReleaseDate} onwards).`
+                      : `Pre-order now to reserve yours. Delivery is available from ${preorder.formattedReleaseDate}.`}
+                  </div>
                 </div>
               </div>
 

@@ -161,7 +161,7 @@ export default function Cart() {
               <Calendar size={19} color="#b45309" style={{ flexShrink: 0, marginTop: 2 }} />
               <div style={{ fontSize: '0.84rem', color: '#78350f', lineHeight: 1.45 }}>
                 <div style={{ fontWeight: 800, marginBottom: 3 }}>
-                  Pre-Order Release / Processing Date: {cartPreorders.formattedLatestReleaseDate || cartPreorders.latestReleaseDate}
+                  Pre-Order Release Date: {cartPreorders.formattedLatestReleaseDate || cartPreorders.latestReleaseDate}
                 </div>
                 <div>
                   {cartPreorders.effectiveSchedulingMode === 'schedule_at_checkout'

@@ -230,7 +230,7 @@ export default function Account() {
             <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
               <div style={{ fontSize: '0.8rem', color: '#78350f', lineHeight: 1.5 }}>
                 <div>
-                  <strong>Release / Processing Date:</strong>{' '}
+                  <strong>Release Date:</strong>{' '}
                   {info.formattedReleaseDate || info.releaseDate || 'Scheduled'}
                 </div>
                 <div>
