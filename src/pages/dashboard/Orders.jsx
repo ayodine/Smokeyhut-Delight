@@ -1637,6 +1637,16 @@ export default function Orders() {
                       <td>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
                           <span className={`status-badge ${order.status}`}>{order.status}</span>
+                          {order.packaging_status === 'packaged' && (
+                            <span className="status-badge" style={{ fontSize: '0.64rem', padding: '1px 6px', background: '#dbeafe', color: '#1e40af' }}>
+                              📦 Packaged
+                            </span>
+                          )}
+                          {order.rider_name && order.rider_name !== 'Unassigned' && (
+                            <span className="status-badge" style={{ fontSize: '0.64rem', padding: '1px 6px', background: '#ecfdf5', color: '#065f46' }}>
+                              🚴 {order.rider_name}
+                            </span>
+                          )}
                           {(() => {
                             const preInfo = deriveAdminPreorderInfo(order);
                             if (!preInfo.isPreorder) return null;
@@ -1708,8 +1718,18 @@ export default function Orders() {
                     {new Date(sel.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <span className={`status-badge ${sel.status}`}>{sel.status}</span>
+                  {sel.packaging_status === 'packaged' && (
+                    <span className="status-badge" style={{ fontSize: '0.66rem', padding: '2px 8px', background: '#dbeafe', color: '#1e40af' }}>
+                      📦 Packaged
+                    </span>
+                  )}
+                  {sel.rider_name && sel.rider_name !== 'Unassigned' && (
+                    <span className="status-badge" style={{ fontSize: '0.66rem', padding: '2px 8px', background: '#ecfdf5', color: '#065f46' }}>
+                      🚴 {sel.rider_name}
+                    </span>
+                  )}
                   <button className="dash-drawer-close" onClick={() => setExpandedId(null)}><X size={16} /></button>
                 </div>
               </div>

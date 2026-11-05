@@ -195,8 +195,41 @@ export default function Shipping() {
 
   return (
     <div>
-      <div className="dash-card-header" style={{ marginBottom: 20 }}>
+      <div className="dash-card-header" style={{ marginBottom: 16 }}>
         <div className="dash-card-title" style={{ fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif", fontSize: '1.4rem' }}>Shipping & Dispatch</div>
+      </div>
+
+      <div style={{
+        background: '#eff6ff',
+        border: '1px solid #bfdbfe',
+        borderRadius: 10,
+        padding: '10px 16px',
+        marginBottom: 20,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 10
+      }}>
+        <div style={{ fontSize: '0.85rem', color: '#1e40af', fontWeight: 600 }}>
+          📦 Real-time packaging, rider allocation, and dispatch execution are managed live in <strong>Smokey Ops Dashboard</strong>.
+        </div>
+        <a
+          href="https://smokey-ops-staging.pages.dev/logistics/board"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            fontSize: '0.78rem',
+            fontWeight: 700,
+            color: '#1d4ed8',
+            background: '#dbeafe',
+            padding: '5px 12px',
+            borderRadius: 6,
+            textDecoration: 'none'
+          }}
+        >
+          Open Ops Dispatch Board ↗
+        </a>
       </div>
 
       <div className="kpi-grid" style={{ marginBottom: 24 }}>
@@ -332,7 +365,21 @@ export default function Shipping() {
                       <div>{new Date(order.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
                       <div style={{ fontWeight: 600 }}>{new Date(order.created_at).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
                     </td>
-                    <td><span className={`status-badge ${order.status}`}>{order.status}</span></td>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+                        <span className={`status-badge ${order.status}`}>{order.status}</span>
+                        {order.packaging_status === 'packaged' && (
+                          <span className="status-badge" style={{ fontSize: '0.62rem', padding: '1px 6px', background: '#dbeafe', color: '#1e40af' }}>
+                            📦 Packaged
+                          </span>
+                        )}
+                        {order.rider_name && order.rider_name !== 'Unassigned' && (
+                          <span className="status-badge" style={{ fontSize: '0.62rem', padding: '1px 6px', background: '#ecfdf5', color: '#065f46' }}>
+                            🚴 {order.rider_name}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td>
                       {next ? (
                         canManage ? (
