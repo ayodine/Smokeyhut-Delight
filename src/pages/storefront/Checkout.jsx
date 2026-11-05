@@ -689,6 +689,26 @@ export default function Checkout() {
       ? `Store Pickup — ${stores.find(s => s.id === selectedStoreId)?.name || 'Store'}`
       : `${form.address}, ${selectedMatch?.area?.name || selectedMatch?.zone?.name || form.city}`;
 
+    // Send instant real-time broadcast to operations dashboard
+    try {
+      orderClient.channel('ops_context_system_broadcast').send({
+        type: 'broadcast',
+        event: 'new_order_alert',
+        payload: {
+          id: orderId,
+          order_ref: orderId,
+          customer_name: customerName,
+          customer_phone: form.phone,
+          customer_email: form.email,
+          total: Number(amountSnapshot),
+          status: 'pending',
+          payment_method: 'bank_transfer',
+          delivery_address: deliveryLine,
+          created_at: new Date().toISOString()
+        }
+      });
+    } catch {}
+
     trackPurchase({
       orderId,
       total: Number(amountSnapshot),

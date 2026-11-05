@@ -88,6 +88,25 @@ export default function PaymentSuccess() {
           currency: 'NGN',
           customer: finalCustomer,
         });
+
+        // Send instant real-time broadcast to operations dashboard
+        try {
+          publicSupabase.channel('ops_context_system_broadcast').send({
+            type: 'broadcast',
+            event: 'new_order_alert',
+            payload: {
+              id,
+              order_ref: id,
+              customer_name: finalCustomer ? `${finalCustomer.firstName} ${finalCustomer.lastName}`.trim() : 'Website Customer',
+              customer_phone: finalCustomer?.phone,
+              customer_email: finalCustomer?.email,
+              total: finalAmount,
+              status: 'processing',
+              payment_method: 'paystack',
+              created_at: new Date().toISOString()
+            }
+          });
+        } catch {}
       }
     };
 
