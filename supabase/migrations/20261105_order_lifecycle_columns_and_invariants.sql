@@ -17,3 +17,4 @@ ALTER TABLE public.orders
 
 -- Ensure RLS allows anon & authenticated to select and update these lifecycle columns for operations
 GRANT SELECT, UPDATE ON public.orders TO anon, authenticated;
+

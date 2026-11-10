@@ -54,7 +54,9 @@ export default function Cart() {
   };
 
   const cartIds = items.map(i => i.id);
-  const upsell = products.filter(p => !cartIds.includes(p.id)).slice(0, 4);
+  const upsell = products
+    .filter(p => !cartIds.includes(p.id) && !(Array.isArray(p.variants) && p.variants.some(v => cartIds.includes(v.id))))
+    .slice(0, 4);
   const VAT = 200;
 
   /* ── Empty state ── */
@@ -226,7 +228,14 @@ export default function Cart() {
                 {/* Info */}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <div style={{ fontWeight: 700, fontSize: '0.9rem', color: isUnavailable ? '#991b1b' : '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
+                    <div style={{ fontWeight: 700, fontSize: '0.9rem', color: isUnavailable ? '#991b1b' : '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {item.parent_name || item.name}
+                    </div>
+                    {item.variant_label && (
+                      <span style={{ background: 'rgba(192,32,31,0.08)', color: '#c0201f', border: '1px solid rgba(192,32,31,0.2)', fontSize: '0.68rem', fontWeight: 800, padding: '2px 7px', borderRadius: 6 }}>
+                        {item.variant_label}
+                      </span>
+                    )}
                     {Boolean(item.preorder_enabled || item.is_preorder) && (
                       <span style={{ background: '#b45309', color: '#fff', fontSize: '0.64rem', fontWeight: 800, padding: '2px 6px', borderRadius: 4, textTransform: 'uppercase' }}>
                         Pre-Order
@@ -367,7 +376,7 @@ export default function Cart() {
           <div style={{ marginTop: 24 }}>
             <div style={{ fontWeight: 800, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#888', marginBottom: 12 }}>You May Also Like</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
-              {upsell.map(p => <ProductCard key={p.id} product={{ ...p, desc: p.short_desc, category: p.category_id }} variant="shopify" />)}
+              {upsell.map(p => <ProductCard key={p.parent_id || p.id} product={{ ...p, desc: p.short_desc, category: p.category_id }} variant="shopify" />)}
             </div>
           </div>
         )}

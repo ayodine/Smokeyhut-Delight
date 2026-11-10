@@ -150,6 +150,15 @@ export default function Checkout() {
   const [tempScheduleDate, setTempScheduleDate] = useState('');
   const calendarModalRef = useRef(null);
 
+  const tomorrowDateStr = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }, []);
+
   // Close calendar popup when clicking outside
   useEffect(() => {
     function handleClickOutside(event) {
@@ -235,6 +244,14 @@ export default function Checkout() {
   const baseZoneFee = isPickup ? 0 : (selectedMatch?.zone?.price ?? 0);
 
   const cartPreorders = useMemo(() => evaluateCartPreorders(items), [items]);
+  const earliestAllowedScheduleDate = useMemo(() => {
+    if (cartPreorders.hasPreorder && cartPreorders.minDeliveryDate) {
+      return cartPreorders.minDeliveryDate > tomorrowDateStr
+        ? cartPreorders.minDeliveryDate
+        : tomorrowDateStr;
+    }
+    return tomorrowDateStr;
+  }, [cartPreorders.hasPreorder, cartPreorders.minDeliveryDate, tomorrowDateStr]);
   const dispatchSurcharge = useMemo(
     () => evaluateDispatchCapacitySurcharge(items, baseZoneFee, deliveryType),
     [items, baseZoneFee, deliveryType]
@@ -257,15 +274,15 @@ export default function Checkout() {
     if (!cartPreorders.hasPreorder) return;
     if (cartPreorders.effectiveSchedulingMode === 'schedule_at_checkout') {
       setIsScheduled(true);
-      if (!scheduleDate || scheduleDate < cartPreorders.minDeliveryDate) {
-        setScheduleDate(cartPreorders.minDeliveryDate);
-        setTempScheduleDate(cartPreorders.minDeliveryDate);
+      if (!scheduleDate || scheduleDate < earliestAllowedScheduleDate) {
+        setScheduleDate(earliestAllowedScheduleDate);
+        setTempScheduleDate(earliestAllowedScheduleDate);
       }
-    } else if (scheduleDate && scheduleDate < cartPreorders.minDeliveryDate) {
-      setScheduleDate(cartPreorders.minDeliveryDate);
-      setTempScheduleDate(cartPreorders.minDeliveryDate);
+    } else if (scheduleDate && scheduleDate < earliestAllowedScheduleDate) {
+      setScheduleDate(earliestAllowedScheduleDate);
+      setTempScheduleDate(earliestAllowedScheduleDate);
     }
-  }, [cartPreorders.hasPreorder, cartPreorders.effectiveSchedulingMode, cartPreorders.minDeliveryDate, scheduleDate]);
+  }, [cartPreorders.hasPreorder, cartPreorders.effectiveSchedulingMode, earliestAllowedScheduleDate, scheduleDate]);
 
   const allFreeShipping = items.length > 0 && items.every(i => i.free_shipping === true);
   const qualifyingBirdCount = items.reduce((acc, i) => acc + (getPromoBirdCount(i) * (Number(i.qty) || 0)), 0);
@@ -512,7 +529,11 @@ export default function Checkout() {
       is_preorder: cartPreorders.hasPreorder,
       preorder_release_date: cartPreorders.latestReleaseDate || null,
       items: currentItems.map(i => ({
-        id: i.id || null,
+        id: i.variant_id || i.id || null,
+        variant_id: i.variant_id || i.id || null,
+        parent_group_key: i.parent_group_key || null,
+        parent_name: i.parent_name || null,
+        variant_label: i.variant_label || null,
         name: i.name,
         price: i.price,
         qty: i.qty,
@@ -528,7 +549,7 @@ export default function Checkout() {
   const insertOrderItemsWithSnapshots = async (orderId, itemsSnapshot) => {
     const richRows = itemsSnapshot.map(i => ({
       order_id: orderId,
-      product_id: i.id || null,
+      product_id: i.variant_id || i.id || null,
       name: i.name,
       price: i.price,
       qty: i.qty,
@@ -552,7 +573,7 @@ export default function Checkout() {
     const { error } = await publicSupabase.from('order_items').insert(richRows);
     if (error) {
       await publicSupabase.from('order_items').insert(
-        itemsSnapshot.map(i => ({ order_id: orderId, product_id: i.id || null, name: i.name, price: i.price, qty: i.qty }))
+        itemsSnapshot.map(i => ({ order_id: orderId, product_id: i.variant_id || i.id || null, name: i.name, price: i.price, qty: i.qty }))
       );
     }
   };
@@ -596,9 +617,8 @@ export default function Checkout() {
         showToast('Delivery Date required', 'Please select a delivery date for your scheduled order', 'error');
         return false;
       }
-      const todayStr = new Date().toISOString().split('T')[0];
-      if (scheduleDate < todayStr) {
-        showToast('Invalid Date', 'Scheduled delivery date cannot be in the past', 'error');
+      if (scheduleDate < tomorrowDateStr) {
+        showToast('Invalid Date', 'Scheduled delivery is only available for tomorrow and future dates. For same-day delivery, please turn off scheduling.', 'error');
         return false;
       }
     }
@@ -1189,9 +1209,7 @@ export default function Checkout() {
                   const next = !isScheduled;
                   setIsScheduled(next);
                   if (next) {
-                    const defaultDate = cartPreorders.hasPreorder
-                      ? cartPreorders.minDeliveryDate
-                      : new Date().toISOString().split('T')[0];
+                    const defaultDate = earliestAllowedScheduleDate;
                     if (!scheduleDate || scheduleDate < defaultDate) {
                       setScheduleDate(defaultDate);
                       setTempScheduleDate(defaultDate);
@@ -1343,7 +1361,7 @@ export default function Checkout() {
                         value={scheduleDate}
                         onChange={(d) => setScheduleDate(d)}
                         onClose={() => setIsCalendarOpen(false)}
-                        minDate={cartPreorders.hasPreorder ? cartPreorders.minDeliveryDate : new Date().toISOString().split('T')[0]}
+                        minDate={earliestAllowedScheduleDate}
                       />
                     </div>
                   )}

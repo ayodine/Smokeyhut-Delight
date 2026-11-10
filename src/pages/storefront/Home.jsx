@@ -84,7 +84,7 @@ function Countdown() {
           <p className="status-tagline">
             {isOpen
               ? <><Flame size={13} style={{ display:'inline', marginRight:5, verticalAlign:'middle' }} />Order now — hot &amp; smoky until {isSunday ? '5:00 pm' : '6:00 pm'}</>
-              : <><Truck size={13} style={{ display:'inline', marginRight:5, verticalAlign:'middle' }} />{isSunday ? 'Ordering opens at 10:00 am on Sundays' : 'Ordering opens daily at 11:00 am'}</>
+              : <><Truck size={13} style={{ display:'inline', marginRight:5, verticalAlign:'middle' }} />{isSunday ? 'Dispatch begins at 10:00 am on Sundays' : 'Dispatch begins daily at 11:00 am'}</>
             }
           </p>
         </div>
@@ -335,7 +335,7 @@ export default function Home() {
 
           <div className="premium-grid">
             {bestsellers.map(p => (
-              <ProductCard key={p.id} product={{...p, desc: p.short_desc, category_id: p.category_id, category: p.category_id}} variant="shopify" />
+              <ProductCard key={p.parent_id || p.id} product={{...p, desc: p.short_desc, category_id: p.category_id, category: p.category_id}} variant="shopify" />
             ))}
             {bestsellers.length === 0 && <div style={{gridColumn:'1/-1', textAlign:'center', color:'var(--text-muted)'}}>Loading menu...</div>}
           </div>

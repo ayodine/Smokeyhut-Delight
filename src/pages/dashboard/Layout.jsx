@@ -180,18 +180,6 @@ export default function DashboardLayout() {
     };
 
     fetchStores();
-
-    // Subscribe to changes on the stores table in real-time
-    const channel = supabase
-      .channel('public:stores')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'stores' }, () => {
-        fetchStores();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, []);
 
   useEffect(() => {

@@ -76,7 +76,12 @@ export default function CartSidebar({ isOpen, onClose }) {
                     </div>
                     <div className="cart-item-info">
                       <div className="cart-item-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span>{item.name}</span>
+                        <span>{item.parent_name || item.name}</span>
+                        {item.variant_label && (
+                          <span style={{ fontSize: '0.66rem', fontWeight: 800, background: 'rgba(192,32,31,0.1)', color: '#c0201f', border: '1px solid rgba(192,32,31,0.2)', padding: '1px 6px', borderRadius: 6 }}>
+                            {item.variant_label}
+                          </span>
+                        )}
                         {Boolean(item.preorder_enabled || item.is_preorder) && (
                           <span style={{ fontSize: '0.62rem', fontWeight: 800, background: '#b45309', color: '#fff', padding: '1px 5px', borderRadius: 4, textTransform: 'uppercase' }}>
                             Pre-Order

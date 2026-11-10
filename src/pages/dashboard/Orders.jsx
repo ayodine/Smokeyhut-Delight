@@ -65,6 +65,19 @@ const getChannel = (notes) => {
   return match ? match[1] : null;
 };
 
+export const cleanOrderNotes = (notes) => {
+  if (!notes || typeof notes !== 'string') return '';
+  return notes
+    .replace(/^\[via [^\]]+\]\s*/gm, '')
+    .replace(/\[Source: [^\]]+\]\s*/g, '')
+    .replace(/\[Pre-Order: [^\]]+\]\s*/g, '')
+    .replace(/\[Dedicated Dispatch[^\]]*\]\s*/g, '')
+    .replace(/\[Scheduled Delivery: [^\]]+\]\s*/g, '')
+    .replace(/\[Scheduled Dispatch: [^\]]+\]\s*/g, '')
+    .replace(/\[Rescheduled[^\]]*\]\s*/g, '')
+    .trim();
+};
+
 function generateInvoice(order) {
   const items = order.order_items || [];
   const deliveryFee = order.delivery_fee || 0;
@@ -73,7 +86,7 @@ function generateInvoice(order) {
   if (!subtotal) subtotal = (order.total || 0) + couponDiscount;
   const dateStr = new Date(order.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' });
   const channel = getChannel(order.notes);
-  const notes = order.notes ? order.notes.replace(/^\[via .+?\]\n?/, '').replace(/\[Source: [^\]]+\]\s*/g, '').trim() : '';
+  const notes = cleanOrderNotes(order.notes);
 
   const logoUrl = window.location.origin + '/logo.svg';
 
@@ -372,7 +385,7 @@ export default function Orders() {
     setSelectedIds([]);
   }, [filter, sourceFilter, page]);
 
-  const [realtimeStatus, setRealtimeStatus] = useState('connecting'); // 'connecting' | 'ok' | 'error'
+  const [realtimeStatus] = useState('disabled'); // Realtime disabled in /admin — use Smokey Ops Dashboard for live broadcast
   const [isRinging, setIsRinging] = useState(false);
   const ringTimeoutRef = useRef(null);
   const audioCtxRef = useRef(null);
@@ -463,96 +476,8 @@ export default function Orders() {
     ordersRef.current = orders;
   }, [orders]);
 
-  // Realtime subscription — listen for new orders and Paystack payment confirmations
-  useEffect(() => {
-    mountedRef.current = true;
-    setRealtimeStatus('connecting');
-    const storeFilter = selectedStore && selectedStore !== 'all' ? selectedStore : null;
-
-    const channel = supabase
-      .channel(`orders-realtime-${Date.now()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, async (payload) => {
-        const order = payload.new;
-        if (!mountedRef.current || !order) return;
-        
-        // Safe check for storeFilter matching
-        if (storeFilter && order.store_id !== null && order.store_id !== undefined && String(order.store_id) !== String(storeFilter)) {
-          return;
-        }
-
-        const isInsert = payload.eventType === 'INSERT';
-        const isUpdate = payload.eventType === 'UPDATE';
-
-        // Check current order in local state
-        const existingInState = ordersRef.current.find(o => o.id === order.id);
-
-        // Determine if chime/alert should fire:
-        // 1. Direct new order created with active status (not pending_payment)
-        // 2. Paystack payment confirmed: status updated to 'processing' or 'pending' (from 'pending_payment')
-        let shouldChime = false;
-        if (isInsert && order.status !== 'pending_payment') {
-          shouldChime = true;
-        } else if (isUpdate && (order.status === 'processing' || order.status === 'pending')) {
-          if (payload.old?.status === 'pending_payment' || !existingInState || existingInState.status === 'pending_payment') {
-            shouldChime = true;
-          }
-        }
-
-        // Short delay to allow order_items to be inserted by the sequential API/edge-function/webhook calls
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        // Fetch order_items for the order
-        const { data: items } = await supabase.from('order_items').select('*').eq('order_id', order.id);
-        const fullOrder = { ...order, order_items: items || [] };
-
-        setOrders(prev => {
-          const exists = prev.some(o => o.id === order.id);
-          if (exists) {
-            return prev.map(o => o.id === order.id ? fullOrder : o);
-          }
-          return [fullOrder, ...prev].slice(0, PER_PAGE);
-        });
-
-        if (shouldChime) {
-          playChime();
-          setNewOrderAlert({ id: order.id, name: order.customer_name, total: order.total });
-
-          // Request browser notification permission and show notification
-          if (typeof Notification !== 'undefined') {
-            if (Notification.permission === 'granted') {
-              new Notification('New Order — Smokeyhut Delight', {
-                body: `${order.customer_name} • ₦${Number(order.total).toLocaleString()}`,
-                icon: '/logo.svg',
-              });
-            } else if (Notification.permission !== 'denied') {
-              Notification.requestPermission().then(perm => {
-                if (perm === 'granted') {
-                  new Notification('New Order — Smokeyhut Delight', {
-                    body: `${order.customer_name} • ₦${Number(order.total).toLocaleString()}`,
-                    icon: '/logo.svg',
-                  });
-                }
-              });
-            }
-          }
-        }
-
-        fetchData();
-      })
-      .subscribe((status, err) => {
-        if (!mountedRef.current) return;
-        if (status === 'SUBSCRIBED') setRealtimeStatus('ok');
-        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.error('[Realtime] subscription failed:', status, err);
-          setRealtimeStatus('error');
-        }
-      });
-
-    return () => {
-      mountedRef.current = false;
-      supabase.removeChannel(channel);
-    };
-  }, [selectedStore, playChime]);
+  // Realtime subscription disconnected in /admin — orders are queried by store, date, and filter via fetchData()
+  // Live Realtime & Broadcast features are handled exclusively in Smokey Ops Dashboard.
 
   // Fetch customer's total orders count when drawer opens
   useEffect(() => {
@@ -1179,24 +1104,23 @@ export default function Orders() {
             <div className="dash-card-title" style={{ fontFamily: "'Mona Sans', 'Mona-Sans', 'Helvetica Neue', sans-serif", fontSize: '1.4rem', fontWeight: 800 }}>
               Orders Management
             </div>
-            {/* Realtime status badge */}
-            <span
-              title={realtimeStatus === 'ok' ? 'Live updates active' : realtimeStatus === 'error' ? 'Live updates failed — refresh' : 'Connecting…'}
+            {/* Manual Refresh Button (Realtime disabled in /admin) */}
+            <button
+              type="button"
+              onClick={() => fetchData()}
+              disabled={tableLoading}
+              title="Refresh orders for current store & date filter"
               style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 8px', borderRadius: 12,
-                fontSize: '0.72rem', fontWeight: 700,
-                background: realtimeStatus === 'ok' ? '#dcfce7' : realtimeStatus === 'error' ? '#fee2e2' : '#fef3c7',
-                color: realtimeStatus === 'ok' ? '#15803d' : realtimeStatus === 'error' ? '#b91c1c' : '#b45309',
-                border: `1px solid ${realtimeStatus === 'ok' ? '#bbf7d0' : realtimeStatus === 'error' ? '#fecaca' : '#fde68a'}`,
+                display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 12,
+                fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer',
+                background: '#f3f4f6',
+                color: '#374151',
+                border: '1px solid #e5e7eb',
               }}
             >
-              <span style={{
-                width: 6, height: 6, borderRadius: '50%',
-                background: realtimeStatus === 'ok' ? '#22c55e' : realtimeStatus === 'error' ? '#ef4444' : '#f59e0b',
-                display: 'inline-block'
-              }} />
-              {realtimeStatus === 'ok' ? 'Live' : realtimeStatus === 'error' ? 'Offline' : 'Syncing'}
-            </span>
+              <RefreshCw size={11} className={tableLoading ? 'spin' : ''} />
+              {tableLoading ? 'Refreshing…' : 'Refresh'}
+            </button>
           </div>
           <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)', marginTop: 3 }}>
             Track, fulfill, and manage all customer & store orders
@@ -1886,7 +1810,7 @@ export default function Orders() {
                       )}
                     </div>
                     {(() => {
-                      const cleanNote = sel.notes ? sel.notes.replace(/^\[via .+?\]\n?/, '').replace(/\[Source: [^\]]+\]\s*/g, '').trim() : '';
+                      const cleanNote = cleanOrderNotes(sel.notes);
                       if (!cleanNote) return null;
                       return (
                         <div style={{ marginTop: 8, padding: 12, background: '#fff', borderRadius: 8, fontSize: '0.85rem', color: 'var(--text-muted)' }}>

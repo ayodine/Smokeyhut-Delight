@@ -60,13 +60,16 @@ export function SettingsProvider({ children }) {
   const bcRef = useRef(null);
 
   useEffect(() => {
-    // 1. Initial fetch — gated by a 5-min TTL so we don't refetch on every mount.
-    //    (Realtime below keeps already-open pages fresh in between.)
     const SETTINGS_TTL_MS = 5 * 60 * 1000;
-    const lastFetched = Number(localStorage.getItem('smokey_settings_fetched_at') || 0);
-    const isStale = Date.now() - lastFetched > SETTINGS_TTL_MS;
+    const FOCUS_THROTTLE_MS = 60 * 1000;
+    let lastFocusFetch = 0;
 
-    if (isStale) {
+    const fetchRemoteSettings = (force = false) => {
+      const lastFetched = Number(localStorage.getItem('smokey_settings_fetched_at') || 0);
+      const isStale = force || (Date.now() - lastFetched > SETTINGS_TTL_MS);
+
+      if (!isStale) return;
+
       Promise.all([
         publicSupabase.from('app_settings').select('key,value').eq('key', 'delivery_options').single(),
         publicSupabase.from('app_settings').select('key,value').eq('key', 'ticker_items').single(),
@@ -83,12 +86,25 @@ export function SettingsProvider({ children }) {
           }
           return next;
         });
+      }).catch(err => {
+        console.warn('[SettingsContext] Failed to load remote settings:', err);
       });
-    }
+    };
 
-    // 2. Cross-tab sync (same browser) — ALWAYS set up, even on a warm cache, so a
-    //    save in the dashboard tab instantly updates an open storefront tab. (This
-    //    was previously skipped whenever the cache was fresh, silently breaking it.)
+    // 1. Initial fetch
+    fetchRemoteSettings(false);
+
+    // 2. Refresh on window focus with 60s throttle
+    const handleFocus = () => {
+      const now = Date.now();
+      if (now - lastFocusFetch > FOCUS_THROTTLE_MS) {
+        lastFocusFetch = now;
+        fetchRemoteSettings(true);
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+
+    // 3. Cross-tab sync (same browser) via BroadcastChannel
     let bc;
     if (typeof BroadcastChannel !== 'undefined') {
       bc = new BroadcastChannel('smokey_settings_bc');
@@ -100,19 +116,9 @@ export function SettingsProvider({ children }) {
       bcRef.current = bc;
     }
 
-    // 3. Realtime — pushes setting changes live to every open store/dashboard,
-    //    across devices, without waiting out the cache or reloading.
-    const channel = publicSupabase
-      .channel('app_settings_live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, (payload) => {
-        const row = payload.new;
-        if (row?.key) setSettingsState(prev => ({ ...prev, ...applyRow(row.key, row.value) }));
-      })
-      .subscribe();
-
     return () => {
+      window.removeEventListener('focus', handleFocus);
       bc?.close();
-      publicSupabase.removeChannel(channel);
     };
   }, []);
 

@@ -417,7 +417,11 @@ export default function MenuPage() {
       is_preorder:      cartPreorders.hasPreorder,
       preorder_release_date: cartPreorders.latestReleaseDate || null,
       items:            currentItems.map(i => ({
-        id: i.id || null,
+        id: i.variant_id || i.id || null,
+        variant_id: i.variant_id || i.id || null,
+        parent_group_key: i.parent_group_key || null,
+        parent_name: i.parent_name || null,
+        variant_label: i.variant_label || null,
         name: i.name,
         price: i.price,
         qty: i.qty,
@@ -433,7 +437,7 @@ export default function MenuPage() {
   const insertOrderItemsWithSnapshots = async (orderId, itemsSnapshot) => {
     const richRows = itemsSnapshot.map(i => ({
       order_id: orderId,
-      product_id: i.id || null,
+      product_id: i.variant_id || i.id || null,
       name: i.name,
       price: i.price,
       qty: i.qty,
@@ -457,7 +461,7 @@ export default function MenuPage() {
     const { error } = await publicSupabase.from('order_items').insert(richRows);
     if (error) {
       await publicSupabase.from('order_items').insert(
-        itemsSnapshot.map(i => ({ order_id: orderId, product_id: i.id || null, name: i.name, price: i.price, qty: i.qty }))
+        itemsSnapshot.map(i => ({ order_id: orderId, product_id: i.variant_id || i.id || null, name: i.name, price: i.price, qty: i.qty }))
       );
     }
   };
@@ -757,7 +761,10 @@ export default function MenuPage() {
     const q = debouncedSearch.toLowerCase();
     return products.filter(p => {
       const matchCat    = activeFilter === 'all' || p.category_id === activeFilter;
-      const matchSearch = !q || p.name?.toLowerCase().includes(q) || p.short_desc?.toLowerCase().includes(q);
+      const matchVariant = Array.isArray(p.variants) && p.variants.some(
+        v => String(v.variant_label || '').toLowerCase().includes(q) || String(v.original_name || '').toLowerCase().includes(q)
+      );
+      const matchSearch = !q || p.name?.toLowerCase().includes(q) || p.short_desc?.toLowerCase().includes(q) || matchVariant;
       return matchCat && matchSearch;
     });
   }, [products, debouncedSearch, activeFilter]);
@@ -855,7 +862,7 @@ export default function MenuPage() {
                   <div key={i} style={{ background: '#f5f5f7', borderRadius: 12, height: 320, animation: 'pulse 1.5s ease-in-out infinite', opacity: 0.6 }} />
                 ))
               : filtered.map((p, i) => (
-                  <div key={p.id} className="stagger-enter" style={{ animationDelay: `${i * 0.04}s` }}>
+                  <div key={p.parent_id || p.id} className="stagger-enter" style={{ animationDelay: `${i * 0.04}s` }}>
                     <ProductCard product={p} variant="shopify" />
                   </div>
                 ))

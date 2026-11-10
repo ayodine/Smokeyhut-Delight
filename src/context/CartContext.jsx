@@ -39,21 +39,9 @@ export function CartProvider({ children }) {
     window.addEventListener('focus', onFocus);
     window.addEventListener('visibilitychange', onFocus);
 
-    // Realtime listener for live promo updates
-    const channel = publicSupabase
-      .channel('promo-offers-live-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'promo_offers' }, () => {
-        loadPromos();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'promo_redemptions' }, () => {
-        loadPromos();
-      })
-      .subscribe();
-
     return () => {
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('visibilitychange', onFocus);
-      publicSupabase.removeChannel(channel);
     };
   }, [loadPromos]);
 

@@ -39,7 +39,10 @@ export default function Shop() {
     const q = debouncedSearch.toLowerCase();
     return products.filter(p => {
       const matchCat = activeFilter === 'all' || p.category_id === activeFilter;
-      const matchSearch = !q || String(p.name).toLowerCase().includes(q) || String(p.short_desc || '').toLowerCase().includes(q);
+      const matchVariant = Array.isArray(p.variants) && p.variants.some(
+        v => String(v.variant_label || '').toLowerCase().includes(q) || String(v.original_name || '').toLowerCase().includes(q)
+      );
+      const matchSearch = !q || String(p.name).toLowerCase().includes(q) || String(p.short_desc || '').toLowerCase().includes(q) || matchVariant;
       return matchCat && matchSearch;
     });
   }, [products, debouncedSearch, activeFilter]);
@@ -143,7 +146,7 @@ export default function Shop() {
           ) : filtered.length > 0 ? (
             filtered.map(p => (
               <ProductCard
-                key={p.id}
+                key={p.parent_id || p.id}
                 product={{ ...p, desc: p.short_desc, category_id: p.category_id, category: p.category_id }}
                 variant="shopify"
               />

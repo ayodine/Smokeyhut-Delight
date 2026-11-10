@@ -102,15 +102,18 @@ export default function StorefrontCalendar({
     if (onClose) onClose();
   };
 
+  const isTodayDisabled = today < minD;
+
   const handleToday = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const dd = String(today.getDate()).padStart(2, '0');
+    const target = isTodayDisabled ? minD : today;
+    const yyyy = target.getFullYear();
+    const mm = String(target.getMonth() + 1).padStart(2, '0');
+    const dd = String(target.getDate()).padStart(2, '0');
     onChange(`${yyyy}-${mm}-${dd}`);
     setViewYear(yyyy);
-    setViewMonth(today.getMonth());
+    setViewMonth(target.getMonth());
     if (onClose) onClose();
   };
 
@@ -294,7 +297,7 @@ export default function StorefrontCalendar({
             fontFamily: 'inherit'
           }}
         >
-          Today
+          {isTodayDisabled ? 'Earliest' : 'Today'}
         </button>
       </div>
     </div>
