@@ -32,29 +32,30 @@ import {
   ShieldCheck,
   ShoppingBag
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { supabase, publicSupabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { useOutletContext } from 'react-router-dom';
 import ConfirmModal from '../../components/ConfirmModal';
+import { resolveProductImageUrl } from '../../lib/productsCache';
 
 // Currency formatter for Nigerian Naira
 const fmt = (n) => '₦' + Number(n || 0).toLocaleString();
 
-// Fallback products in case Supabase is unavailable or empty
+// Fallback products in case Supabase is unavailable or empty (12 live products synchronized)
 const FALLBACK_PRODUCTS = [
-  { id: 4, name: 'Hangout Pack (Guineafowl & Sides)', price: 36000, category_id: 'combo', stock: 18, image: 'https://itpnfalqjjicesqcjzix.supabase.co/storage/v1/object/public/product-images/1776179480835-vp65c5qf5k8.jpeg', is_active: true },
-  { id: 21, name: 'Full Smokey Guineafowl', price: 16000, category_id: 'guineafowl', stock: 45, image: null, is_active: true },
-  { id: 1, name: '1 Liter Bowl Guineafowl Rice', price: 22000, category_id: 'rice-combos', stock: 32, image: 'https://itpnfalqjjicesqcjzix.supabase.co/storage/v1/object/public/product-images/1776179540812-duw4kpyaumj.jpeg', is_active: true },
-  { id: 25, name: 'Triple Delight Combo', price: 37500, category_id: 'combo', stock: 15, image: 'https://itpnfalqjjicesqcjzix.supabase.co/storage/v1/object/public/product-images/1783775498509-smgx4cr1gq8.jpeg', is_active: true },
-  { id: 29, name: 'Guineafowl Egg (4pcs)', price: 3000, category_id: 'guineafowl', stock: 120, image: 'https://itpnfalqjjicesqcjzix.supabase.co/storage/v1/object/public/product-images/1787438667355-r18hgzn7ge.jpeg', is_active: true },
-  { id: 31, name: 'Smokey Beef Jerky (Kilishi) 125g', price: 5500, category_id: 'sides', stock: 65, image: null, is_active: true },
-  { id: 32, name: 'Smoked Jumbo Turkey Wings (Pair)', price: 14500, category_id: 'chicken', stock: 24, image: null, is_active: true },
-  { id: 33, name: 'Charcoal Roasted Whole Catfish (Family)', price: 11000, category_id: 'sides', stock: 20, image: null, is_active: true },
-  { id: 34, name: 'Undiluted Palmwine (50cl)', price: 2000, category_id: 'drinks', stock: 95, image: null, is_active: true },
-  { id: 35, name: 'Spiced Hibiscus Zobo Beverage (50cl)', price: 1800, category_id: 'drinks', stock: 80, image: null, is_active: true },
-  { id: 36, name: 'Craft Ginger Honey Lemonade (50cl)', price: 2000, category_id: 'drinks', stock: 60, image: null, is_active: true },
-  { id: 37, name: 'Peppered Jumbo Snail & Plantain Combo', price: 19500, category_id: 'combo', stock: 16, image: null, is_active: true },
+  { id: 7, name: 'Full Smokey Guineafowl', price: 12500, category_id: 'guineafowl', stock: 9390, image: 'https://itpnfalqjjicesqcjzix.supabase.co/storage/v1/object/public/product-images/1776179408096-oeblpqytno.jpeg', is_active: true },
+  { id: 10, name: 'Full Smokey Guineafowl (chopped)', price: 12500, category_id: 'guineafowl', stock: 4994, image: 'https://itpnfalqjjicesqcjzix.supabase.co/storage/v1/object/public/product-images/1776179295381-ov70sr60tpk.jpeg', is_active: true },
+  { id: 5, name: 'Travel standard Dry Guineafowl', price: 13000, category_id: 'guineafowl', stock: 1573, image: 'https://itpnfalqjjicesqcjzix.supabase.co/storage/v1/object/public/product-images/1776179462811-j7zclyamixl.jpeg', is_active: true },
+  { id: 24, name: 'KING SIZE SMOKEY GUINEAFOWL + GIZZARD', price: 17000, category_id: 'guineafowl', stock: 1435, image: 'https://itpnfalqjjicesqcjzix.supabase.co/storage/v1/object/public/product-images/1789004058190-uy10sqthlzh.jpeg', is_active: true },
+  { id: 8, name: 'Full Smokey Chicken (chopped)', price: 12000, category_id: 'chicken', stock: 645, image: 'https://itpnfalqjjicesqcjzix.supabase.co/storage/v1/object/public/product-images/1776179352839-qzfl1hxj0i.jpeg', is_active: true },
+  { id: 6, name: 'Full Grill Rabbit', price: 18000, category_id: 'guineafowl', stock: 111, image: 'https://itpnfalqjjicesqcjzix.supabase.co/storage/v1/object/public/product-images/1776179447534-xqph6alu9d.jpeg', is_active: true },
+  { id: 11, name: 'Smokey Beef Jerkey (kilishi) 125g', price: 6000, category_id: 'sides', stock: 494, image: 'https://itpnfalqjjicesqcjzix.supabase.co/storage/v1/object/public/product-images/1776179277782-m3d223y3j9e.jpeg', is_active: true },
+  { id: 13, name: 'Undiluted Palmwine (50cl)', price: 2000, category_id: 'drinks', stock: 1498, image: 'https://itpnfalqjjicesqcjzix.supabase.co/storage/v1/object/public/product-images/1776179239912-i0skelo3eg.jpeg', is_active: true },
+  { id: 34, name: 'THE DOUBLE DELIGHT', price: 22500, category_id: 'guineafowl', stock: 9999, image: 'https://itpnfalqjjicesqcjzix.supabase.co/storage/v1/object/public/product-images/1793703569570-uclhoxju81a.jpeg', is_active: true },
+  { id: 35, name: 'EMBER TRIO', price: 33500, category_id: 'guineafowl', stock: 9998, image: 'https://itpnfalqjjicesqcjzix.supabase.co/storage/v1/object/public/product-images/1793709791869-hwuawe7ywz9.png', is_active: true },
+  { id: 17, name: 'PARTY PACK', price: 118000, category_id: 'guineafowl', stock: 95, image: 'https://itpnfalqjjicesqcjzix.supabase.co/storage/v1/object/public/product-images/1776179169236-n5mzd2qbl3a.jpeg', is_active: true },
+  { id: 2, name: 'Extra Bag', price: 600, category_id: 'sides', stock: 177, image: 'https://itpnfalqjjicesqcjzix.supabase.co/storage/v1/object/public/product-images/1776179512877-ns4jwu6jy8b.jpeg', is_active: true }
 ];
 
 const FALLBACK_CATEGORIES = [
@@ -252,9 +253,15 @@ export default function Pos() {
       ]);
 
       if (pRes.data && pRes.data.length > 0) {
-        setProducts(pRes.data);
+        setProducts(pRes.data.map(p => ({
+          ...p,
+          image: resolveProductImageUrl(p.image)
+        })));
       } else {
-        setProducts(FALLBACK_PRODUCTS);
+        setProducts(FALLBACK_PRODUCTS.map(p => ({
+          ...p,
+          image: resolveProductImageUrl(p.image)
+        })));
       }
 
       if (cRes.data && cRes.data.length > 0) {
@@ -268,7 +275,10 @@ export default function Pos() {
       }
     } catch (err) {
       console.warn('Error fetching catalog, using fallbacks:', err);
-      setProducts(FALLBACK_PRODUCTS);
+      setProducts(FALLBACK_PRODUCTS.map(p => ({
+        ...p,
+        image: resolveProductImageUrl(p.image)
+      })));
       setCategories(FALLBACK_CATEGORIES);
     } finally {
       setLoading(false);
@@ -607,6 +617,10 @@ export default function Pos() {
         ? `TRF-${Date.now().toString().slice(-6)}`
         : `POS-${Date.now().toString().slice(-6)}`;
 
+    // Generate detailed summary for notes and ops broadcast
+    const itemsSummary = cart.map(i => `${i.qty}x ${i.product.name}`).join(' + ');
+    const itemsDetailNote = cart.map(i => `${i.qty}x ${i.product.name} (${fmt(i.product.price * i.qty)})`).join(', ');
+
     const orderPayload = {
       customer_name: finalCustomerName,
       customer_phone: selectedCustomer?.phone || 'N/A',
@@ -620,20 +634,50 @@ export default function Pos() {
       coupon_discount: discountAmount,
       status: 'delivered', // Immediate retail fulfillment
       store_id: selectedStore !== 'all' ? selectedStore : null,
-      notes: `[via Walk-in POS] Cashier: ${cashierName} | Payment: ${paymentMethod.toUpperCase()}${selectedCustomer?.note ? ` | Note: ${selectedCustomer.note}` : ''}`,
+      channel: 'storefront', // satisfies orders_channel_check
+      traffic_source: 'Walk-in POS', // sets channel to 'Walk-in POS' across operations dashboard
+      notes: `[via Walk-in POS] Cashier: ${cashierName} | Items: ${itemsDetailNote} | Payment: ${paymentMethod.toUpperCase()}${selectedCustomer?.note ? ` | Note: ${selectedCustomer.note}` : ''}`,
       paid_at: new Date().toISOString(),
       created_at: new Date().toISOString()
     };
 
     try {
       // 1. Insert into Supabase Orders table
-      const { data: insertedOrder } = await supabase
+      let finalOrderId = null;
+      const { data: insertedOrder, error: orderErr } = await supabase
         .from('orders')
         .insert([orderPayload])
         .select()
-        .single();
+        .maybeSingle();
 
-      const finalOrderId = insertedOrder?.id || ticketId;
+      if (!orderErr && insertedOrder?.id) {
+        finalOrderId = insertedOrder.id;
+      } else {
+        console.warn('Orders primary insert note:', orderErr);
+        // Look up by paystack_ref to ensure we have the real database ID
+        const { data: foundOrder } = await supabase
+          .from('orders')
+          .select('id')
+          .eq('paystack_ref', generatedRef)
+          .maybeSingle();
+
+        if (foundOrder?.id) {
+          finalOrderId = foundOrder.id;
+        } else {
+          // Fallback insert using publicSupabase
+          const { data: pubOrder, error: pubErr } = await publicSupabase
+            .from('orders')
+            .insert([orderPayload])
+            .select()
+            .maybeSingle();
+
+          if (!pubErr && pubOrder?.id) {
+            finalOrderId = pubOrder.id;
+          } else {
+            throw new Error(orderErr?.message || pubErr?.message || 'Failed to persist order to database.');
+          }
+        }
+      }
 
       // 2. Insert into Order Items
       const orderItemsToInsert = cart.map(item => ({
@@ -641,12 +685,19 @@ export default function Pos() {
         product_id: item.product.id,
         name: item.product.name,
         price: item.product.price,
-        qty: item.qty
+        qty: item.qty,
+        is_preorder: false
       }));
 
-      await supabase.from('order_items').insert(orderItemsToInsert).catch(err => {
-        console.warn('Order items insert note:', err);
-      });
+      const { error: itemsErr } = await supabase.from('order_items').insert(orderItemsToInsert);
+      if (itemsErr) {
+        console.warn('Staff client order_items insert note, retrying with public client:', itemsErr);
+        const { error: fbItemsErr } = await publicSupabase.from('order_items').insert(orderItemsToInsert);
+        if (fbItemsErr) {
+          console.error('Fatal order_items insert error:', fbItemsErr);
+          showToast('Order Notice', 'Order created, but line items required manual sync.', 'warning');
+        }
+      }
 
       // 3. Atomically decrement stock in products where applicable
       for (const item of cart) {
@@ -667,7 +718,33 @@ export default function Pos() {
         })
       );
 
-      // 5. Construct completed receipt object
+      // 5. Broadcast real-time alert to Smokey Ops Dashboard
+      try {
+        publicSupabase.channel('ops_context_system_broadcast').send({
+          type: 'broadcast',
+          event: 'new_order_alert',
+          payload: {
+            id: finalOrderId,
+            order_ref: finalOrderId,
+            customer_name: finalCustomerName,
+            customer_phone: selectedCustomer?.phone || 'N/A',
+            customer_email: selectedCustomer?.email || null,
+            total: grandTotal,
+            status: 'delivered',
+            payment_method: paymentMethod === 'card' ? 'pos' : paymentMethod === 'transfer' ? 'bank_transfer' : 'cash',
+            delivery_address: selectedCustomer?.address || 'In-Store Retail Counter',
+            traffic_source: 'Walk-in POS',
+            channel: 'Walk-in POS',
+            items_summary: itemsSummary,
+            order_items: orderItemsToInsert,
+            created_at: new Date().toISOString()
+          }
+        });
+      } catch (broadcastErr) {
+        console.warn('POS broadcast notification skipped:', broadcastErr);
+      }
+
+      // 6. Construct completed receipt object
       const receiptData = {
         id: finalOrderId,
         ticketId,

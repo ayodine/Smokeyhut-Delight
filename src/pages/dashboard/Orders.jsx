@@ -495,6 +495,16 @@ export default function Orders() {
           .is('deleted_at', null);
         setExpandedCustomerOrderCount(count || 0);
       }
+      // On-demand fetch of order_items if missing from the primary batch
+      if (order && (!order.order_items || order.order_items.length === 0)) {
+        const { data: directItems } = await supabase
+          .from('order_items')
+          .select('*')
+          .eq('order_id', order.id);
+        if (directItems && directItems.length > 0) {
+          setOrders(prev => prev.map(o => o.id === order.id ? { ...o, order_items: directItems } : o));
+        }
+      }
     };
     fetchCustomerOrderCount();
   }, [expandedId, orders]);
@@ -1682,17 +1692,66 @@ export default function Orders() {
                 </div>
 
                 <div style={{ background: 'var(--white)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 20, marginBottom: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-                  <h4 style={{ fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text-muted)', marginBottom: 12 }}>Order Items</h4>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <h4 style={{ fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text-muted)', margin: 0 }}>Order Items</h4>
+                    {(!sel.order_items || sel.order_items.length === 0) && (
+                      <button
+                        onClick={async () => {
+                          const { data: directItems } = await supabase.from('order_items').select('*').eq('order_id', sel.id);
+                          if (directItems && directItems.length > 0) {
+                            setOrders(prev => prev.map(o => o.id === sel.id ? { ...o, order_items: directItems } : o));
+                            showToast('Items synced', `${directItems.length} line items loaded`, 'success');
+                          } else {
+                            showToast('Item status', 'No direct line items found in database', 'info');
+                          }
+                        }}
+                        style={{
+                          fontSize: '0.72rem',
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--red)',
+                          cursor: 'pointer',
+                          fontWeight: 700,
+                          padding: 0
+                        }}
+                      >
+                        Reload Items
+                      </button>
+                    )}
+                  </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {(sel.order_items || []).map((item, i) => (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 8, borderBottom: '1px dashed var(--border-subtle)', fontSize: '0.9rem' }}>
-                        <div>
-                          <span style={{ fontWeight: 700 }}>{item.qty}x</span> {item.name}
-                        </div>
-                        <div style={{ fontWeight: 600 }}>{fmt(item.price * item.qty)}</div>
-                      </div>
-                    ))}
-                    {!sel.order_items?.length && <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No items found.</div>}
+                    {(() => {
+                      if (sel.order_items && sel.order_items.length > 0) {
+                        return sel.order_items.map((item, i) => (
+                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 8, borderBottom: '1px dashed var(--border-subtle)', fontSize: '0.9rem' }}>
+                            <div>
+                              <span style={{ fontWeight: 700 }}>{item.qty}x</span> {item.name}
+                            </div>
+                            <div style={{ fontWeight: 600 }}>{fmt(item.price * item.qty)}</div>
+                          </div>
+                        ));
+                      }
+
+                      // Fallback: Check if items were recorded in order notes
+                      const noteMatch = sel.notes?.match(/Items:\s*([^|\]\n]+)/i);
+                      if (noteMatch && noteMatch[1]) {
+                        const noteItems = noteMatch[1].trim().split(/,\s*|\s*\+\s*/);
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', fontSize: '0.74rem', color: 'var(--text-muted)', background: 'var(--card-bg2)', padding: '2px 8px', borderRadius: 6, alignSelf: 'flex-start' }}>
+                              Recorded from Order Notes
+                            </div>
+                            {noteItems.map((str, i) => (
+                              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 6, borderBottom: '1px dashed var(--border-subtle)', fontSize: '0.9rem' }}>
+                                <span style={{ fontWeight: 600 }}>{str}</span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      }
+
+                      return <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No items found.</div>;
+                    })()}
                   </div>
                 </div>
 
