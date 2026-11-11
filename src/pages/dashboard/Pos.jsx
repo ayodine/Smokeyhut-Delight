@@ -42,6 +42,20 @@ import { resolveProductImageUrl } from '../../lib/productsCache';
 // Currency formatter for Nigerian Naira
 const fmt = (n) => '₦' + Number(n || 0).toLocaleString();
 
+const sanitizeCustomerNote = (rawNotes) => {
+  if (!rawNotes || typeof rawNotes !== 'string') return '';
+  return rawNotes
+    .replace(/\[via [^\]]+\]/gi, '')
+    .replace(/Cashier:\s*[^|]+\|?/gi, '')
+    .replace(/Items:\s*[^|]+\|?/gi, '')
+    .replace(/Payment:\s*[^|]+\|?/gi, '')
+    .replace(/Note:\s*/gi, '')
+    .replace(/\|\s*\|/g, '')
+    .trim()
+    .replace(/^\|+|\|+$/g, '')
+    .trim();
+};
+
 // Fallback products in case Supabase is unavailable or empty (12 live products synchronized)
 const FALLBACK_PRODUCTS = [
   { id: 7, name: 'Full Smokey Guineafowl', price: 12500, category_id: 'guineafowl', stock: 9390, image: 'https://itpnfalqjjicesqcjzix.supabase.co/storage/v1/object/public/product-images/1776179408096-oeblpqytno.jpeg', is_active: true },
@@ -324,7 +338,7 @@ export default function Pos() {
           phone: o.customer_phone || '',
           email: o.customer_email || '',
           address: o.delivery_address || '',
-          note: o.notes || '',
+          note: sanitizeCustomerNote(o.notes),
           orderId: o.id
         }));
 
@@ -636,7 +650,7 @@ export default function Pos() {
       store_id: selectedStore !== 'all' ? selectedStore : null,
       channel: 'storefront', // satisfies orders_channel_check
       traffic_source: 'Walk-in POS', // sets channel to 'Walk-in POS' across operations dashboard
-      notes: `[via Walk-in POS] Cashier: ${cashierName} | Items: ${itemsDetailNote} | Payment: ${paymentMethod.toUpperCase()}${selectedCustomer?.note ? ` | Note: ${selectedCustomer.note}` : ''}`,
+      notes: `[via Walk-in POS] Cashier: ${cashierName} | Items: ${itemsDetailNote} | Payment: ${paymentMethod.toUpperCase()}${selectedCustomer?.note && sanitizeCustomerNote(selectedCustomer.note) ? ` | Note: ${sanitizeCustomerNote(selectedCustomer.note)}` : ''}`,
       paid_at: new Date().toISOString(),
       created_at: new Date().toISOString()
     };

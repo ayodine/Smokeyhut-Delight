@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DollarSign, Landmark, Banknote, CreditCard, ChevronLeft, ChevronRight } from 'lucide-react';
+import { DollarSign, Landmark, Banknote, CreditCard, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { SkelKpiGrid, SkelTable, SkelDashHeader, SkelFilterPills } from '../../components/Skeleton';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
@@ -77,17 +77,27 @@ function PaymentsContent() {
   const [filter, setFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState({ start: null, end: null });
   const [period, setPeriod]   = useState('');
+  const [search, setSearch]   = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage]       = useState(1);
   const [total, setTotal]     = useState(0);
   const methods = ['all', 'paystack', 'bank_transfer', 'cash', 'pos'];
 
-  useEffect(() => { setPage(1); }, [selectedStore, filter, dateFilter, period]);
+  // Debounce search input by 300ms
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => { setPage(1); }, [selectedStore, filter, dateFilter, period, debouncedSearch]);
   useEffect(() => {
     // Only fetch if date filter selection is complete
     const isDateFilterIncomplete = !period && dateFilter && dateFilter.start && !dateFilter.end;
     if (isDateFilterIncomplete) return;
     fetchData();
-  }, [selectedStore, filter, dateFilter, period, page]);
+  }, [selectedStore, filter, dateFilter, period, debouncedSearch, page]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -95,7 +105,7 @@ function PaymentsContent() {
 
     let q = supabase
       .from('orders')
-      .select('id, customer_name, customer_email, total, payment_method, status, paid_at, created_at, store_id', { count: 'exact' })
+      .select('id, customer_name, customer_email, customer_phone, paystack_ref, total, payment_method, status, paid_at, created_at, store_id', { count: 'exact' })
       .is('deleted_at', null)
       .not('payment_method', 'is', null)
       .order('created_at', { ascending: false })
@@ -109,6 +119,12 @@ function PaymentsContent() {
         q = q.or('payment_method.eq.paystack,payment_method.eq.card,payment_method.eq.online');
       } else {
         q = q.eq('payment_method', filter);
+      }
+    }
+    if (debouncedSearch && debouncedSearch.trim()) {
+      const s = debouncedSearch.trim().replace(/[,()]/g, '');
+      if (s) {
+        q = q.or(`id.ilike.%${s}%,customer_name.ilike.%${s}%,customer_email.ilike.%${s}%,customer_phone.ilike.%${s}%,paystack_ref.ilike.%${s}%`);
       }
     }
     if (activePeriod.from) q = q.gte('created_at', activePeriod.from + 'T00:00:00');
@@ -192,9 +208,10 @@ function PaymentsContent() {
       </div>
       )}
 
-      {/* Filters */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      {/* Filters & Search */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          {/* Method Pills */}
           <div className="dash-filters" style={{ margin: 0 }}>
             {methods.map(m => (
               <button key={m} className={`dash-filter-btn${filter === m ? ' active' : ''}`} onClick={() => setFilter(m)}>
@@ -202,7 +219,88 @@ function PaymentsContent() {
               </button>
             ))}
           </div>
+
+          {/* Search Box */}
+          <div
+            className="dash-filters"
+            style={{
+              margin: 0,
+              padding: '4px 6px',
+              display: 'flex',
+              alignItems: 'center',
+              minWidth: 260,
+              maxWidth: 420,
+              flex: 1,
+              gap: 4
+            }}
+          >
+            <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center' }}>
+              <Search size={14} color="var(--text-muted)" style={{ position: 'absolute', left: 10, pointerEvents: 'none' }} />
+              <input
+                placeholder="Search Order ID, customer, ref, phone..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    setDebouncedSearch(search);
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  padding: '6px 28px 6px 30px',
+                  borderRadius: 20,
+                  border: 'none',
+                  background: 'transparent',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  color: 'var(--text)',
+                  outline: 'none',
+                  boxSizing: 'border-box'
+                }}
+              />
+              {search && (
+                <button
+                  onClick={() => {
+                    setSearch('');
+                    setDebouncedSearch('');
+                  }}
+                  style={{
+                    position: 'absolute',
+                    right: 4,
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    padding: 2,
+                    fontSize: '0.8rem',
+                    display: 'flex',
+                    alignItems: 'center'
+                  }}
+                  title="Clear search"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <button
+              className="dash-filter-btn active"
+              onClick={() => setDebouncedSearch(search)}
+              disabled={loading}
+              style={{
+                padding: '6px 14px',
+                fontSize: '0.8rem',
+                flexShrink: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5
+              }}
+            >
+              Search
+            </button>
+          </div>
         </div>
+
+        {/* Date Filter Row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <div style={{ width: 140 }}>
             <CustomSelect
@@ -220,12 +318,17 @@ function PaymentsContent() {
             onChange={v => { setDateFilter(v); if (v && (v.start || v.end)) setPeriod(''); }}
             placeholder="Pick a date range"
           />
-          {((dateFilter && (dateFilter.start || dateFilter.end)) || period) && (
+          {((dateFilter && (dateFilter.start || dateFilter.end)) || period || search) && (
             <button
-              onClick={() => { setDateFilter({ start: null, end: null }); setPeriod(''); }}
+              onClick={() => {
+                setDateFilter({ start: null, end: null });
+                setPeriod('');
+                setSearch('');
+                setDebouncedSearch('');
+              }}
               style={{ background: 'none', border: 'none', fontSize: '0.78rem', color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 600, padding: '4px 6px' }}
             >
-              Reset
+              Reset All
             </button>
           )}
         </div>
@@ -240,8 +343,22 @@ function PaymentsContent() {
             <tbody>
               {payments.map(p => (
                 <tr key={p.id}>
-                  <td style={{ fontWeight: 700, color: 'var(--red)' }}>{p.id}</td>
-                  <td style={{ fontWeight: 600 }}>{p.customer_name}</td>
+                  <td style={{ fontWeight: 700, color: 'var(--red)' }}>
+                    <div>{p.id}</div>
+                    {p.paystack_ref && (
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace', fontWeight: 500, marginTop: 2 }}>
+                        {p.paystack_ref}
+                      </div>
+                    )}
+                  </td>
+                  <td>
+                    <div style={{ fontWeight: 600 }}>{p.customer_name}</div>
+                    {p.customer_phone && (
+                      <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                        {p.customer_phone}
+                      </div>
+                    )}
+                  </td>
                   <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{p.customer_email || '—'}</td>
                   <td style={{ fontWeight: 700 }}>{fmt(p.total)}</td>
                   <td style={{ fontSize: '0.82rem' }}>{(p.payment_method || '').replace('_', ' ')}</td>
@@ -250,7 +367,34 @@ function PaymentsContent() {
                 </tr>
               ))}
               {payments.length === 0 && (
-                <tr><td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>No payments found.</td></tr>
+                <tr>
+                  <td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                    {debouncedSearch.trim() ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                        <span>No payments matching &ldquo;<strong>{debouncedSearch}</strong>&rdquo;</span>
+                        <button
+                          onClick={() => {
+                            setSearch('');
+                            setDebouncedSearch('');
+                          }}
+                          style={{
+                            background: 'var(--black2)',
+                            color: 'var(--text)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: 6,
+                            padding: '4px 10px',
+                            fontSize: '0.78rem',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Clear search
+                        </button>
+                      </div>
+                    ) : (
+                      'No payments found.'
+                    )}
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
