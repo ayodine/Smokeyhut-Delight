@@ -709,7 +709,10 @@ export default function Pos() {
         const { error: fbItemsErr } = await publicSupabase.from('order_items').insert(orderItemsToInsert);
         if (fbItemsErr) {
           console.error('Fatal order_items insert error:', fbItemsErr);
-          showToast('Order Notice', 'Order created, but line items required manual sync.', 'warning');
+          await supabase.from('orders').update({
+            notes: `[via Walk-in POS] Cashier: ${cashierName} | Items: ${itemsDetailNote} | Payment: ${paymentMethod.toUpperCase()}`
+          }).eq('id', finalOrderId);
+          showToast('Order Notice', 'Order created, line items saved to notes.', 'warning');
         }
       }
 
