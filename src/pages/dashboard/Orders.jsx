@@ -666,9 +666,30 @@ export default function Orders() {
     }
   }
 
+  const buildHarmonizedStatusPayload = (newStatus) => {
+    const now = new Date().toISOString();
+    const payload = {
+      status: newStatus,
+      updated_at: now
+    };
+    if (newStatus === 'delivered') {
+      payload.delivery_status = 'Delivered';
+      payload.packaging_status = 'packaged';
+      payload.delivered_at = now;
+    } else if (newStatus === 'shipped') {
+      payload.delivery_status = 'In Transit';
+      payload.packaging_status = 'packaged';
+      payload.pickup_at = now;
+    } else if (newStatus === 'processing') {
+      payload.packaging_status = 'ready_for_fulfillment';
+    }
+    return payload;
+  };
+
   const updateStatus = async (id, newStatus) => {
-    await supabase.from('orders').update({ status: newStatus }).eq('id', id);
-    setOrders(prev => prev.map(o => o.id === id ? { ...o, status: newStatus } : o));
+    const payload = buildHarmonizedStatusPayload(newStatus);
+    await supabase.from('orders').update(payload).eq('id', id);
+    setOrders(prev => prev.map(o => o.id === id ? { ...o, ...payload } : o));
     await fetchData(false);
   };
 
@@ -677,7 +698,7 @@ export default function Orders() {
       setLoading(true);
       const { error } = await supabase
         .from('orders')
-        .update({ status, cancel_reason: reason })
+        .update({ status, cancel_reason: reason, updated_at: new Date().toISOString() })
         .in('id', ids);
       if (!error) {
         setOrders(prev => prev.map(o => ids.includes(o.id) ? { ...o, status, cancel_reason: reason } : o));
@@ -722,9 +743,10 @@ export default function Orders() {
     if (selectedIds.length === 0) return;
     try {
       setLoading(true);
-      const { error } = await supabase.from('orders').update({ status: newStatus }).in('id', selectedIds);
+      const payload = buildHarmonizedStatusPayload(newStatus);
+      const { error } = await supabase.from('orders').update(payload).in('id', selectedIds);
       if (!error) {
-        setOrders(prev => prev.map(o => selectedIds.includes(o.id) ? { ...o, status: newStatus } : o));
+        setOrders(prev => prev.map(o => selectedIds.includes(o.id) ? { ...o, ...payload } : o));
         setSelectedIds([]);
         showToast('Bulk Status Updated', `Successfully updated ${selectedIds.length} orders to ${newStatus}`, 'success');
         await fetchData();
@@ -1947,13 +1969,17 @@ export default function Orders() {
                             value={sel.preorder_status || preInfo.stageKey}
                             onChange={async (e) => {
                               const nextPreStatus = e.target.value;
-                              const updates = { preorder_status: nextPreStatus };
-                              if (nextPreStatus === 'processing') updates.status = 'processing';
-                              else if (nextPreStatus === 'dispatched') updates.status = 'shipped';
-                              else if (nextPreStatus === 'delivered') updates.status = 'delivered';
+                              let statusUpdate = undefined;
+                              if (nextPreStatus === 'processing') statusUpdate = 'processing';
+                              else if (nextPreStatus === 'dispatched') statusUpdate = 'shipped';
+                              else if (nextPreStatus === 'delivered') statusUpdate = 'delivered';
+                              const updates = { preorder_status: nextPreStatus, updated_at: new Date().toISOString() };
+                              if (statusUpdate) {
+                                Object.assign(updates, buildHarmonizedStatusPayload(statusUpdate));
+                              }
                               const { error } = await supabase.from('orders').update(updates).eq('id', sel.id);
                               if (error && updates.status) {
-                                await supabase.from('orders').update({ status: updates.status }).eq('id', sel.id);
+                                await supabase.from('orders').update({ status: updates.status, updated_at: updates.updated_at }).eq('id', sel.id);
                               }
                               setOrders(prev => prev.map(o => o.id === sel.id ? { ...o, ...updates } : o));
                               setAllPreorders(prev => prev.map(o => o.id === sel.id ? { ...o, ...updates } : o));
