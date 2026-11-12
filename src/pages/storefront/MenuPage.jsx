@@ -144,6 +144,15 @@ export default function MenuPage() {
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduleDate, setScheduleDate] = useState('');
 
+  const tomorrowDateStr = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }, []);
+
   // Customer form
   const [form, setForm] = useState({ firstName: '', lastName: '', phone: '', email: '', address: '', city: 'Lagos', notes: '' });
   const [touched, setTouched] = useState({ firstName: false, lastName: false, phone: false, email: false, address: false, city: false });
@@ -499,9 +508,8 @@ export default function MenuPage() {
         showToast('Delivery Date required', 'Please select a delivery date for your scheduled order', 'error');
         return false;
       }
-      const todayStr = new Date().toISOString().split('T')[0];
-      if (scheduleDate < todayStr) {
-        showToast('Invalid Date', 'Scheduled delivery date cannot be in the past', 'error');
+      if (scheduleDate < tomorrowDateStr) {
+        showToast('Invalid Date', 'Scheduled delivery is only available for tomorrow and future dates. For same-day delivery, please turn off scheduling.', 'error');
         return false;
       }
     }
@@ -1332,7 +1340,7 @@ export default function MenuPage() {
                       if (next && !scheduleDate) {
                         const defaultDate = cartPreorders.hasPreorder
                           ? cartPreorders.minDeliveryDate
-                          : new Date().toISOString().split('T')[0];
+                          : tomorrowDateStr;
                         setScheduleDate(defaultDate);
                       }
                     }}
@@ -1406,7 +1414,7 @@ export default function MenuPage() {
                       <StorefrontCalendar
                         value={scheduleDate}
                         onChange={(d) => setScheduleDate(d)}
-                        minDate={cartPreorders.hasPreorder ? cartPreorders.minDeliveryDate : new Date().toISOString().split('T')[0]}
+                        minDate={cartPreorders.hasPreorder ? cartPreorders.minDeliveryDate : tomorrowDateStr}
                       />
                     </div>
                   )}
